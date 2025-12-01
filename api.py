@@ -1,14 +1,19 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
+from concurrent.futures import ThreadPoolExecutor
 from database import init_db, Course, Assignment, VOD, Board, Post
 from moodle_client import MoodleClient
 import logging
 
+from datetime import datetime, timedelta
+
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize DB
 
 # Initialize DB
 SessionLocal = init_db('learnus.db')
@@ -217,8 +222,11 @@ def login(request: LoginCookieRequest):
                 key, value = item.strip().split('=', 1)
                 cookies[key] = value
         
-        # Update client session
-        client.session.cookies.update(cookies)
+        # If valid, save it
+        import os
+        abs_path = os.path.abspath('session.json')
+        client.save_session(abs_path)
+        logger.info(f"Session saved to {abs_path}")
         
         return {"status": "success", "message": "Session updated"}
     except Exception as e:
@@ -303,13 +311,21 @@ def parse_date(date_str):
     return None
 
 # --- Dashboard Models ---
+class StatsResponse(BaseModel):
+    total_assignments_due: int
+    completed_assignments_due: int
+    missed_assignments_count: int
+    missed_vods_count: int
+
 class DashboardOverviewResponse(BaseModel):
+    stats: StatsResponse
     upcoming_assignments: List[AssignmentResponse]
     missed_assignments: List[AssignmentResponse]
-    unwatched_vods: List[VODResponse]
+    available_vods: List[VODResponse]
     missed_vods: List[VODResponse]
     unchecked_vods: List[VODResponse]
-    summary: str
+    upcoming_vods: List[VODResponse]
+    summary: Optional[str] = None
 
 @app.get("/dashboard/overview", response_model=DashboardOverviewResponse)
 def get_dashboard_overview(db: Session = Depends(get_db)):
@@ -325,13 +341,19 @@ def get_dashboard_overview(db: Session = Depends(get_db)):
     unwatched_vods = []
     missed_vods = []
     unchecked_vods = []
+    upcoming_vods = []
     
     # Process Assignments
     for a in assignments:
+        dt = parse_date(a.due_date)
+        
+        # User requested to show completed assignments in upcoming ONLY if they are from the future
         if a.is_completed:
+            if dt and dt > now:
+                upcoming.append(a)
+            # Else: completed and past due -> hide (don't add to missed or upcoming)
             continue
             
-        dt = parse_date(a.due_date)
         if dt:
             if dt > now:
                 upcoming.append(a)
@@ -339,7 +361,7 @@ def get_dashboard_overview(db: Session = Depends(get_db)):
                 missed.append(a)
         else:
             # If no date, maybe treat as upcoming or separate category?
-            # For now, append to upcoming if not completed
+            # For now, append to upcoming
             upcoming.append(a)
             
     # Process VODs
@@ -348,25 +370,58 @@ def get_dashboard_overview(db: Session = Depends(get_db)):
             unchecked_vods.append(v)
             continue
             
-        if not v.is_completed:
-            # Check end_date
-            dt = parse_date(v.end_date)
-            if dt and dt < now:
+        # Check end_date
+        dt_end = parse_date(v.end_date)
+        dt_start = parse_date(v.start_date)
+        
+        if dt_end and dt_end < now:
+            if not v.is_completed:
                 missed_vods.append(v)
-            else:
-                unwatched_vods.append(v)
+            # If completed and past, we hide it (don't add to missed)
+        elif dt_start and dt_start > now:
+            # Future VODs
+            upcoming_vods.append(v)
+        else:
+            # This includes both unwatched and completed (but valid) vods
+            # And ensures they have started
+            # If user wants to hide completed current VODs from "Available", we would check here.
+            # But previous request was to show them.
+            unwatched_vods.append(v)
             
     # Sort by date
     upcoming.sort(key=lambda x: parse_date(x.due_date) or datetime.max)
     missed.sort(key=lambda x: parse_date(x.due_date) or datetime.min, reverse=True)
     unwatched_vods.sort(key=lambda x: parse_date(x.end_date) or datetime.max)
     missed_vods.sort(key=lambda x: parse_date(x.end_date) or datetime.min, reverse=True)
+    upcoming_vods.sort(key=lambda x: parse_date(x.start_date) or datetime.max)
     # Sort unchecked by ID (creation order) or name
     unchecked_vods.sort(key=lambda x: x.id, reverse=True)
     
-    summary = f"이번 주 마감 과제: {len(upcoming)}개, 미시청 강의: {len(unwatched_vods)}개"
+    # Calculate stats for the summary card (Next 7 days)
+    one_week_later = now + timedelta(days=7)
+    
+    assignments_this_week = [
+        a for a in upcoming 
+        if parse_date(a.due_date) and parse_date(a.due_date) <= one_week_later
+    ]
+    
+    total_assignments_due = len(assignments_this_week)
+    completed_assignments_due = sum(1 for a in assignments_this_week if a.is_completed)
+    missed_assignments_count = len(missed)
+    missed_vods_count = len(missed_vods)
+    
+    stats = {
+        "total_assignments_due": total_assignments_due,
+        "completed_assignments_due": completed_assignments_due,
+        "missed_assignments_count": missed_assignments_count,
+        "missed_assignments_count": missed_assignments_count,
+        "missed_vods_count": missed_vods_count
+    }
+    
+    summary = None
     
     return {
+        "stats": stats,
         "upcoming_assignments": [
             {
                 "id": a.id, "title": a.title, "course_name": a.course.name, 
@@ -381,7 +436,7 @@ def get_dashboard_overview(db: Session = Depends(get_db)):
             }
             for a in missed
         ],
-        "unwatched_vods": [
+        "available_vods": [
             {
                 "id": v.id, "title": v.title, "course_name": v.course.name,
                 "start_date": v.start_date, "end_date": v.end_date,
@@ -404,6 +459,14 @@ def get_dashboard_overview(db: Session = Depends(get_db)):
                 "is_completed": v.is_completed, "url": v.url
             }
             for v in unchecked_vods
+        ],
+        "upcoming_vods": [
+            {
+                "id": v.id, "title": v.title, "course_name": v.course.name,
+                "start_date": v.start_date, "end_date": v.end_date,
+                "is_completed": v.is_completed, "url": v.url
+            }
+            for v in upcoming_vods
         ],
         "summary": summary
     }
@@ -431,6 +494,92 @@ def sync_all_active_courses(db: Session = Depends(get_db)):
         "message": f"Synced {len(results)} courses. Failed: {len(errors)}",
         "details": results + errors
     }
+
+# Global executor for background tasks
+executor = ThreadPoolExecutor(max_workers=10)
+
+@app.get("/debug/dump_session")
+def debug_dump_session():
+    """
+    Dumps the current in-memory session to a file for debugging.
+    """
+    import os
+    import json
+    debug_file = "session_debug.json"
+    abs_path = os.path.abspath(debug_file)
+    with open(abs_path, 'w') as f:
+        json.dump(client.session.cookies.get_dict(), f, indent=4)
+        
+    return {"status": "success", "path": abs_path, "cookies": client.session.cookies.get_dict()}
+
+from ai_service import AIService
+
+@app.post("/dashboard/ai-summary")
+def get_ai_summary(db: Session = Depends(get_db)):
+    """
+    Generates AI summaries for all active courses.
+    """
+    ai_service = AIService()
+    courses = db.query(Course).filter(Course.is_active == True).all()
+    
+    summaries = []
+    
+    for course in courses:
+        # Fetch related data
+        assignments = db.query(Assignment).filter(Assignment.course_id == course.id).all()
+        vods = db.query(VOD).filter(VOD.course_id == course.id).all()
+        
+        # Fetch announcements (assuming Board with title '공지사항' or similar, or just all posts)
+        announcements = []
+        notice_board = db.query(Board).filter(Board.course_id == course.id, Board.title.like('%공지%')).first()
+        if notice_board:
+            announcements = db.query(Post).filter(Post.board_id == notice_board.id).limit(5).all()
+            
+        summary_text = ai_service.generate_course_summary(course.name, announcements, assignments, vods)
+        
+        summaries.append({
+            "course_id": course.id,
+            "course_name": course.name,
+            "summary": summary_text
+        })
+        
+    return {"summaries": summaries}
+
+class WatchVodsRequest(BaseModel):
+    vod_ids: List[int]
+
+@app.post("/vod/watch")
+def watch_vods(request: WatchVodsRequest, db: Session = Depends(get_db)):
+    """
+    Marks VODs as completed.
+    """
+    count = 0
+    for vod_id in request.vod_ids:
+        vod = db.query(VOD).filter(VOD.id == vod_id).first()
+        if vod:
+            vod.is_completed = True
+            count += 1
+    
+    db.commit()
+    return {"status": "success", "updated_count": count}
+
+class CompleteAssignmentsRequest(BaseModel):
+    assignment_ids: List[int]
+
+@app.post("/assignment/complete")
+def complete_assignments(request: CompleteAssignmentsRequest, db: Session = Depends(get_db)):
+    """
+    Marks Assignments as completed.
+    """
+    count = 0
+    for assign_id in request.assignment_ids:
+        assignment = db.query(Assignment).filter(Assignment.id == assign_id).first()
+        if assignment:
+            assignment.is_completed = True
+            count += 1
+            
+    db.commit()
+    return {"status": "success", "updated_count": count}
 
 if __name__ == "__main__":
     import uvicorn

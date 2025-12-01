@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Add parent directory to path to import moodle_client
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from moodle_client import MoodleClient
 
 client = MoodleClient("https://ys.learnus.org", session_file='session.json')
@@ -9,6 +15,6 @@ try:
     response.raise_for_status()
     with open("assignment_277509.html", "w", encoding="utf-8") as f:
         f.write(response.text)
-    print("Saved to assignment_277509.html")
+    print("assignment_277509.html")
 except Exception as e:
     print(f"Error: {e}")

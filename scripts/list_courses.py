@@ -1,10 +1,13 @@
-import logging
-from moodle_client import MoodleClient
-import json
+import requests
 import sys
+import os
+import json
+import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Add parent directory to path to import moodle_client
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from moodle_client import MoodleClient
 sys.stdout.reconfigure(encoding='utf-8')
 
 def list_courses():

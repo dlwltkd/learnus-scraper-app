@@ -28,8 +28,10 @@ class MoodleClient:
                 self.sesskey = data.get('sesskey')
                 self.session.cookies.update(self.cookies)
                 self.logger.info("Session loaded from file.")
+                return True
         except Exception as e:
             self.logger.error(f"Failed to load session: {e}")
+            return False
 
     def login(self, username, password):
         """
@@ -189,6 +191,38 @@ class MoodleClient:
             self.logger.error(f"Failed to get assignments for course {course_id}: {e}")
             raise
 
+    def _get_quiz_details(self, quiz_url):
+        """
+        Fetches the quiz page to extract the deadline and completion status.
+        Returns a dict: {'deadline': str|None, 'is_completed': bool}
+        """
+        result = {'deadline': None, 'is_completed': False}
+        try:
+            self.logger.info(f"Fetching quiz details from: {quiz_url}")
+            response = self.session.get(quiz_url)
+            response.raise_for_status()
+            html = response.text
+            
+            # 1. Extract Deadline
+            # Pattern: 종료일시 : 2025-09-20 23:59
+            match = re.search(r'종료일시\s*:\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})', html)
+            if match:
+                result['deadline'] = match.group(1)
+                
+            # 2. Extract Completion Status
+            # Look for "종료됨" (Finished) or "제출됨" (Submitted) in the summary table
+            # <td class="cell c0" ...>종료됨<span class="statedetails">...제출됨</span></td>
+            if '종료됨' in html or '제출됨' in html or '마감됨' in html:
+                result['is_completed'] = True
+            # Also check for "최종 점수" (Final grade)
+            elif '최종 점수' in html or 'Final grade' in html:
+                result['is_completed'] = True
+                
+            return result
+        except Exception as e:
+            self.logger.error(f"Failed to fetch quiz details: {e}")
+            return result
+
     def get_course_contents(self, course_id):
         """
         Scrapes all resources (assignments, files, boards, vods) for a specific course.
@@ -248,6 +282,11 @@ class MoodleClient:
                     category = 'boards'
                 elif 'modtype_vod' in activity_type_str:
                     category = 'vods'
+                elif 'modtype_quiz' in activity_type_str or 'quiz' in activity_type_str:
+                    # Treat quizzes as assignments for now
+                    category = 'assignments'
+                else:
+                    self.logger.debug(f"Unknown activity type: {activity_type_str} (ID: {module_id})")
                 
                 if category:
                     # Extract Name
@@ -295,6 +334,17 @@ class MoodleClient:
                         if date_match:
                             item_data['start_date'] = date_match.group(1)
                             item_data['end_date'] = date_match.group(2)
+                    elif 'modtype_quiz' in activity_type_str or 'quiz' in activity_type_str:
+                        quiz_details = self._get_quiz_details(item_url)
+                        item_data['deadline'] = quiz_details['deadline']
+                        # Override completion status if confirmed by quiz page
+                        if quiz_details['is_completed']:
+                            item_data['is_completed'] = True
+                            
+                        date_match = re.search(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*~\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', inner_html)
+                        if date_match:
+                            item_data['start_date'] = date_match.group(1)
+                            item_data['end_date'] = date_match.group(2)
                         else:
                             item_data['start_date'] = None
                             item_data['end_date'] = None
@@ -307,7 +357,7 @@ class MoodleClient:
                         # English: Due: Friday, 12 October 2025, 11:59 PM
                         # Korean: 마감: 2025년 10월 12일 (금) 23:59
                         
-                        due_match = re.search(r'(?:Due:|due is|deadline is|마감:|일시:)\s*([^<]+)', inner_html, re.IGNORECASE)
+                        due_match = re.search(r'(?:Due:|due is|deadline is|마감:|일시:|종료일시:)\s*([^<]+)', inner_html, re.IGNORECASE)
                         if due_match:
                             item_data['deadline_text'] = due_match.group(1).strip()
                         else:
@@ -495,7 +545,7 @@ class MoodleClient:
             assign.url = item['url']
             assign.is_completed = item['is_completed']
             
-            deadline = item.get('deadline_text')
+            deadline = item.get('deadline') or item.get('deadline_text')
             
             # If deadline is missing, try deep scraping
             if not deadline and item['url']:
@@ -566,3 +616,206 @@ class MoodleClient:
         summary = f"Synced course {course_id}: {len(contents['announcements'])} announcements, {len(contents['assignments'])} assigns, {len(contents['files'])} files, {len(contents['boards'])} boards, {len(contents['vods'])} vods."
         self.logger.info(summary)
         return summary
+
+    def parse_progress_args(self, html):
+        """
+        Extracts arguments from the amd.progress(...) call in the HTML.
+        """
+        # Look for amd.progress(...)
+        match = re.search(r'amd\.progress\((.*?)\);', html, re.DOTALL)
+        if not match:
+            return None
+        
+        args_str = match.group(1)
+        
+        # Convert JS literals to Python literals
+        args_str = args_str.replace('true', 'True').replace('false', 'False')
+        # Fix escaped slashes which might cause SyntaxWarning in ast.literal_eval
+        args_str = args_str.replace(r'\/', '/')
+        
+        # Wrap in brackets to parse as a list
+        try:
+            import ast
+            args = ast.literal_eval(f"[{args_str}]")
+            return args
+        except Exception as e:
+            self.logger.error(f"Failed to parse arguments: {e}")
+            return None
+
+    def watch_vod(self, vod_id, speed=1.0):
+        """
+        Simulates watching a VOD.
+        speed: Speed multiplier (default 1.0). 
+               IMPORTANT: Moodle may reject logs if speed > 1.0 (cheating protection).
+               Use 1.0 for reliable attendance credit.
+        """
+        import time
+        viewer_url = f"{self.base_url}/mod/vod/viewer.php?id={vod_id}"
+        self.logger.info(f"Fetching VOD viewer: {viewer_url}")
+        
+        try:
+            response = self.session.get(viewer_url)
+            response.raise_for_status()
+            html = response.text
+            
+            args = self.parse_progress_args(html)
+            if not args:
+                self.logger.error(f"Could not find amd.progress call. URL: {response.url}")
+                # self.logger.error(f"HTML Preview: {html[:500]}...")
+                return False
+                
+            # Map arguments based on mod_vod.js analysis
+            # function(d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z,A,B,C)
+            # Indices:
+            # 0: vodTagID (d)
+            # 1: isProgress (e)
+            # 5: isProgressPeriodCheck (i)
+            # 6: courseid (j)
+            # 7: cmid (k)
+            # 8: trackid (l)
+            # 9: attempt (m)
+            # 10: duration? (n) - Let's assume this is duration or max time
+            # 12: intervalSecond (p)
+            # 17: beforeProgress (u)
+            # 22: logtime (z)
+            
+            vodTagID = args[0]
+            isProgress = args[1]
+            isProgressPeriodCheck = args[5]
+            courseid = args[6]
+            cmid = args[7]
+            trackid = args[8]
+            attempt = args[9]
+            duration = int(args[10]) # n seems to be total duration (seconds)
+            interval_ms = args[12]   # p seems to be interval (milliseconds, e.g. 60000)
+            
+            # Convert interval to seconds for local simulation logic
+            interval_seconds = interval_ms / 1000.0
+            
+            beforeProgress = args[17]
+            logtime = args[22]
+            
+            # Handle zero duration (common with YouTube embeds or errors)
+            if duration == 0:
+                self.logger.warning(f"VOD {vod_id} has duration 0. Defaulting to 15 minutes (900s) for simulation.")
+                duration = 900
+            
+            self.logger.info(f"VOD Info: ID={vodTagID}, Course={courseid}, CMID={cmid}, TrackID={trackid}, Duration={duration}s, Interval={interval_ms}ms ({interval_seconds}s)")
+            
+            if not isProgress:
+                self.logger.warning("Progress tracking is disabled for this VOD.")
+                return False
+                
+            action_url = f"{self.base_url}/mod/vod/action.php"
+            
+            # 1. Initial Track (c.trackForWindow(3, 0))
+            self.logger.info("Sending initial track request...")
+            payload_init = {
+                'type': 'vod_track_for_onwindow',
+                'track': trackid,
+                'state': 3, # Start
+                'position': 0,
+                'attempts': attempt,
+                'interval': interval_ms
+            }
+            self.session.post(action_url, data=payload_init)
+            
+            # 2. Initial Log (c.ajax("1", 0, 0))
+            self.logger.info("Sending initial log request...")
+            payload_log_start = {
+                'courseid': courseid,
+                'cmid': cmid,
+                'type': 'vod_log',
+                'track': trackid,
+                'attempt': attempt,
+                'state': 1, # Start
+                'positionfrom': 0,
+                'positionto': 0,
+                'logtime': logtime
+            }
+            self.session.post(action_url, data=payload_log_start)
+            
+            # 3. Simulate Watching with Intervals
+            current_position = 0
+            
+            # Calculate sleep time based on seconds
+            # Ensure we don't sleep less than 1 second to avoid tight loops if interval is weird
+            safe_interval_seconds = max(interval_seconds, 1.0)
+            
+            sleep_time = safe_interval_seconds / speed
+            
+            self.logger.info(f"Simulating intervals every {safe_interval_seconds}s (Sleep: {sleep_time:.2f}s)...")
+            
+            while current_position < duration:
+                # Sleep first to simulate time passing
+                time.sleep(sleep_time)
+                
+                current_position += safe_interval_seconds
+                if current_position > duration:
+                    current_position = duration
+                
+                # State 8: Interval Log (c.ajax("8", current, current))
+                payload_log_interval = {
+                    'courseid': courseid,
+                    'cmid': cmid,
+                    'type': 'vod_log',
+                    'track': trackid,
+                    'attempt': attempt,
+                    'state': 8, # Interval
+                    'positionfrom': current_position,
+                    'positionto': current_position,
+                    'logtime': logtime
+                }
+                self.session.post(action_url, data=payload_log_interval)
+                
+                # Also send State 99 as seen in the code: c.trackForWindow(99, l.current)
+                payload_track_99 = {
+                    'type': 'vod_track_for_onwindow',
+                    'track': trackid,
+                    'state': 99,
+                    'position': current_position,
+                    'attempts': attempt,
+                    'interval': interval_ms
+                }
+                self.session.post(action_url, data=payload_track_99)
+                
+            # 4. Final Completion (c.trackForWindow(5, duration))
+            self.logger.info(f"Sending completion request for duration {duration}...")
+            payload_complete = {
+                'type': 'vod_track_for_onwindow',
+                'track': trackid,
+                'state': 5, # Complete
+                'position': duration,
+                'attempts': attempt,
+                'interval': interval_ms
+            }
+            res = self.session.post(action_url, data=payload_complete)
+            self.logger.info(f"Completion response: {res.text}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error watching VOD: {e}")
+            return False
+
+    def save_session(self, filename=None):
+        """
+        Saves the current session cookies and sesskey to a file.
+        """
+        if filename is None:
+            filename = self.session_file
+            
+        if not filename:
+            return
+            
+        data = {
+            'cookies': self.session.cookies.get_dict(),
+            'sesskey': self.sesskey
+        }
+        
+        try:
+            with open(filename, 'w') as f:
+                json.dump(data, f)
+            self.logger.info(f"Session saved to {filename}")
+        except Exception as e:
+            self.logger.error(f"Failed to save session: {e}")
