@@ -32,28 +32,22 @@ class AIService:
         }
 
         prompt = f"""
-        You are a smart academic assistant for a student. Analyze the following data for the course "{course_name}" and provide a concise status summary in Korean.
+        You are a smart academic assistant. Analyze the data for the course "{course_name}" and provide a brief, helpful status update in Korean.
 
         Data:
         {json.dumps(data_context, ensure_ascii=False, default=str)}
 
         Instructions:
-        1. **Correlate Information**: If an announcement is about a specific assignment or VOD, mention the announcement's key details next to that item.
-        2. **Status Update**: Briefly state the current status of the class.
-        3. **Action Items**: Clearly list what needs to be done (upcoming deadlines, unwatched VODs).
-        4. **Format**: Use a clean, bulleted format.
-        5. **Language**: Korean (Honorifics: 해요체).
+        0. You must take in all the data for the class, organize it in the way best for the user to understand
+         and provide a detailed status update in an organized manner.
+        Summarize Announcements, Assignments, and VODs(동영상 강의) in a concise but detailed manner. 
+        1. **Summary**: 
+        2. **Key Items**: List the most critical 1-3 items (deadlines within 7 days, unwatched VODs).
+        3. **Tone**: Encouraging and professional (Korean, Honorifics: 해요체).
+        4. **Format**: Keep it very concise. Do not use Markdown headers like ##. Use bolding for emphasis.
 
-        Output Format (Example):
-        ## 📘 {course_name}
-        **📢 주요 공지**
-        - [공지 요약] (관련 과제/강의 언급)
 
-        **📝 해야 할 일**
-        - [과제/강의 명] (~12/05 마감) - [상태: 미완료/진행중]
         
-        **💡 한줄 요약**
-        [전체적인 상황 요약]
         """
 
         try:

@@ -14,6 +14,10 @@ class MoodleClient:
         self.logger = logging.getLogger(__name__)
         
         self.session = requests.Session()
+        # Set a browser-like User-Agent
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        })
         self.cookies = {}
         self.sesskey = None
         
@@ -27,11 +31,29 @@ class MoodleClient:
                 self.cookies = data.get('cookies', {})
                 self.sesskey = data.get('sesskey')
                 self.session.cookies.update(self.cookies)
+                
+                # Verify and refresh sesskey if possible
+                self.refresh_sesskey()
+                
                 self.logger.info("Session loaded from file.")
                 return True
         except Exception as e:
             self.logger.error(f"Failed to load session: {e}")
             return False
+
+    def refresh_sesskey(self):
+        """
+        Fetches the main page to extract a fresh sesskey.
+        """
+        try:
+            response = self.session.get(self.base_url, timeout=10)
+            if response.status_code == 200:
+                new_sesskey = self.get_sesskey(response.text)
+                if new_sesskey:
+                    self.sesskey = new_sesskey
+                    self.logger.info(f"Refreshed sesskey: {self.sesskey}")
+        except Exception as e:
+            self.logger.warning(f"Failed to refresh sesskey: {e}")
 
     def login(self, username, password):
         """
@@ -117,11 +139,12 @@ class MoodleClient:
             
             # Regex to find course links
             # Pattern: href=".../course/user.php?mode=grade&id=(\d+)&user=..."
-            course_links = re.findall(r'href="[^"]*course/user\.php\?mode=grade&amp;id=(\d+)&amp;user=\d+"[^>]*>(.*?)</a>', html)
+            # We relax it to capture any course/user.php link with id
+            course_links = re.findall(r'href="[^"]*course/user\.php\?.*?id=(\d+).*?"[^>]*>(.*?)</a>', html)
             
             if not course_links:
-                 # Fallback pattern
-                 course_links = re.findall(r'id=(\d+)&amp;user=\d+"[^>]*>(.*?)</a>', html)
+                 # Fallback pattern for simple course view links if grade report structure changed
+                 course_links = re.findall(r'href="[^"]*course/view\.php\?id=(\d+)"[^>]*>(.*?)</a>', html)
             
             courses = []
             seen_ids = set()
@@ -237,7 +260,12 @@ class MoodleClient:
             html = response.text
             
             # Check if we were redirected to login
-            if "login/index.php" in response.url or '<form action="https://ys.learnus.org/login/index.php"' in html or "Log in to the site" in html:
+            # Check if we were redirected to login
+            if "login/index.php" in response.url or \
+               '<form action="https://ys.learnus.org/login/index.php"' in html or \
+               "Log in to the site" in html or \
+               "coursemosLoginHook.php" in html or \
+               "notloggedin" in html:
                 raise Exception("Session expired or invalid. Please login again.")
             
             contents = {

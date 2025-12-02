@@ -222,6 +222,9 @@ def login(request: LoginCookieRequest):
                 key, value = item.strip().split('=', 1)
                 cookies[key] = value
         
+        # Update the client's session with the new cookies
+        client.session.cookies.update(cookies)
+        
         # If valid, save it
         import os
         abs_path = os.path.abspath('session.json')
@@ -377,15 +380,12 @@ def get_dashboard_overview(db: Session = Depends(get_db)):
         if dt_end and dt_end < now:
             if not v.is_completed:
                 missed_vods.append(v)
-            # If completed and past, we hide it (don't add to missed)
+            # If completed and past, we hide it (it's done and over)
         elif dt_start and dt_start > now:
             # Future VODs
             upcoming_vods.append(v)
         else:
-            # This includes both unwatched and completed (but valid) vods
-            # And ensures they have started
-            # If user wants to hide completed current VODs from "Available", we would check here.
-            # But previous request was to show them.
+            # Current valid VODs (both watched and unwatched)
             unwatched_vods.append(v)
             
     # Sort by date
@@ -548,20 +548,51 @@ def get_ai_summary(db: Session = Depends(get_db)):
 class WatchVodsRequest(BaseModel):
     vod_ids: List[int]
 
-@app.post("/vod/watch")
-def watch_vods(request: WatchVodsRequest, db: Session = Depends(get_db)):
+def process_vod_watching(vod_ids: List[int], db: Session):
     """
-    Marks VODs as completed.
+    Background task to watch VODs and verify completion.
     """
-    count = 0
-    for vod_id in request.vod_ids:
+    logger.info(f"Starting background VOD watching for {len(vod_ids)} items...")
+    
+    # Group by course to minimize sync calls
+    vods_by_course = {}
+    for vod_id in vod_ids:
         vod = db.query(VOD).filter(VOD.id == vod_id).first()
         if vod:
-            vod.is_completed = True
-            count += 1
+            if vod.course_id not in vods_by_course:
+                vods_by_course[vod.course_id] = []
+            vods_by_course[vod.course_id].append(vod)
+            
+    for course_id, vods in vods_by_course.items():
+        for vod in vods:
+            try:
+                logger.info(f"Watching VOD {vod.id} ({vod.title})...")
+                success = client.watch_vod(vod.id)
+                if success:
+                    logger.info(f"VOD {vod.id} watched successfully.")
+                else:
+                    logger.warning(f"VOD {vod.id} watch failed or returned False.")
+            except Exception as e:
+                logger.error(f"Error watching VOD {vod.id}: {e}")
+        
+        # Sync course to verify
+        try:
+            logger.info(f"Syncing course {course_id} to verify status...")
+            client.sync_course_to_db(course_id, db)
+        except Exception as e:
+            logger.error(f"Error syncing course {course_id}: {e}")
+            
+    logger.info("Background VOD watching completed.")
+
+@app.post("/vod/watch")
+def watch_vods(request: WatchVodsRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    Queues VODs for watching in the background.
+    """
+    # Just queue the task
+    background_tasks.add_task(process_vod_watching, request.vod_ids, db)
     
-    db.commit()
-    return {"status": "success", "updated_count": count}
+    return {"status": "success", "message": "VOD watching started in background"}
 
 class CompleteAssignmentsRequest(BaseModel):
     assignment_ids: List[int]
