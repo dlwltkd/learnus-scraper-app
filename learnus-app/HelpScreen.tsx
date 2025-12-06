@@ -83,178 +83,163 @@ export default function HelpScreen() {
                 <View style={styles.group}>
                     <View style={styles.textBox}>
                         <View style={styles.disclaimerItem}>
-                            <Ionicons name="alert-circle" size={16} color={Colors.textSecondary} style={{ marginTop: 2 }} />
-                            <Text style={styles.disclaimerText}>
-                                본 서비스는 연세대학교 공식 앱이 아니며, 학교 측의 공식적인 지원을 받지 않습니다.
-                            </Text>
-                        </View>
-                        <View style={[styles.disclaimerItem, { marginTop: 8 }]}>
-                            <Ionicons name="shield-checkmark" size={16} color={Colors.textSecondary} style={{ marginTop: 2 }} />
-                            <Text style={styles.disclaimerText}>
-                                모든 데이터는 사용자 기기에만 저장되며 외부 서버로 전송되지 않습니다.
-                            </Text>
-                        </View>
-                    </View>
-                </View>
+                            <SectionHeader title="더 보기" />
+                            <View style={styles.group}>
+                                <ActionRow
+                                    icon="logo-github"
+                                    label="오픈소스 라이선스 확인"
+                                    onPress={handleGithub}
+                                />
+                                <ActionRow
+                                    icon="mail"
+                                    label="개발자에게 문의하기"
+                                    onPress={handleContact}
+                                    isLast
+                                />
+                            </View>
 
-                {/* Links */}
-                <SectionHeader title="더 보기" />
-                <View style={styles.group}>
-                    <ActionRow
-                        icon="logo-github"
-                        label="오픈소스 라이선스 확인"
-                        onPress={handleGithub}
-                    />
-                    <ActionRow
-                        icon="mail"
-                        label="개발자에게 문의하기"
-                        onPress={handleContact}
-                        isLast
-                    />
-                </View>
+                            {/* Copyright */}
+                            <View style={styles.footer}>
+                                <Text style={styles.footerText}>Designed & Developed by Yonsei Students</Text>
+                                <Text style={styles.footerCopyright}>Copyright © 2024 LearnUs Connect Team</Text>
+                            </View>
 
-                {/* Copyright */}
-                <View style={styles.footer}>
-                    <Text style={styles.footerText}>Designed & Developed by Yonsei Students</Text>
-                    <Text style={styles.footerCopyright}>Copyright © 2024 LearnUs Connect Team</Text>
-                </View>
-
-            </ScrollView>
-        </SafeAreaView>
-    );
+                        </ScrollView>
+                    </SafeAreaView>
+                    );
 }
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#F2F4F6',
+                    const styles = StyleSheet.create({
+                        container: {
+                        flex: 1,
+                    backgroundColor: '#F2F4F6',
     },
-    content: {
-        paddingHorizontal: Spacing.l,
-        paddingBottom: Spacing.xxl,
+                    content: {
+                        paddingHorizontal: Spacing.l,
+                    paddingBottom: Spacing.xxl,
     },
-    hero: {
-        alignItems: 'center',
-        paddingVertical: Spacing.xl,
-        marginBottom: Spacing.s,
+                    hero: {
+                        alignItems: 'center',
+                    paddingVertical: Spacing.xl,
+                    marginBottom: Spacing.s,
     },
-    logoBadge: {
-        width: 80,
-        height: 80,
-        borderRadius: 22,
-        backgroundColor: Colors.primary,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: Spacing.m,
-        shadowColor: Colors.primary,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-        elevation: 8,
+                    logoBadge: {
+                        width: 80,
+                    height: 80,
+                    borderRadius: 22,
+                    backgroundColor: Colors.primary,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: Spacing.m,
+                    shadowColor: Colors.primary,
+                    shadowOffset: {width: 0, height: 8 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 12,
+                    elevation: 8,
     },
-    appName: {
-        fontSize: 24,
-        fontWeight: '700',
-        color: Colors.textPrimary,
-        marginBottom: 4,
-        letterSpacing: -0.5,
+                    appName: {
+                        fontSize: 24,
+                    fontWeight: '700',
+                    color: Colors.textPrimary,
+                    marginBottom: 4,
+                    letterSpacing: -0.5,
     },
-    version: {
-        fontSize: 14,
-        color: Colors.textSecondary,
-        fontWeight: '500',
+                    version: {
+                        fontSize: 14,
+                    color: Colors.textSecondary,
+                    fontWeight: '500',
     },
-    sectionHeader: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: Colors.textSecondary,
-        marginBottom: Spacing.s,
-        marginLeft: Spacing.xs,
-        marginTop: Spacing.m,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
+                    sectionHeader: {
+                        fontSize: 13,
+                    fontWeight: '600',
+                    color: Colors.textSecondary,
+                    marginBottom: Spacing.s,
+                    marginLeft: Spacing.xs,
+                    marginTop: Spacing.m,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
     },
-    group: {
-        backgroundColor: Colors.surface,
-        borderRadius: 16,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.02)',
-        ...Layout.shadow.sm,
+                    group: {
+                        backgroundColor: Colors.surface,
+                    borderRadius: 16,
+                    overflow: 'hidden',
+                    borderWidth: 1,
+                    borderColor: 'rgba(0,0,0,0.02)',
+                    ...Layout.shadow.sm,
     },
-    textBox: {
-        padding: Spacing.m,
+                    textBox: {
+                        padding: Spacing.m,
     },
-    text: {
-        fontSize: 15,
-        lineHeight: 24,
-        color: Colors.textPrimary,
+                    text: {
+                        fontSize: 15,
+                    lineHeight: 24,
+                    color: Colors.textPrimary,
     },
-    disclaimerItem: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: 8,
+                    disclaimerItem: {
+                        flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    gap: 8,
     },
-    disclaimerText: {
-        fontSize: 14,
-        lineHeight: 20,
-        color: Colors.textSecondary,
-        flex: 1,
+                    disclaimerText: {
+                        fontSize: 14,
+                    lineHeight: 20,
+                    color: Colors.textSecondary,
+                    flex: 1,
     },
-    row: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: 16,
-        backgroundColor: Colors.surface,
-        position: 'relative',
+                    row: {
+                        flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: 16,
+                    backgroundColor: Colors.surface,
+                    position: 'relative',
     },
-    separator: {
-        position: 'absolute',
-        bottom: 0,
-        left: 52, // Indent divider to line up with text (Icon width 32 + gap 12 + extra padding)
-        right: 0,
-        height: 1,
-        backgroundColor: Colors.border,
+                    separator: {
+                        position: 'absolute',
+                    bottom: 0,
+                    left: 52, // Indent divider to line up with text (Icon width 32 + gap 12 + extra padding)
+                    right: 0,
+                    height: 1,
+                    backgroundColor: Colors.border,
     },
-    rowLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
+                    rowLeft: {
+                        flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
     },
-    iconContainer: {
-        width: 32,
-        height: 32,
-        borderRadius: 8,
-        backgroundColor: Colors.surfaceHighlight,
-        alignItems: 'center',
-        justifyContent: 'center',
+                    iconContainer: {
+                        width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    backgroundColor: Colors.surfaceHighlight,
+                    alignItems: 'center',
+                    justifyContent: 'center',
     },
-    destructiveIcon: {
-        backgroundColor: '#FFF0F0',
+                    destructiveIcon: {
+                        backgroundColor: '#FFF0F0',
     },
-    rowLabel: {
-        fontSize: 16,
-        color: Colors.textPrimary,
-        fontWeight: '500',
+                    rowLabel: {
+                        fontSize: 16,
+                    color: Colors.textPrimary,
+                    fontWeight: '500',
     },
-    rowValue: {
-        fontSize: 15,
-        color: Colors.textSecondary,
+                    rowValue: {
+                        fontSize: 15,
+                    color: Colors.textSecondary,
     },
-    footer: {
-        marginTop: Spacing.xl,
-        alignItems: 'center',
-        paddingBottom: Spacing.l,
+                    footer: {
+                        marginTop: Spacing.xl,
+                    alignItems: 'center',
+                    paddingBottom: Spacing.l,
     },
-    footerText: {
-        fontSize: 13,
-        fontWeight: '600',
-        color: Colors.textTertiary,
-        marginBottom: 4,
+                    footerText: {
+                        fontSize: 13,
+                    fontWeight: '600',
+                    color: Colors.textTertiary,
+                    marginBottom: 4,
     },
-    footerCopyright: {
-        fontSize: 11,
-        color: Colors.textTertiary,
+                    footerCopyright: {
+                        fontSize: 11,
+                    color: Colors.textTertiary,
     },
 });
