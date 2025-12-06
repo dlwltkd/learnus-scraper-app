@@ -116,7 +116,7 @@ export default function HelpScreen() {
                 {/* Copyright */}
                 <View style={styles.footer}>
                     <Text style={styles.footerText}>기획 및 개발 : 연세대학교 인공지능학과 24학번 이지상</Text>
-                    <Text style={styles.footerCopyright}>Copyright © 2024 Jisang Lee</Text>
+                    <Text style={styles.footerCopyright}>Copyright © 2025 이지상</Text>
                 </View>
 
             </ScrollView>

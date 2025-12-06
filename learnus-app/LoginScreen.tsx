@@ -84,8 +84,7 @@ export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutCo
         if (data && data.includes('MoodleSession') && !data.includes('MoodleSession=deleted')) {
             // Found a session cookie, exchange for API Token
             try {
-                // Prevent multiple calls
-                if (loading) return;
+
 
                 const result = await loginWithCookies(data);
                 if (result.status === 'success' && result.api_token) {
