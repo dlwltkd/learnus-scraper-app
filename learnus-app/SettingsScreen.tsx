@@ -42,7 +42,7 @@ export default function SettingsScreen() {
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>계정</Text>
                 <View style={styles.card}>
-                    <SettingItem icon="person-outline" title="내 정보" onPress={() => { }} />
+                    <SettingItem icon="person-outline" title="내 정보" onPress={() => Alert.alert("알림", "내 정보 기능은 현재 개발 중입니다.")} />
                     <View style={styles.divider} />
                     <SettingItem
                         icon="notifications-outline"
