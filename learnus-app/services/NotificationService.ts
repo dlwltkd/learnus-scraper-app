@@ -78,7 +78,7 @@ async function scheduleReminder(title: string, body: string, triggerDate: Date) 
                 body,
                 sound: true,
             },
-            trigger: triggerDate,
+            trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
         });
         // console.log(`Scheduled: ${title} at ${triggerDate.toLocaleString()}`);
     } catch (e) {
