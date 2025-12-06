@@ -53,6 +53,7 @@ vod_tracking_status.txt
 *.html
 temp_data/
 scripts/
+error_log/
 api_debug.log
 
 # Debug and Test Scripts
