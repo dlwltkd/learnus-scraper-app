@@ -23,6 +23,7 @@ import { Colors } from './constants/theme';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 import { getDashboardOverview } from './services/api';
+import { registerForPushNotificationsAsync, registerBackgroundFetchAsync, unregisterBackgroundFetchAsync } from './services/NotificationService';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -194,6 +195,16 @@ function AppContent() {
 }
 
 export default function App() {
+  React.useEffect(() => {
+    registerForPushNotificationsAsync();
+    registerBackgroundFetchAsync();
+
+    return () => {
+      // Optional: Unregister if desired, but usually we want background fetch to persist
+      // unregisterBackgroundFetchAsync();
+    };
+  }, []);
+
   return (
     <AuthProvider>
       <AppContent />

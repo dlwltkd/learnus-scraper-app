@@ -67,18 +67,112 @@ function getTimeOffset(setting: string): number {
     }
 }
 
+// Helper to schedule a notification for a specific date
+async function scheduleReminder(title: string, body: string, triggerDate: Date) {
+    if (triggerDate <= new Date()) return; // Don't schedule for past
+
+    try {
+        await Notifications.scheduleNotificationAsync({
+            content: {
+                title,
+                body,
+                sound: true,
+            },
+            trigger: triggerDate,
+        });
+        // console.log(`Scheduled: ${title} at ${triggerDate.toLocaleString()}`);
+    } catch (e) {
+        console.log("Failed to schedule notification", e);
+    }
+}
+
 async function checkAndScheduleNotifications() {
     try {
         const settings = await getSettings();
         if (!settings) return BackgroundFetch.BackgroundFetchResult.NoData;
 
-        // TODO: Add notification scheduling logic here using getDashboardOverview and fetchAISummary
+        // Fetch latest data
+        // Note: usage of getDashboardOverview might fail if auth token is not persistent/valid in background
+        // However, assuming token is in memory or handled by api.ts interceptors/storage
+        const data = await getDashboardOverview();
+        if (!data) return BackgroundFetch.BackgroundFetchResult.Failed;
+
+        // Cancel existing to avoid duplicates (Reschedule strategy)
+        await Notifications.cancelAllScheduledNotificationsAsync();
+
+        const now = new Date();
+
+        // 1. Assignments
+        const assignments = data.upcoming_assignments || [];
+        // Map settings to milliseconds
+        const unfinishedOffsets = (settings.unfinishedAssignments || []).map(getTimeOffset);
+        const finishedOffsets = (settings.finishedAssignments || []).map(getTimeOffset);
+
+        for (const a of assignments) {
+            const dueDate = new Date(a.due_date);
+            if (isNaN(dueDate.getTime())) continue;
+
+            const offsets = a.is_completed ? finishedOffsets : unfinishedOffsets;
+
+            for (const offset of offsets) {
+                if (offset === 0) continue;
+                const fireDate = new Date(dueDate.getTime() - offset);
+                // Simple body text
+                const status = a.is_completed ? "(제출됨)" : "(미제출)";
+                scheduleReminder(
+                    `과제 마감 알림 ${status}`,
+                    `'${a.title}' 과제가 곧 마감됩니다. (${a.course_name})`,
+                    fireDate
+                );
+            }
+        }
+
+        // 2. VODs (Video Lectures)
+        const vods = data.upcoming_vods || []; // or available_vods? 'upcoming_vods' usually means future start.
+        // We probably want to remind about 'end_date' (closing) for available/unfinished vods
+        // Let's look at available_vods + upcoming_vods + unchecked_vods
+        // For 'closing', we care about 'end_date'
+
+        // combine relevant lists
+        const allVods = [...(data.available_vods || []), ...(data.unchecked_vods || [])];
+        const vodOffsets = (settings.unfinishedVods || []).map(getTimeOffset);
+
+        for (const v of allVods) {
+            if (v.is_completed) continue; // Only care about unfinished for now? Setting name is 'unfinishedVods'
+
+            // For VODs, we typically remind before 'end_date'
+            if (!v.end_date) continue;
+            const endDate = new Date(v.end_date);
+            if (isNaN(endDate.getTime())) continue;
+
+            for (const offset of vodOffsets) {
+                if (offset === 0) continue;
+                const fireDate = new Date(endDate.getTime() - offset);
+                scheduleReminder(
+                    `강의 출석 마감 임박`,
+                    `'${v.title}' 강의 수강이 곧 마감됩니다. (${v.course_name})`,
+                    fireDate
+                );
+            }
+        }
+
+        // 3. AI Summary (Optional - mostly for new notices)
+        if (settings.aiSummary) {
+            // AI Summary fetch might be expensive, maybe skip for background task 
+            // or check if there are *new* items. 
+            // For now, let's keep it simple and just do assignment/vod reminders.
+        }
 
         return BackgroundFetch.BackgroundFetchResult.NewData;
     } catch (e) {
-        console.error("Background fetch failed", e);
+        console.error("Background notify failed", e);
         return BackgroundFetch.BackgroundFetchResult.Failed;
     }
+}
+
+// Helper for immediate test (can be called from UI)
+export async function testScheduleNotification() {
+    await scheduleReminder("테스트 알림", "5초 후 알림이 도착합니다.", new Date(Date.now() + 5000));
 }
 
 async function scheduleNotification(title: string, body: string) {
@@ -95,10 +189,11 @@ async function scheduleNotification(title: string, body: string) {
 TaskManager.defineTask(BACKGROUND_FETCH_TASK, checkAndScheduleNotifications);
 
 export async function registerBackgroundFetchAsync() {
+    // Register background fetch
     return BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
-        minimumInterval: 15 * 60, // 15 minutes
-        stopOnTerminate: false, // android only,
-        startOnBoot: true, // android only
+        minimumInterval: 60 * 60, // 1 hour (minimize battery usage, we schedule ahead anyway)
+        stopOnTerminate: false,
+        startOnBoot: true,
     });
 }
 
