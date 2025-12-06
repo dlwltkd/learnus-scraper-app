@@ -1,5 +1,6 @@
 {
   "name": "learnus-app",
+  "description": "LearnUs Connect App",
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
