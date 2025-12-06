@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "learnus-app",
-    "slug": "learnus-app",
+    "name": "LearnUs Connect",
+    "slug": "learnus-connect",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,7 +13,8 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jisang.learnusconnect"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,10 +23,24 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.learnusapp"
+      "package": "com.jisang.learnusconnect",
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "WAKE_LOCK"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-notifications",
+      "expo-background-fetch",
+      "expo-task-manager"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6f9973b8-aa89-4c5f-b0d8-9f46f8960f70"
+      }
     }
   }
 }
