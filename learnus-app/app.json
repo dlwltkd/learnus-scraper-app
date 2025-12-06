@@ -27,7 +27,8 @@
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "WAKE_LOCK"
-      ]
+      ],
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"
