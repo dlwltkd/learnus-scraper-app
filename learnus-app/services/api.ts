@@ -2,7 +2,9 @@ import axios from 'axios';
 
 // Use localhost for local development (or configure via .env in a real setup)
 // Note: Android Emulator uses 10.0.2.2 to access host localhost.
-const API_URL = 'http://localhost:8000';
+// To use env vars, you would typically use 'react-native-dotenv' or 'expo-constants'
+// For this public repo, we default to localhost.
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
     baseURL: API_URL,
