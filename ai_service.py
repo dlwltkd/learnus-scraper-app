@@ -32,22 +32,33 @@ class AIService:
         }
 
         prompt = f"""
-        You are a smart academic assistant. Analyze the data for the course "{course_name}" and provide a brief, helpful status update in Korean.
+        You are a proactive academic coach helping a student stay on top of their coursework. 
+        Analyze the data for the course "{course_name}" and provide a structured status update in Korean.
 
         Data:
         {json.dumps(data_context, ensure_ascii=False, default=str)}
 
-        Instructions:
-        0. You must take in all the data for the class, organize it in the way best for the user to understand
-         and provide a detailed status update in an organized manner.
-        Summarize Announcements, Assignments, and VODs(동영상 강의) in a concise but detailed manner. 
-        1. **Summary**: 
-        2. **Key Items**: List the most critical 1-3 items (deadlines within 7 days, unwatched VODs).
-        3. **Tone**: Encouraging and professional (Korean, Honorifics: 해요체).
-        4. **Format**: Keep it very concise. Do not use Markdown headers like ##. Use bolding for emphasis.
-
-
+        **Instructions:**
+        1. **Analyze Priorities**: Identify items due within 3 days (Urgent) and 7 days (Upcoming).
+        2. **Format**: Use the following structure exactly. Do not use Markdown headers (##). Use bolding for categories. 
         
+        **Structure:**
+        
+        **긴급**
+        - List assignments/VODs due within 3 days. 
+        - If none, write "없음".
+
+        **예정**
+        - List assignments/VODs due within 7 days.
+        - If none, write "없음".
+
+        **공지**
+        - Summarize only the most recent/critical announcement.
+
+        **한줄 요약**
+        - ONE sentence summary of the overall status (e.g., "이번 주는 여유롭네요!" or "과제가 많으니 서둘러야 해요!").
+
+        **Tone**: Professional, concise, and encouraging (Korean, Honorifics: 해요체).
         """
 
         try:
@@ -57,7 +68,7 @@ class AIService:
                     {"role": "system", "content": "You are a helpful academic assistant."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=500,
+                max_tokens=600,
                 temperature=0.7
             )
             return response.choices[0].message.content

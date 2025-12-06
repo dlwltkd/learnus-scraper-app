@@ -1,29 +1,56 @@
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text
+import os
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from datetime import datetime
 
 Base = declarative_base()
 
+class User(Base):
+    __tablename__ = 'users'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, index=True)
+    hashed_password = Column(String)
+    
+    # API Auth
+    api_token = Column(String, unique=True, index=True, nullable=True)
+    
+    # Moodle Credentials/Session
+    moodle_username = Column(String, nullable=True)
+    moodle_password = Column(String, nullable=True)
+    moodle_cookies = Column(Text, nullable=True) # JSON
+    
+    courses = relationship("Course", back_populates="owner", cascade="all, delete-orphan")
+
 class Course(Base):
     __tablename__ = 'courses'
     
-    id = Column(Integer, primary_key=True)  # Moodle Course ID
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    moodle_id = Column(Integer, index=True)
+    owner_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    
     name = Column(String)
     last_updated = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
     
-    assignments = relationship("Assignment", back_populates="course")
-    vods = relationship("VOD", back_populates="course")
-    files = relationship("FileResource", back_populates="course")
-    boards = relationship("Board", back_populates="course")
+    owner = relationship("User", back_populates="courses")
+    
+    assignments = relationship("Assignment", back_populates="course", cascade="all, delete-orphan")
+    vods = relationship("VOD", back_populates="course", cascade="all, delete-orphan")
+    files = relationship("FileResource", back_populates="course", cascade="all, delete-orphan")
+    boards = relationship("Board", back_populates="course", cascade="all, delete-orphan")
+    
+    __table_args__ = (UniqueConstraint('moodle_id', 'owner_id', name='_user_moodle_course_uc'),)
 
 class Assignment(Base):
     __tablename__ = 'assignments'
     
-    id = Column(Integer, primary_key=True) # Module ID
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    moodle_id = Column(Integer)
     course_id = Column(Integer, ForeignKey('courses.id'))
+    
     title = Column(String)
-    due_date = Column(String) # Storing as string for now as it's free text
+    due_date = Column(String)
     is_completed = Column(Boolean, default=False)
     url = Column(String)
     
@@ -32,10 +59,12 @@ class Assignment(Base):
 class VOD(Base):
     __tablename__ = 'vods'
     
-    id = Column(Integer, primary_key=True) # Module ID
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    moodle_id = Column(Integer)
     course_id = Column(Integer, ForeignKey('courses.id'))
+    
     title = Column(String)
-    start_date = Column(String) # Storing as string for simplicity initially
+    start_date = Column(String)
     end_date = Column(String)
     is_completed = Column(Boolean, default=False)
     has_tracking = Column(Boolean, default=True)
@@ -45,8 +74,10 @@ class VOD(Base):
 
 class FileResource(Base):
     __tablename__ = 'files'
-    id = Column(Integer, primary_key=True) # Board ID
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    moodle_id = Column(Integer)
     course_id = Column(Integer, ForeignKey('courses.id'))
+    
     title = Column(String)
     url = Column(String)
     
@@ -58,31 +89,35 @@ class FileResource(Base):
 class Board(Base):
     __tablename__ = 'boards'
     
-    id = Column(Integer, primary_key=True) # Board ID
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    moodle_id = Column(Integer)
     course_id = Column(Integer, ForeignKey('courses.id'))
+    
     title = Column(String)
     url = Column(String)
     
     course = relationship("Course", back_populates="boards")
-    posts = relationship("Post", back_populates="board")
+    posts = relationship("Post", back_populates="board", cascade="all, delete-orphan")
 
 class Post(Base):
     __tablename__ = 'posts'
     
-    id = Column(Integer, primary_key=True, autoincrement=True) # Internal ID, or we can try to use bwid if unique
-    # Note: bwid might not be unique across boards, so let's use autoincrement ID and store bwid separately if needed.
-    # Actually, let's store the URL which is unique.
-    
+    id = Column(Integer, primary_key=True, autoincrement=True)
     board_id = Column(Integer, ForeignKey('boards.id'))
+    
     title = Column(String)
     writer = Column(String)
     date = Column(String)
     content = Column(Text)
-    url = Column(String, unique=True)
+    url = Column(String)
     
     board = relationship("Board", back_populates="posts")
 
-def init_db(db_name='learnus.db'):
-    engine = create_engine(f'sqlite:///{db_name}')
+def init_db(db_url=None):
+    if not db_url:
+        db_url = os.getenv('DATABASE_URL', 'sqlite:///learnus.db')
+    if db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    engine = create_engine(db_url)
     Base.metadata.create_all(engine)
     return sessionmaker(bind=engine)

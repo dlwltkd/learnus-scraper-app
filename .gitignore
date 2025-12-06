@@ -41,12 +41,28 @@ yarn-error.log
 *.db
 *.sqlite3
 
+
 # LearnUs Specific
 credentials.json
 session.json
 cookies.pkl
 *.log
 vod_tracking_status.txt
+
+# Dumps and Temp Data
+*.html
+temp_data/
+scripts/
+api_debug.log
+
+# Debug and Test Scripts
+debug_*.py
+verify_*.py
+force_sync.py
+auto_debug.py
+test_schema.py
+manual_test.py
+old_*.py
 
 # OS
 .DS_Store
