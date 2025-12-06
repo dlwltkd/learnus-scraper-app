@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-// Use Android AVD default IP for local beta testing. 
-// Change this to your production URL when deployed.
-const API_URL = 'http://192.168.45.153:8000';
+// Use localhost for local development (or configure via .env in a real setup)
+// Note: Android Emulator uses 10.0.2.2 to access host localhost.
+const API_URL = 'http://localhost:8000';
 
 const api = axios.create({
     baseURL: API_URL,
