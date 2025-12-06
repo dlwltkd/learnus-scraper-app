@@ -92,14 +92,7 @@ export const syncAllActiveCourses = async () => {
 };
 
 // Auth & Login
-export const loginWithCredentials = async (username: string, password: string) => {
-    // New backend endpoint /auth/login returns { status: 'success', api_token: '...' }
-    const response = await api.post('/auth/login', { username, password });
-    if (response.data.status === 'success' && response.data.api_token) {
-        setAuthToken(response.data.api_token);
-    }
-    return response.data;
-};
+
 
 export const loginWithCookies = async (cookieString: string) => {
     // Exchange cookies for API Token

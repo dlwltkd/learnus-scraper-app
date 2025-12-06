@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { StyleSheet, View, Text, TextInput, Switch, StatusBar, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text, StatusBar, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { loginWithCredentials, loginWithCookies } from './services/api';
+import { loginWithCookies } from './services/api';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import Button from './components/Button';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,11 +13,6 @@ interface LoginScreenProps {
 }
 
 export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutComplete }: LoginScreenProps) {
-    const [useWebView, setUseWebView] = useState(true);
-    const [username, setUsername] = useState('');
-    const [password, setPassword] = useState('');
-    const [loading, setLoading] = useState(false);
-
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const isLoggingOutRef = useRef(false);
 
@@ -61,21 +56,7 @@ export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutCo
         }
     }, [autoLogout]);
 
-    const handleNativeLogin = async () => {
-        setLoading(true);
-        try {
-            const result = await loginWithCredentials(username, password);
-            if (result.status === 'success' && result.api_token) {
-                onLoginSuccess(result.api_token);
-            } else {
-                alert("Login Failed: " + (result.message || result.detail || "Unknown Error"));
-            }
-        } catch (e: any) {
-            alert("Login Error: " + (e.response?.data?.detail || e.message));
-        } finally {
-            setLoading(false);
-        }
-    };
+
 
     const handleNavigationStateChange = (navState: any) => {
         const { url } = navState;
@@ -120,44 +101,25 @@ export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutCo
         <View style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
             <View style={styles.header}>
-                <View style={styles.toggleContainer}>
-                    <Text style={styles.toggleLabel}>{useWebView ? "Web Login" : "ID/PW Login"}</Text>
-                    <Switch value={useWebView} onValueChange={setUseWebView} trackColor={{ false: Colors.textTertiary, true: Colors.primary }} thumbColor={Colors.surface} />
+                <View style={styles.logoRow}>
+                    <Ionicons name="school" size={24} color={Colors.primary} />
+                    <Text style={styles.logoText}>LearnUs Connect</Text>
                 </View>
             </View>
-            {useWebView ? (
-                <View style={{ flex: 1 }}>
-                    <View style={styles.webViewControls}>
-                        <Button title={isLoggingOut ? "Logging out..." : "Reset"} onPress={() => { if (!isLoggingOutRef.current) { setIsLoggingOut(true); isLoggingOutRef.current = true; webViewRef.current?.injectJavaScript(`window.location.href='https://ys.learnus.org/passni/sso/spLogout.php';`); setTimeout(() => { setIsLoggingOut(false); isLoggingOutRef.current = false; }, 5000); } }} variant="ghost" style={{ paddingVertical: 8 }} disabled={isLoggingOut} />
-                    </View>
-                    <WebView ref={webViewRef} source={{ uri: url }} cacheEnabled={false} onNavigationStateChange={handleNavigationStateChange} injectedJavaScript={injectedJavaScript} onMessage={onMessage} style={{ flex: 1 }} />
+            <View style={{ flex: 1 }}>
+                <View style={styles.webViewControls}>
+                    <Button title={isLoggingOut ? "Logging out..." : "Reset"} onPress={() => { if (!isLoggingOutRef.current) { setIsLoggingOut(true); isLoggingOutRef.current = true; webViewRef.current?.injectJavaScript(`window.location.href='https://ys.learnus.org/passni/sso/spLogout.php';`); setTimeout(() => { setIsLoggingOut(false); isLoggingOutRef.current = false; }, 5000); } }} variant="ghost" style={{ paddingVertical: 8 }} disabled={isLoggingOut} />
                 </View>
-            ) : (
-                <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.formContainer}>
-                    <View style={styles.logoContainer}><View style={styles.logoCircle}><Ionicons name="school" size={48} color={Colors.primary} /></View><Text style={styles.title}>LearnUs Connect</Text><Text style={styles.subtitle}>Yonsei University</Text></View>
-                    <View style={styles.inputContainer}><Ionicons name="person-outline" size={20} color={Colors.textSecondary} style={styles.inputIcon} /><TextInput style={styles.input} placeholder="Username" placeholderTextColor={Colors.textTertiary} value={username} onChangeText={setUsername} autoCapitalize="none" /></View>
-                    <View style={styles.inputContainer}><Ionicons name="lock-closed-outline" size={20} color={Colors.textSecondary} style={styles.inputIcon} /><TextInput style={styles.input} placeholder="Password" placeholderTextColor={Colors.textTertiary} value={password} onChangeText={setPassword} secureTextEntry /></View>
-                    <Button title="Log In" onPress={handleNativeLogin} loading={loading} style={{ marginTop: Spacing.l, width: '100%' }} variant="primary" />
-                    <Text style={styles.hint}>Use this if web login is unavailable.</Text>
-                </KeyboardAvoidingView>
-            )}
+                <WebView ref={webViewRef} source={{ uri: url }} cacheEnabled={false} onNavigationStateChange={handleNavigationStateChange} injectedJavaScript={injectedJavaScript} onMessage={onMessage} style={{ flex: 1 }} />
+            </View>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: Colors.background, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
-    header: { padding: Spacing.m, backgroundColor: Colors.background, alignItems: 'flex-end' },
-    toggleContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, paddingHorizontal: Spacing.m, paddingVertical: Spacing.xs, borderRadius: 20, ...Layout.shadow.default },
-    toggleLabel: { marginRight: Spacing.s, ...Typography.caption, fontWeight: '600' },
-    webViewControls: { flexDirection: 'row', justifyContent: 'flex-end', padding: Spacing.s, backgroundColor: Colors.background },
-    formContainer: { flex: 1, padding: Spacing.xl, justifyContent: 'center', alignItems: 'center' },
-    logoContainer: { alignItems: 'center', marginBottom: Spacing.xxl },
-    logoCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#E8F3FF', justifyContent: 'center', alignItems: 'center', marginBottom: Spacing.m },
-    title: { ...Typography.header1, color: Colors.primary, marginBottom: 4 },
-    subtitle: { ...Typography.body2, color: Colors.textSecondary },
-    inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.surface, borderRadius: Layout.borderRadius.m, marginBottom: Spacing.m, paddingHorizontal: Spacing.m, width: '100%', height: 56, ...Layout.shadow.default },
-    inputIcon: { marginRight: Spacing.m },
-    input: { flex: 1, fontSize: 16, color: Colors.textPrimary },
-    hint: { marginTop: Spacing.l, ...Typography.caption, textAlign: 'center' },
+    header: { padding: Spacing.m, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: Colors.border },
+    logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    logoText: { fontSize: 18, fontWeight: '700', color: Colors.primary },
+    webViewControls: { flexDirection: 'row', justifyContent: 'flex-end', padding: Spacing.s, backgroundColor: Colors.background, borderBottomWidth: 1, borderBottomColor: Colors.border },
 });
