@@ -115,8 +115,8 @@ export default function HelpScreen() {
 
                 {/* Copyright */}
                 <View style={styles.footer}>
-                    <Text style={styles.footerText}>Designed & Developed by Yonsei Students</Text>
-                    <Text style={styles.footerCopyright}>Copyright © 2024 LearnUs Connect Team</Text>
+                    <Text style={styles.footerText}>Designed & Developed by Jisang Lee (이지상)</Text>
+                    <Text style={styles.footerCopyright}>Copyright © 2024 Jisang Lee</Text>
                 </View>
 
             </ScrollView>
