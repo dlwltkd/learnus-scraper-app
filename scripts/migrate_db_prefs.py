@@ -5,7 +5,14 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import text
-from database import engine
+from database import init_db
+
+# Initialize DB to get engine (uses env vars automatically)
+SessionLocal = init_db()
+# Create a dummy session to get the bind (engine)
+session = SessionLocal()
+engine = session.get_bind()
+session.close()
 
 def migrate():
     print(f"Migrating database... Dialect: {engine.dialect.name}")
