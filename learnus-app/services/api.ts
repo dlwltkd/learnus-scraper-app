@@ -1,4 +1,7 @@
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const AUTH_TOKEN_KEY = 'auth_token';
 
 // Use localhost for local development (or configure via .env in a real setup)
 // Note: Android Emulator uses 10.0.2.2 to access host localhost.
@@ -13,8 +16,37 @@ const api = axios.create({
 let authToken: string | null = null;
 let onSessionExpired: (() => void) | null = null;
 
-export const setAuthToken = (token: string | null) => {
+export const loadAuthToken = async () => {
+    try {
+        const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+        if (token) {
+            authToken = token;
+        }
+        return token;
+    } catch (error) {
+        console.error("Failed to load auth token:", error);
+        return null;
+    }
+};
+
+export const setAuthToken = async (token: string | null) => {
     authToken = token;
+    if (token) {
+        try {
+            await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
+        } catch (error) {
+            console.error("Failed to save auth token:", error);
+        }
+    }
+};
+
+export const clearAuthToken = async () => {
+    authToken = null;
+    try {
+        await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+    } catch (error) {
+        console.error("Failed to clear auth token:", error);
+    }
 };
 
 export const setupAxiosInterceptors = (onUnauthenticated: () => void) => {
@@ -132,6 +164,16 @@ export const fetchAISummary = async () => {
         console.error("Fetch AI Summary Error:", error);
         return { summaries: [] };
     }
+};
+
+export const createTestAssignment = async () => {
+    const response = await api.post('/debug/create-test-assignment');
+    return response.data;
+};
+
+export const deleteTestAssignments = async () => {
+    const response = await api.post('/debug/delete-test-assignments');
+    return response.data;
 };
 
 export default api;

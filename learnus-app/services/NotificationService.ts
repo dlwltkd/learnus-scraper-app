@@ -4,7 +4,7 @@ import * as TaskManager from 'expo-task-manager';
 import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import { getDashboardOverview, fetchAISummary } from './api';
+import { getDashboardOverview, fetchAISummary, loadAuthToken } from './api';
 import { NotificationSettings } from '../NotificationSettingsScreen';
 
 const BACKGROUND_FETCH_TASK = 'BACKGROUND_NOTIFICATION_TASK';
@@ -13,7 +13,6 @@ const NOTIFICATION_SETTINGS_KEY = 'notification_settings';
 // Configure notification handler
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
-        shouldShowAlert: true,
         shouldPlaySound: true,
         shouldSetBadge: false,
         shouldShowBanner: true,
@@ -81,21 +80,26 @@ async function scheduleReminder(title: string, body: string, triggerDate: Date) 
             trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
         });
         // console.log(`Scheduled: ${title} at ${triggerDate.toLocaleString()}`);
+        return true;
     } catch (e) {
         console.log("Failed to schedule notification", e);
+        return false;
     }
 }
 
-async function checkAndScheduleNotifications() {
+export async function checkAndScheduleNotifications() {
     try {
+        // Ensure we have the auth token loaded for API requests
+        await loadAuthToken();
+
         const settings = await getSettings();
-        if (!settings) return BackgroundFetch.BackgroundFetchResult.NoData;
+        if (!settings) return { result: BackgroundFetch.BackgroundFetchResult.NoData, count: 0 };
 
         // Fetch latest data
         // Note: usage of getDashboardOverview might fail if auth token is not persistent/valid in background
         // However, assuming token is in memory or handled by api.ts interceptors/storage
         const data = await getDashboardOverview();
-        if (!data) return BackgroundFetch.BackgroundFetchResult.Failed;
+        if (!data) return { result: BackgroundFetch.BackgroundFetchResult.Failed, count: 0 };
 
         // Cancel existing to avoid duplicates (Reschedule strategy)
         await Notifications.cancelAllScheduledNotificationsAsync();
@@ -108,6 +112,8 @@ async function checkAndScheduleNotifications() {
         const unfinishedOffsets = (settings.unfinishedAssignments || []).map(getTimeOffset);
         const finishedOffsets = (settings.finishedAssignments || []).map(getTimeOffset);
 
+        let scheduledCount = 0;
+
         for (const a of assignments) {
             const dueDate = new Date(a.due_date);
             if (isNaN(dueDate.getTime())) continue;
@@ -119,11 +125,11 @@ async function checkAndScheduleNotifications() {
                 const fireDate = new Date(dueDate.getTime() - offset);
                 // Simple body text
                 const status = a.is_completed ? "(제출됨)" : "(미제출)";
-                scheduleReminder(
+                if (await scheduleReminder(
                     `과제 마감 알림 ${status}`,
                     `'${a.title}' 과제가 곧 마감됩니다. (${a.course_name})`,
                     fireDate
-                );
+                )) scheduledCount++;
             }
         }
 
@@ -148,11 +154,11 @@ async function checkAndScheduleNotifications() {
             for (const offset of vodOffsets) {
                 if (offset === 0) continue;
                 const fireDate = new Date(endDate.getTime() - offset);
-                scheduleReminder(
+                if (await scheduleReminder(
                     `강의 출석 마감 임박`,
                     `'${v.title}' 강의 수강이 곧 마감됩니다. (${v.course_name})`,
                     fireDate
-                );
+                )) scheduledCount++;
             }
         }
 
@@ -163,10 +169,10 @@ async function checkAndScheduleNotifications() {
             // For now, let's keep it simple and just do assignment/vod reminders.
         }
 
-        return BackgroundFetch.BackgroundFetchResult.NewData;
+        return { result: BackgroundFetch.BackgroundFetchResult.NewData, count: scheduledCount };
     } catch (e) {
         console.error("Background notify failed", e);
-        return BackgroundFetch.BackgroundFetchResult.Failed;
+        return { result: BackgroundFetch.BackgroundFetchResult.Failed, count: 0 };
     }
 }
 
@@ -186,7 +192,10 @@ async function scheduleNotification(title: string, body: string) {
     });
 }
 
-TaskManager.defineTask(BACKGROUND_FETCH_TASK, checkAndScheduleNotifications);
+TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
+    const res = await checkAndScheduleNotifications();
+    return res.result;
+});
 
 export async function registerBackgroundFetchAsync() {
     // Register background fetch

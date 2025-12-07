@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { login as apiLogin, setupAxiosInterceptors } from '../services/api';
+import { login as apiLogin, setupAxiosInterceptors, clearAuthToken } from '../services/api';
 
 interface AuthContextType {
     isLoggedIn: boolean;
@@ -67,6 +67,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log("AuthContext: Logout requested");
         try {
             await AsyncStorage.removeItem('userToken');
+            await clearAuthToken();
         } catch (e) {
             console.error("Failed to clear auth storage", e);
         }

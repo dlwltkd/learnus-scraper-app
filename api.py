@@ -108,6 +108,9 @@ def parse_date(date_str):
     if not date_str or date_str == 'None': return None
     date_str = date_str.replace('&nbsp;', ' ').rstrip('.')
     date_str = " ".join(date_str.split())
+    # Further cleanup for potentially trailing dots after split/join or specific formats
+    date_str = date_str.rstrip('.')
+
     try: return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
     except: pass
     try: return datetime.strptime(date_str, "%Y-%m-%d %H:%M")
@@ -130,7 +133,10 @@ def parse_date(date_str):
         current_year = datetime.now().year
         try: return datetime.strptime(f"{current_year} {clean}", "%Y %b %d %I:%M %p")
         except: pass
+        try: return datetime.strptime(f"{current_year} {clean}", "%Y %b %d %I:%M%p")
+        except: pass
     except: pass
+
     return None
 
 @app.post("/auth/login")
@@ -422,6 +428,51 @@ def complete_assignments(request: CompleteAssignmentsRequest, user: User = Depen
             count += 1
     db.commit()
     return {"status": "success", "updated_count": count}
+
+@app.post("/debug/create-test-assignment")
+def create_test_assignment(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # 1. Find or Create Test Course
+    test_course = db.query(Course).filter(Course.owner_id == user.id, Course.name == "[TEST] Debug Course").first()
+    if not test_course:
+        test_course = Course(moodle_id=999999, owner_id=user.id, name="[TEST] Debug Course", is_active=True)
+        db.add(test_course)
+        db.commit()
+        db.refresh(test_course)
+    
+    # 2. Create Dummy Assignments for ALL offsets (1h, 5h, 12h, 1d)
+    # We add 1 minute to ensure the notification schedule time is in the future (Time > Now)
+    offsets = [1, 5, 12, 24]
+    created_count = 0
+    
+    for hours in offsets:
+        due_date = (datetime.now() + timedelta(hours=hours, minutes=2)).strftime("%Y-%m-%d %H:%M")
+        assignment = Assignment(
+            moodle_id=int(datetime.now().timestamp()) + hours, # Unique-ish ID
+            course_id=test_course.id,
+            title=f"Test Assign ({hours}h) {datetime.now().strftime('%H:%M:%S')}",
+            due_date=due_date,
+            is_completed=False,
+            url="https://example.com"
+        )
+        db.add(assignment)
+        created_count += 1
+    
+    db.commit()
+    
+    return {"status": "success", "message": f"Created {created_count} assignments (Due in 1h, 5h, 12h, 24h from now). Notification should appear in ~2 minutes depending on your settings."}
+
+    return {"status": "success", "message": f"Created {created_count} assignments (Due in 1h, 5h, 12h, 24h from now). Notification should appear in ~2 minutes depending on your settings."}
+
+@app.post("/debug/delete-test-assignments")
+def delete_test_assignments(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    test_course = db.query(Course).filter(Course.owner_id == user.id, Course.name == "[TEST] Debug Course").first()
+    if not test_course:
+        return {"status": "success", "message": "No test course found, nothing to delete."}
+    
+    deleted_count = db.query(Assignment).filter(Assignment.course_id == test_course.id).delete()
+    db.commit()
+    
+    return {"status": "success", "message": f"Deleted {deleted_count} test assignments."}
 
 if __name__ == "__main__":
     import uvicorn

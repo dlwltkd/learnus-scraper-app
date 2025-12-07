@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { createTestAssignment, deleteTestAssignments } from './services/api';
+import { checkAndScheduleNotifications, testScheduleNotification } from './services/NotificationService';
 
 const NOTIFICATION_SETTINGS_KEY = 'notification_settings';
 
@@ -142,6 +144,49 @@ export default function NotificationSettingsScreen() {
                 <Text style={styles.groupTitle}>AI 알림</Text>
                 {renderToggle('AI 공지 요약', '새로운 공지사항이 올라오면 요약해서 알려줍니다.', 'aiSummary')}
 
+                <View style={styles.divider} />
+
+                <Text style={styles.groupTitle}>테스트 (디버그)</Text>
+                <TouchableOpacity style={styles.testButton} onPress={async () => {
+                    try {
+                        const res = await createTestAssignment();
+                        alert(`테스트 데이터 생성 완료\n${res.message}`);
+                    } catch (e) {
+                        alert("실패: " + e);
+                    }
+                }}>
+                    <Text style={styles.testButtonText}>가상 과제 생성 (1시간 후 마감)</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.testButton, { marginTop: 12 }]} onPress={async () => {
+                    try {
+                        const res = await checkAndScheduleNotifications();
+                        alert(`백그라운드 작업 실행 완료\n결과 상태: ${res.result}\n예약된 알림: ${res.count}개`);
+                    } catch (e) {
+                        alert("실패: " + e);
+                    }
+                }}>
+                    <Text style={styles.testButtonText}>백그라운드 동기화 즉시 실행</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.testButton, { marginTop: 12 }]} onPress={async () => {
+                    await testScheduleNotification();
+                    alert("5초 후에 알림이 표시됩니다.\n앱을 닫거나 백그라운드로 보내주세요.");
+                }}>
+                    <Text style={styles.testButtonText}>단순 알림 테스트 (5초 후)</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.testButton, { marginTop: 12, borderColor: Colors.error }]} onPress={async () => {
+                    try {
+                        const res = await deleteTestAssignments();
+                        alert(`전체 삭제 완료\n${res.message}`);
+                    } catch (e) {
+                        alert("실패: " + e);
+                    }
+                }}>
+                    <Text style={[styles.testButtonText, { color: Colors.error }]}>가상 과제 전체 삭제</Text>
+                </TouchableOpacity>
+
             </ScrollView>
         </SafeAreaView>
     );
@@ -224,5 +269,17 @@ const styles = StyleSheet.create({
         height: 1,
         backgroundColor: Colors.divider,
         marginVertical: Spacing.l,
+    },
+    testButton: {
+        padding: Spacing.m,
+        backgroundColor: Colors.surface,
+        borderRadius: Layout.borderRadius.m,
+        borderWidth: 1,
+        borderColor: Colors.primary,
+        alignItems: 'center',
+    },
+    testButtonText: {
+        color: Colors.primary,
+        fontWeight: '600',
     },
 });

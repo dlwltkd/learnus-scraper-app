@@ -166,18 +166,15 @@ const DashboardScreen = () => {
     };
 
     const renderRightActions = (progress: any, dragX: any, onPress: () => void) => {
-        const trans = dragX.interpolate({
-            inputRange: [0, 50, 100, 101],
-            outputRange: [-20, 0, 0, 1],
-        });
         return (
             <RectButton style={styles.rightAction} onPress={onPress}>
-                <Animated.Text style={[styles.actionText, { transform: [{ translateX: trans }] }]}>
+                <Text style={styles.actionText}>
                     완료
-                </Animated.Text>
+                </Text>
             </RectButton>
         );
     };
+
 
     if (loading) {
         return (
@@ -276,8 +273,10 @@ const DashboardScreen = () => {
                         {!collapsedSections.missedAssignments && data.missed_assignments.map((item: any) => (
                             <Swipeable
                                 key={item.id}
+                                overshootRight={false}
                                 renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, () => handleCompleteAssignment(item.id))}
                             >
+
                                 <View style={styles.itemCard}>
                                     <View style={styles.itemIcon}>
                                         <Ionicons name="alert-circle" size={24} color={Colors.error} />
@@ -303,8 +302,10 @@ const DashboardScreen = () => {
                         {data.upcoming_assignments.map((item: any) => (
                             <Swipeable
                                 key={item.id}
+                                overshootRight={false}
                                 renderRightActions={(progress, dragX) => renderRightActions(progress, dragX, () => handleCompleteAssignment(item.id))}
                             >
+
                                 <View style={styles.itemCard}>
                                     <View style={styles.itemIcon}>
                                         <Ionicons
@@ -632,17 +633,19 @@ const styles = StyleSheet.create({
     rightAction: {
         backgroundColor: Colors.success,
         justifyContent: 'center',
-        alignItems: 'flex-end',
+        alignItems: 'center',
         marginBottom: Spacing.s,
-        paddingHorizontal: 24,
+        width: 100,
         borderRadius: Layout.borderRadius.l,
-        flex: 1,
+        borderTopLeftRadius: 0,
+        borderBottomLeftRadius: 0,
     },
     actionText: {
         color: '#fff',
         fontWeight: '600',
-        fontSize: 16,
+        fontSize: 18,
     },
+
     modalOverlay: {
         flex: 1,
         backgroundColor: Colors.overlay,
