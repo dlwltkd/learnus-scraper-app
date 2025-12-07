@@ -98,13 +98,13 @@ export async function checkAndScheduleNotifications() {
         await loadAuthToken();
 
         const settings = await getSettings();
-        if (!settings) return { result: BackgroundFetch.BackgroundFetchResult.NoData, count: 0 };
+        if (!settings) return { result: BackgroundFetch.BackgroundFetchResult.NoData, count: 0, details: [] };
 
         // Fetch latest data
         // Note: usage of getDashboardOverview might fail if auth token is not persistent/valid in background
         // However, assuming token is in memory or handled by api.ts interceptors/storage
         const data = await getDashboardOverview();
-        if (!data) return { result: BackgroundFetch.BackgroundFetchResult.Failed, count: 0 };
+        if (!data) return { result: BackgroundFetch.BackgroundFetchResult.Failed, count: 0, details: [] };
 
         // Cancel existing to avoid duplicates (Reschedule strategy)
         await Notifications.cancelAllScheduledNotificationsAsync();
@@ -117,7 +117,7 @@ export async function checkAndScheduleNotifications() {
         const unfinishedOffsets = (settings.unfinishedAssignments || []).map(getTimeOffset);
         const finishedOffsets = (settings.finishedAssignments || []).map(getTimeOffset);
 
-        let scheduledCount = 0;
+        const scheduledDetails: string[] = [];
 
         for (const a of assignments) {
             const dueDate = new Date(a.due_date);
@@ -130,11 +130,14 @@ export async function checkAndScheduleNotifications() {
                 const fireDate = new Date(dueDate.getTime() - offset);
                 // Simple body text
                 const status = a.is_completed ? "(제출됨)" : "(미제출)";
+
                 if (await scheduleReminder(
                     `과제 마감 알림 ${status}`,
                     `'${a.title}' 과제가 곧 마감됩니다. (${a.course_name})`,
                     fireDate
-                )) scheduledCount++;
+                )) {
+                    scheduledDetails.push(`[과제] ${a.title} (${fireDate.toLocaleString()})`);
+                }
             }
         }
 
@@ -163,7 +166,28 @@ export async function checkAndScheduleNotifications() {
                     `강의 출석 마감 임박`,
                     `'${v.title}' 강의 수강이 곧 마감됩니다. (${v.course_name})`,
                     fireDate
-                )) scheduledCount++;
+                )) {
+                    scheduledDetails.push(`[강의] ${v.title} (${fireDate.toLocaleString()})`);
+                }
+            }
+        }
+
+        // 3. VOD Open Reminder
+        if (settings.vodOpen) {
+            const upcomingVods = data.upcoming_vods || [];
+            for (const v of upcomingVods) {
+                if (!v.start_date) continue;
+                const startDate = new Date(v.start_date);
+                if (isNaN(startDate.getTime())) continue;
+
+                // Schedule for start time
+                if (await scheduleReminder(
+                    `강의 오픈 알림`,
+                    `'${v.title}' 강의가 열렸습니다. (${v.course_name})\n~ ${v.end_date || '?'}까지 시청 가능`,
+                    startDate
+                )) {
+                    scheduledDetails.push(`[오픈] ${v.title} (${startDate.toLocaleString()})`);
+                }
             }
         }
 
@@ -174,10 +198,14 @@ export async function checkAndScheduleNotifications() {
             // For now, let's keep it simple and just do assignment/vod reminders.
         }
 
-        return { result: BackgroundFetch.BackgroundFetchResult.NewData, count: scheduledCount };
+        return {
+            result: BackgroundFetch.BackgroundFetchResult.NewData,
+            count: scheduledDetails.length,
+            details: scheduledDetails
+        };
     } catch (e) {
         console.error("Background notify failed", e);
-        return { result: BackgroundFetch.BackgroundFetchResult.Failed, count: 0 };
+        return { result: BackgroundFetch.BackgroundFetchResult.Failed, count: 0, details: [] };
     }
 }
 

@@ -1,5 +1,7 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, JSON
+
+
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from datetime import datetime
 
@@ -22,6 +24,7 @@ class User(Base):
     
     # Push Notifications
     push_token = Column(String, nullable=True)
+    notification_preferences = Column(JSON, default={})
     
     courses = relationship("Course", back_populates="owner", cascade="all, delete-orphan")
 

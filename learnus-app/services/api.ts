@@ -181,4 +181,15 @@ export const registerPushToken = async (token: string) => {
     return response.data;
 };
 
+export interface PreferencesRequest {
+    new_assignment: boolean;
+    new_vod: boolean;
+    notice: boolean;
+}
+
+export const updateNotificationPreferences = async (prefs: PreferencesRequest) => {
+    const response = await api.post('/auth/preferences', prefs);
+    return response.data;
+};
+
 export default api;

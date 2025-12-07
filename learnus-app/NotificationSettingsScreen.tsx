@@ -14,6 +14,10 @@ export interface NotificationSettings {
     finishedAssignments: string[];
     unfinishedVods: string[];
     aiSummary: boolean;
+    // New Features
+    newAssignment: boolean; // Server Push
+    newVod: boolean;        // Server Push
+    vodOpen: boolean;       // Local Reminder
 }
 
 const DEFAULT_SETTINGS: NotificationSettings = {
@@ -21,6 +25,9 @@ const DEFAULT_SETTINGS: NotificationSettings = {
     finishedAssignments: [],
     unfinishedVods: ['1d'],
     aiSummary: true,
+    newAssignment: true,
+    newVod: true,
+    vodOpen: true,
 };
 
 const OPTIONS = [
@@ -55,6 +62,19 @@ export default function NotificationSettingsScreen() {
         setSettings(newSettings);
         try {
             await AsyncStorage.setItem(NOTIFICATION_SETTINGS_KEY, JSON.stringify(newSettings));
+
+            // Sync Push Preferences to Server
+            // We do this optimistically (no await blocking UI)
+            const { updateNotificationPreferences } = require('./services/api');
+            updateNotificationPreferences({
+                new_assignment: newSettings.newAssignment,
+                new_vod: newSettings.newVod,
+                notice: newSettings.aiSummary // Using aiSummary toggle for general notice push for now? 
+                // Or AI Summary is strictly AI. Let's assume 'notice' on server is tied to AI Summary toggle 
+                // or we add a separate toggle. User asked for 2 things. 
+                // Let's assume aiSummary controls the "Notice" push aspect as traditionally it was linked.
+            }).catch((err: any) => console.log("Failed to sync prefs to server", err));
+
         } catch (e) {
             console.error("Failed to save settings", e);
         }
@@ -141,6 +161,17 @@ export default function NotificationSettingsScreen() {
 
                 <View style={styles.divider} />
 
+                <Text style={styles.groupTitle}>새로운 항목 알림 (Push)</Text>
+                {renderToggle('새로운 과제 등록', '새 과제가 올라오면 즉시 알려줍니다.', 'newAssignment')}
+                {renderToggle('새로운 강의 등록', '새 강의가 올라오면 즉시 알려줍니다.', 'newVod')}
+
+                <View style={styles.divider} />
+
+                <Text style={styles.groupTitle}>강의 오픈 알림</Text>
+                {renderToggle('강의 오픈 알림', '강의 시청 시작 시간에 알림을 보냅니다.', 'vodOpen')}
+
+                <View style={styles.divider} />
+
                 <Text style={styles.groupTitle}>AI 알림</Text>
                 {renderToggle('AI 공지 요약', '새로운 공지사항이 올라오면 요약해서 알려줍니다.', 'aiSummary')}
 
@@ -177,7 +208,8 @@ export default function NotificationSettingsScreen() {
                 <TouchableOpacity style={[styles.testButton, { marginTop: 12 }]} onPress={async () => {
                     try {
                         const res = await checkAndScheduleNotifications();
-                        alert(`백그라운드 작업 실행 완료\n결과 상태: ${res.result}\n예약된 알림: ${res.count}개`);
+                        const details = (res as any).details?.length > 0 ? "\n\n" + (res as any).details.join("\n") : "";
+                        alert(`백그라운드 작업 실행 완료\n결과 상태: ${res.result}\n예약된 알림: ${res.count}개${details}`);
                     } catch (e) {
                         alert("실패: " + e);
                     }
