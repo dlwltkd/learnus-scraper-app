@@ -42,6 +42,11 @@ export async function registerForPushNotificationsAsync() {
             console.log('Failed to get push token for push notification!');
             return;
         }
+
+        // Get the token
+        const token = (await Notifications.getExpoPushTokenAsync()).data;
+        console.log("Got push token:", token);
+        return token;
     } else {
         console.log('Must use physical device for Push Notifications');
     }

@@ -176,4 +176,9 @@ export const deleteTestAssignments = async () => {
     return response.data;
 };
 
+export const registerPushToken = async (token: string) => {
+    const response = await api.post('/auth/push-token', { token });
+    return response.data;
+};
+
 export default api;

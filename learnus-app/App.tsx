@@ -23,7 +23,7 @@ import { Colors } from './constants/theme';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 
-import { getDashboardOverview } from './services/api';
+import { getDashboardOverview, registerPushToken } from './services/api';
 import { registerForPushNotificationsAsync, registerBackgroundFetchAsync, unregisterBackgroundFetchAsync } from './services/NotificationService';
 
 const Stack = createStackNavigator();
@@ -127,6 +127,18 @@ function TabNavigator() {
 function AppContent() {
   const { isLoggedIn, login, autoLogout, resetAutoLogout, isLoading } = useAuth();
 
+  // Sync Push Token whenever user logs in or app mounts and is logged in
+  React.useEffect(() => {
+    if (isLoggedIn) {
+      registerForPushNotificationsAsync().then(token => {
+        if (token) {
+          registerPushToken(token).then(() => console.log("Push Token Registered with Backend"))
+            .catch(e => console.log("Failed to register token with backend:", e));
+        }
+      });
+    }
+  }, [isLoggedIn]);
+
   const handleLoginSuccess = async (cookie: string): Promise<boolean> => {
 
     try {
@@ -207,7 +219,23 @@ function AppContent() {
 
 export default function App() {
   React.useEffect(() => {
-    registerForPushNotificationsAsync();
+    // Separate function to handle async token registration
+    const setupNotifications = async () => {
+      const token = await registerForPushNotificationsAsync();
+      if (token) {
+        console.log("Token obtained inside App:", token);
+        // We try to register it. If not logged in, this API call might fail or be queued (if interceptors handle it).
+        // Ideally we should check isLoggedIn, but Hooks rules prevent us from easily accessing Context here 
+        // without wrapping AppContent logic.
+        // Actually, AppContent is inside AuthProvider, but 'App' root is outside.
+        // The token registration should ideally happen INSIDE AppContent where we have 'isLoggedIn'.
+        // BUT, registerForPushNotificationsAsync asks permission on mount.
+        // Let's store it in a global or just rely on 'registerForPushNotificationsAsync' being cached by OS
+        // and re-calling it inside AppContent.
+      }
+    };
+
+    setupNotifications();
     registerBackgroundFetchAsync();
 
     return () => {

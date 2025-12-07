@@ -3,11 +3,13 @@ import time
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
-from database import SessionLocal, User, Course, Board, Post
+from database import init_db, User, Course, Board, Post
 from moodle_client import MoodleClient
 from ai_service import AIService
-from api import PushTokenRequest
-from expo_server_sdk import PushClient, PushMessage
+
+from exponent_server_sdk import PushClient, PushMessage
+
+SessionLocal = init_db()
 
 # Setup Logger
 logging.basicConfig(level=logging.INFO)
@@ -29,17 +31,13 @@ def get_client(user: User):
 
 def send_push_notification(user: User, course: Course, post: Post):
     try:
-        # ai = AIService()
-        # Summarize (Truncate content to 1000 chars to save AI tokens)
-        # summary = ai.generate_course_summary(course.name, [post], [], []) # Actually generate_course_summary might be too broad. We generally want "Summarize this post".
+        # Use AI to summarize the post content
+        ai = AIService()
+        msg_body = ai.summarize_text(post.content or post.title)
         
-        # Better:
-        # clean_content = (post.content or "")[:500]
-        # summary = f"새로운 공지사항입니다." 
-        # If we really want AI summary, we call OpenAI here.
-        
-        # Let's construct a message.
-        msg_body = f"{post.title}"
+        # Fallback if AI fails or returns empty/too long (though logic inside handles it)
+        if not msg_body:
+            msg_body = post.title
         
         try:
              res = PushClient().publish(
@@ -55,12 +53,15 @@ def send_push_notification(user: User, course: Course, post: Post):
                     }
                 )
              )
+             print(f"✅ Expo Response: {res}") # DEBUG PRINT
         except Exception as exc:
             logger.error(f"Expo Send Error: {exc}")
+            print(f"❌ Expo Send Error: {exc}") # DEBUG PRINT
 
         logger.info(f"Sent push to {user.username} for post {post.id}")
     except Exception as e:
         logger.error(f"Failed to send push: {e}")
+
 
 def process_user_notices(user: User, db: Session):
     try:

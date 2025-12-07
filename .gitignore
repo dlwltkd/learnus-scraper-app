@@ -66,6 +66,10 @@ manual_test.py
 old_*.py
 session_debug.json
 
+
 # OS
 .DS_Store
 Thumbs.db
+
+# Documentation
+DEPLOYMENT.md
