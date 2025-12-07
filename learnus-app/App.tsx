@@ -3,6 +3,7 @@ import { StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import LoginScreen from './LoginScreen';
@@ -49,6 +50,8 @@ function TabNavigator() {
     return () => clearInterval(interval);
   }, []);
 
+  const insets = useSafeAreaInsets();
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -69,8 +72,8 @@ function TabNavigator() {
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textSecondary,
         tabBarStyle: {
-          height: 80, // Slightly shorter than before for a cleaner look
-          paddingBottom: 20,
+          height: 60 + Math.max(insets.bottom, 20), // Dynamic height based on safe area
+          paddingBottom: Math.max(insets.bottom, 20), // Dynamic padding
           paddingTop: 10,
           borderTopColor: Colors.border,
           backgroundColor: Colors.surface,
