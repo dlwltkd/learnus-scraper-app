@@ -72,8 +72,8 @@ function TabNavigator() {
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textSecondary,
         tabBarStyle: {
-          height: 60 + Math.max(insets.bottom, 20), // Dynamic height based on safe area
-          paddingBottom: Math.max(insets.bottom, 20), // Dynamic padding
+          height: 60 + insets.bottom, // Base height + safe area inset
+          paddingBottom: 10 + insets.bottom, // Base padding + safe area inset
           paddingTop: 10,
           borderTopColor: Colors.border,
           backgroundColor: Colors.surface,
@@ -86,7 +86,8 @@ function TabNavigator() {
           fontWeight: '600',
           marginTop: 4,
         },
-      })}
+      })
+      }
     >
       <Tab.Screen
         name="Dashboard"
@@ -119,22 +120,22 @@ function TabNavigator() {
         component={SettingsScreen}
         options={{ tabBarLabel: '설정' }}
       />
-    </Tab.Navigator>
+    </ Tab.Navigator>
   );
 }
 
 function AppContent() {
   const { isLoggedIn, login, autoLogout, resetAutoLogout } = useAuth();
 
-  const handleLoginSuccess = async (cookie: string) => {
+  const handleLoginSuccess = async (cookie: string): Promise<boolean> => {
     try {
       await login(cookie);
+      return true;
     } catch (e: any) {
-      if (e.response && e.response.status === 401) {
-        alert("세션이 만료되었습니다.");
-      } else {
-        alert("로그인 실패: " + (e.message || "Unknown error"));
-      }
+      console.log("Login failed (initial sync):", e.message);
+      // Do not alert here. If login failed, we just return false.
+      // The LoginScreen will handle it (e.g. by clearing cookies or letting the user try again).
+      return false;
     }
   };
 

@@ -7,7 +7,7 @@ import Button from './components/Button';
 import { Ionicons } from '@expo/vector-icons';
 
 interface LoginScreenProps {
-    onLoginSuccess: (token: string) => void;
+    onLoginSuccess: (token: string) => Promise<boolean>;
     autoLogout?: boolean;
     onAutoLogoutComplete?: () => void;
 }
@@ -81,6 +81,18 @@ export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutCo
         const isLoginPage = currentUrlRef.current.includes('/login/');
         if (isLoginPage) return;
 
+        // Only attempt to sync if we are on a known "logged in" page (Dashboard, My Page, Course view)
+        // This prevents trying to sync on the Landing page (which might have a guest cookie)
+        // or SSO intermediate pages, creating loops or false positives.
+        const isAuthenticatedPage =
+            currentUrlRef.current === 'https://ys.learnus.org/' ||
+            currentUrlRef.current === 'https://ys.learnus.org' ||
+            currentUrlRef.current.includes('/my/') ||
+            currentUrlRef.current.includes('/course/') ||
+            currentUrlRef.current.includes('/mod/');
+
+        if (!isAuthenticatedPage) return;
+
         if (data && data.includes('MoodleSession') && !data.includes('MoodleSession=deleted')) {
             // Found a session cookie, exchange for API Token
             try {
@@ -88,7 +100,27 @@ export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutCo
 
                 const result = await loginWithCookies(data);
                 if (result.status === 'success' && result.api_token) {
-                    onLoginSuccess(result.api_token);
+                    const success = await onLoginSuccess(result.api_token);
+                    if (!success) {
+                        console.log("Login failed in App (invalid token?), clearing cookies to retry...");
+                        // Clear cookies to prevent infinite loop
+                        const clearCookieScript = `
+                        (function() {
+                            var cookies = document.cookie.split(";");
+                            for (var i = 0; i < cookies.length; i++) {
+                                var cookie = cookies[i];
+                                var eqPos = cookie.indexOf("=");
+                                var name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie;
+                                name = name.replace(/^ +/, "");
+                                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+                                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.learnus.org";
+                                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=ys.learnus.org";
+                            }
+                            window.location.reload();
+                        })();
+                        `;
+                        webViewRef.current?.injectJavaScript(clearCookieScript);
+                    }
                 }
             } catch (e) {
                 console.log("Session Sync Failed", e);

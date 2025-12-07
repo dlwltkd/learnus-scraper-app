@@ -1,4 +1,5 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import { Alert } from 'react-native';
 import { login as apiLogin, setupAxiosInterceptors } from '../services/api';
 
 interface AuthContextType {
@@ -18,7 +19,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         setupAxiosInterceptors(() => {
             console.log("AuthContext: Session expired, logging out...");
-            logout();
+            Alert.alert(
+                "세션 만료",
+                "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
+                [{ text: "확인", onPress: () => logout() }]
+            );
         });
     }, []);
 
