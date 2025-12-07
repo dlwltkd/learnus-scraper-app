@@ -1,37 +1,38 @@
-import sqlite3
 import os
-
-# Path to your database
-DB_PATH = 'learnus.db'
+from sqlalchemy import text
+from database import engine
 
 def migrate():
-    if not os.path.exists(DB_PATH):
-        print(f"Database {DB_PATH} not found.")
-        return
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    print(f"Migrating database... Dialect: {engine.dialect.name}")
     
-    try:
-        # Check if column exists
-        cursor.execute("PRAGMA table_info(users)")
-        columns = [info[1] for info in cursor.fetchall()]
-        
-        if 'notification_preferences' in columns:
-            print("Column 'notification_preferences' already exists.")
-        else:
-            print("Adding 'notification_preferences' column...")
-            # SQLite doesn't have native JSON type in strict sense, usually stored as TEXT or JSON affinity
-            cursor.execute("ALTER TABLE users ADD COLUMN notification_preferences TEXT DEFAULT '{}'")
-            print("Defined as TEXT (for JSON storage)")
+    with engine.connect() as conn:
+        try:
+            # Check if column exists (naive check or just try/except)
+            # Better: Try to select the column.
+            try:
+                conn.execute(text("SELECT notification_preferences FROM users LIMIT 1"))
+                print("Column 'notification_preferences' already exists.")
+                return
+            except Exception:
+                # Column likely doesn't exist
+                pass
+
+            # Proceed to Add
+            if engine.dialect.name == 'postgresql':
+                print("Adding column for PostgreSQL...")
+                # Use JSON type (or JSONB)
+                conn.execute(text("ALTER TABLE users ADD COLUMN notification_preferences JSON DEFAULT '{}'"))
+            else:
+                print("Adding column for SQLite...")
+                # SQLite usually maps JSON to TEXT
+                conn.execute(text("ALTER TABLE users ADD COLUMN notification_preferences TEXT DEFAULT '{}'"))
+            
             conn.commit()
             print("Migration successful.")
             
-    except Exception as e:
-        print(f"Migration failed: {e}")
-        conn.rollback()
-    finally:
-        conn.close()
+        except Exception as e:
+            print(f"Migration failed: {e}")
+            # conn.rollback() # handled by context manager usually or auto-commit
 
 if __name__ == "__main__":
     migrate()
