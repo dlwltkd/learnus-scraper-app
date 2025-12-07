@@ -107,6 +107,11 @@ class SessionSyncRequest(BaseModel):
 class PushTokenRequest(BaseModel):
     token: str
 
+class PreferencesRequest(BaseModel):
+    new_assignment: bool = True
+    new_vod: bool = True
+    notice: bool = True
+
 # Date Parser helper...
 class StatsResponse(BaseModel):
     total_assignments_due: int
@@ -191,6 +196,29 @@ def register_push_token(req: PushTokenRequest, user: User = Depends(get_current_
     db.commit()
     logger.info(f"Registered push token for {user.username}: {req.token[:15]}...")
     return {"status": "success"}
+
+@app.post("/auth/preferences")
+def update_preferences(req: PreferencesRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Update preferences. Note: sqlalchemy requires re-assigning for JSON mutation detection sometimes, 
+    # but we can just overwrite the whole dict.
+    # Current prefs might be None or Dict
+    current = user.notification_preferences or {}
+    if isinstance(current, str): # Handle potential string from migration if sqlite returns text
+        try: current = json.loads(current)
+        except: current = {}
+        
+    current['new_assignment'] = req.new_assignment
+    current['new_vod'] = req.new_vod
+    current['notice'] = req.notice
+    
+    user.notification_preferences = current
+    # Force mutation flag if needed
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(user, "notification_preferences")
+    
+    db.commit()
+    logger.info(f"Updated preferences for {user.username}: {user.notification_preferences}")
+    return {"status": "success", "preferences": user.notification_preferences}
 
 @app.post("/auth/sync-session")
 def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
@@ -503,7 +531,7 @@ def create_test_assignment(user: User = Depends(get_current_user), db: Session =
     
     return {"status": "success", "message": f"Created {created_count} assignments (Due in 1h, 5h, 12h, 24h from now). Notification should appear in ~2 minutes depending on your settings."}
 
-    return {"status": "success", "message": f"Created {created_count} assignments (Due in 1h, 5h, 12h, 24h from now). Notification should appear in ~2 minutes depending on your settings."}
+
 
 @app.post("/debug/delete-test-assignments")
 def delete_test_assignments(user: User = Depends(get_current_user), db: Session = Depends(get_db)):

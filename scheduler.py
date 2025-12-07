@@ -3,7 +3,7 @@ import time
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
-from database import init_db, User, Course, Board, Post
+from database import init_db, User, Course, Board, Post, Assignment, VOD
 from moodle_client import MoodleClient
 from ai_service import AIService
 
@@ -63,75 +63,158 @@ def send_push_notification(user: User, course: Course, post: Post):
         logger.error(f"Failed to send push: {e}")
 
 
-def process_user_notices(user: User, db: Session):
+def process_user_updates(user: User, db: Session):
     try:
         client = get_client(user)
-        # 1. Quick Auth Check (Optional, but good)
         if not user.moodle_cookies: return
 
-        # 2. Get Active Courses
-        courses = db.query(Course).filter(Course.owner_id == user.id, Course.is_active == True).all()
+        # Load Prefs
+        prefs = user.notification_preferences or {}
+        if isinstance(prefs, str):
+            import json
+            try: prefs = json.loads(prefs)
+            except: prefs = {}
         
+        # Default True if not set
+        notify_assignment = prefs.get('new_assignment', True)
+        notify_vod = prefs.get('new_vod', True)
+        notify_notice = prefs.get('notice', True)
+
+        courses = db.query(Course).filter(Course.owner_id == user.id, Course.is_active == True).all()
+
         for course in courses:
-            # Find 'Notice' board
-            board = db.query(Board).filter(Board.course_id == course.id, Board.title.like('%공지%')).first()
-            if not board: continue
-            
-            # 3. Capture current max ID to detect new ones
-            max_id_row = db.query(Post.id).filter(Post.board_id == board.id).order_by(Post.id.desc()).first()
-            old_max_id = max_id_row[0] if max_id_row else 0
-            
-            # 4. Sync ONLY this board (We need to add sync_board to MoodleClient or emulate it)
-            # For now, we reuse sync_course_to_db but that is heavy. 
-            # Let's assume we implement a lightweight check or just accept the overhead for now (it's per user).
-            # To avoid scraping 10 courses every 5 mins per user, we should ideally check the "Recent Activity" API if Moodle has one.
-            # But sticking to scraping:
-            
-            # Workaround: Just check the first page of the board.
-            posts_data = client.get_board_posts(board.moodle_id) # Returns list of dicts
-            
-            new_posts_found = []
-            
-            for p_data in posts_data:
-                # Check if exists in DB by moodle_id comparison? 
-                # Our Post model doesn't strictly enforce moodle_id unique constraint globally but usually we filter by board.
-                # Actually Post model doesn't have moodle_id column in previous `database.py` view! 
-                # It has `url`, `title`, `date`. Moodle doesn't always expose easy IDs for posts.
-                # We often dedup by Title + Date + Writer.
-                
-                exists = db.query(Post).filter(
-                    Post.board_id == board.id, 
-                    Post.title == p_data['title'],
-                    Post.date == p_data['date']
-                ).first()
-                
-                if not exists:
-                    # Create it
-                    new_post = Post(
-                        board_id=board.id,
-                        title=p_data['title'],
-                        writer=p_data['writer'],
-                        date=p_data['date'],
-                        url=p_data['url'],
-                        content="" # Content fetched later if needed? Or get_board_posts gets it?
-                    )
-                    # If get_board_posts doesn't get content, we might want to fetch it for AI summary.
-                    # fetch detail
-                    detail = client.get_post_detail(p_data['url'])
-                    new_post.content = detail.get('content', '')
+            try:
+                # 1. Fetch ALL content for the course (Assignments, VODs, Boards logic)
+                # This scrapes 'view.php?id=...' which contains almost everything except full board posts
+                contents = client.get_course_contents(course.moodle_id)
+
+                # --- Assignments ---
+                for item in contents.get('assignments', []):
+                    # Check DB
+                    exists = db.query(Course).session.query(type('Assignment', (object,), {'id':1})).filter(
+                        # We need actual Assignment model import here or rely on global scope if available.
+                        # Since 'from database import ... Assignment' is at top, we use 'Assignment'.
+                        # Wait, imports are at top.
+                        Assignment.moodle_id == item['id'], 
+                        Assignment.course_id == course.id
+                    ).first()
                     
-                    db.add(new_post)
-                    db.commit() # Commit to get an ID
-                    db.refresh(new_post)
-                    new_posts_found.append(new_post)
-            
-            # 5. Notify
-            for post in new_posts_found:
-                send_push_notification(user, course, post)
+                    # Real query
+                    assign = db.query(Assignment).filter(Assignment.moodle_id == item['id'], Assignment.course_id == course.id).first()
+                    if not assign:
+                        # NEW Assignment
+                        new_assign = Assignment(
+                            moodle_id=item['id'],
+                            course_id=course.id,
+                            title=item['name'],
+                            url=item['url'],
+                            is_completed=item['is_completed'],
+                            due_date=item.get('deadline_text')
+                        )
+                        # Deep fetch deadline if needed
+                        if not new_assign.due_date and '/mod/assign/' in item['url']:
+                            new_assign.due_date = client.get_assignment_deadline(item['url'])
+                            
+                        db.add(new_assign)
+                        db.commit() # Commit to save
+                        
+                        if notify_assignment:
+                            # Send Push
+                            send_simple_push(user, f"[{course.name}] 새로운 과제 등장!", f"{item['name']}")
+
+                    else:
+                        # Update existing
+                        assign.is_completed = item['is_completed']
+                        if item.get('deadline_text'): assign.due_date = item.get('deadline_text')
+                
+                # --- VODs ---
+                for item in contents.get('vods', []):
+                    vod = db.query(VOD).filter(VOD.moodle_id == item['id'], VOD.course_id == course.id).first()
+                    if not vod:
+                        # NEW VOD
+                        new_vod = VOD(
+                            moodle_id=item['id'],
+                            course_id=course.id,
+                            title=item['name'],
+                            url=item['url'],
+                            is_completed=item['is_completed'],
+                            has_tracking=item['has_tracking'],
+                            start_date=item.get('start_date'),
+                            end_date=item.get('end_date')
+                        )
+                        db.add(new_vod)
+                        db.commit()
+                        
+                        if notify_vod:
+                            # "Open: {start_date} ~ {end_date}"
+                            body = f"새로운 동영상 강의\n시청 기한: {item.get('start_date', '?')} ~ {item.get('end_date', '?')}"
+                            send_simple_push(user, f"[{course.name}] {item['name']}", body)
+                    else:
+                        vod.is_completed = item['is_completed']
+
+                db.commit()
+
+                # --- Notices (Board) ---
+                if notify_notice:
+                     # Identify Notice board
+                     # We can iterate contents['boards'] to find '공지'
+                     notice_board_info = next((b for b in contents.get('boards', []) if '공지' in b['name'] or 'Notice' in b['name']), None)
+                     if notice_board_info:
+                         # Ensure Board exists in DB
+                         board = db.query(Board).filter(Board.moodle_id == notice_board_info['id'], Board.course_id == course.id).first()
+                         if not board:
+                             board = Board(moodle_id=notice_board_info['id'], course_id=course.id, title=notice_board_info['name'], url=notice_board_info['url'])
+                             db.add(board)
+                             db.commit()
+                         
+                         # Check posts
+                         posts_data = client.get_board_posts(board.moodle_id)
+                         for p_data in posts_data:
+                             exists = db.query(Post).filter(
+                                 Post.board_id == board.id, 
+                                 Post.title == p_data['subject'],
+                                 Post.date == p_data['date']
+                             ).first()
+                             
+                             if not exists:
+                                 new_post = Post(
+                                     board_id=board.id,
+                                     title=p_data['subject'],
+                                     writer=p_data['writer'],
+                                     date=p_data['date'],
+                                     url=p_data['url']
+                                 )
+                                 # Fetch content for AI
+                                 new_post.content = client.get_post_content(p_data['url'])
+                                 db.add(new_post)
+                                 db.commit()
+                                 
+                                 # AI Summary Push
+                                 send_push_notification(user, course, new_post)
+
+            except Exception as e:
+                logger.error(f"Error processing course {course.name} for user {user.username}: {e}")
+                continue
 
     except Exception as e:
-        # logger.error(f"Error processing user {user.username}: {e}")
+        logger.error(f"Error updating user {user.username}: {e}")
         pass
+
+def send_simple_push(user: User, title: str, body: str):
+    try:
+         res = PushClient().publish(
+            PushMessage(
+                to=user.push_token,
+                sound="default",
+                title=title,
+                body=body,
+                data={"type": "info"}
+            )
+         )
+         logger.info(f"Sent simple push to {user.username}: {title}")
+    except Exception as exc:
+        logger.error(f"Simple Expo Send Error: {exc}")
+
 
 def check_notices_job(SessionLocal):
     """
@@ -143,7 +226,7 @@ def check_notices_job(SessionLocal):
     try:
         users = db.query(User).filter(User.push_token.isnot(None)).all()
         for user in users:
-            process_user_notices(user, db)
+            process_user_updates(user, db)
     except Exception as e:
         logger.error(f"Check Notices Job Failed: {e}")
     finally:
