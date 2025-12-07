@@ -19,24 +19,26 @@ def migrate():
     
     with engine.connect() as conn:
         try:
-            # Check if column exists (naive check or just try/except)
-            # Better: Try to select the column.
-            try:
-                conn.execute(text("SELECT notification_preferences FROM users LIMIT 1"))
-                print("Column 'notification_preferences' already exists.")
-                return
-            except Exception:
-                # Column likely doesn't exist
-                pass
-
-            # Proceed to Add
             if engine.dialect.name == 'postgresql':
+                # Valid Postgres Check
+                res = conn.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name='users' AND column_name='notification_preferences'"))
+                if res.scalar() > 0:
+                    print("Column 'notification_preferences' already exists (PG).")
+                    return
+                
                 print("Adding column for PostgreSQL...")
-                # Use JSON type (or JSONB)
                 conn.execute(text("ALTER TABLE users ADD COLUMN notification_preferences JSON DEFAULT '{}'"))
+            
             else:
+                # SQLite Check
+                # PRAGMA table_info returns tuples (cid, name, type, notnull, dflt_value, pk)
+                res = conn.execute(text("PRAGMA table_info(users)"))
+                columns = [row[1] for row in res.fetchall()]
+                if 'notification_preferences' in columns:
+                    print("Column 'notification_preferences' already exists (SQLite).")
+                    return
+                
                 print("Adding column for SQLite...")
-                # SQLite usually maps JSON to TEXT
                 conn.execute(text("ALTER TABLE users ADD COLUMN notification_preferences TEXT DEFAULT '{}'"))
             
             conn.commit()
