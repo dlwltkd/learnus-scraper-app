@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -72,9 +72,9 @@ function TabNavigator() {
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textSecondary,
         tabBarStyle: {
-          height: 60 + insets.bottom, // Base height + safe area inset
+          height: 60 + insets.bottom, // Reduced by 5px to remove top space
           paddingBottom: 10 + insets.bottom, // Base padding + safe area inset
-          paddingTop: 10,
+          paddingTop: 5, // Reduced top padding
           borderTopColor: Colors.border,
           backgroundColor: Colors.surface,
           elevation: 0, // Flat design
@@ -84,7 +84,7 @@ function TabNavigator() {
         tabBarLabelStyle: {
           fontSize: 12,
           fontWeight: '600',
-          marginTop: 4,
+          marginTop: 5,
         },
       })
       }
@@ -125,19 +125,26 @@ function TabNavigator() {
 }
 
 function AppContent() {
-  const { isLoggedIn, login, autoLogout, resetAutoLogout } = useAuth();
+  const { isLoggedIn, login, autoLogout, resetAutoLogout, isLoading } = useAuth();
 
   const handleLoginSuccess = async (cookie: string): Promise<boolean> => {
+
     try {
       await login(cookie);
       return true;
     } catch (e: any) {
       console.log("Login failed (initial sync):", e.message);
-      // Do not alert here. If login failed, we just return false.
-      // The LoginScreen will handle it (e.g. by clearing cookies or letting the user try again).
       return false;
     }
   };
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer>

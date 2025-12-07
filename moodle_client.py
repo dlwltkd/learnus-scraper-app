@@ -4,6 +4,7 @@ import logging
 import re
 import time
 import html as html_lib
+from datetime import datetime
 
 class MoodleClient:
     def __init__(self, base_url, username=None, password=None, service="moodle_mobile_app", session_file=None, cookies=None):
@@ -43,6 +44,22 @@ class MoodleClient:
         except Exception as e:
             self.logger.error(f"Failed to save session: {e}")
             return False
+
+    def parse_korean_date(self, date_str):
+        if not date_str: return None
+        try:
+            # Unescape HTML entities (like &nbsp;)
+            date_str = html_lib.unescape(date_str).strip()
+            # Remove day of week if present (e.g., (월))
+            date_str = re.sub(r'\([^\)]+\)', '', date_str).strip()
+            
+            # Format: 2025년 9월 07일
+            match = re.search(r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일', date_str)
+            if match:
+                return f"{match.group(1)}-{match.group(2).zfill(2)}-{match.group(3).zfill(2)}"
+            return None
+        except Exception:
+            return None
 
     def load_session(self, session_file):
         try:
@@ -243,15 +260,34 @@ class MoodleClient:
                 link, subject, date_str = match.groups()
                 contents['announcements'].append({'subject': subject, 'date': date_str.strip(), 'url': link})
 
-            activity_pattern = r'<li\s+[^>]*class="activity\s+([^"]+)"\s+id="module-(\d+)"[^>]*>(.*?)</li>'
-            for match in re.finditer(activity_pattern, html, re.DOTALL):
-                activity_type_str, module_id, inner_html = match.groups()
+            contents['announcements'].append({'subject': subject, 'date': date_str.strip(), 'url': link})
+
+            activity_start_pattern = r'<li\s+[^>]*class="activity\s+([^"]+)"\s+id="module-(\d+)"[^>]*>'
+            activity_matches = list(re.finditer(activity_start_pattern, html, re.DOTALL))
+            
+            for i, match in enumerate(activity_matches):
+                activity_type_str, module_id = match.groups()
+                start_pos = match.end()
+                
+                if i < len(activity_matches) - 1:
+                    end_pos = activity_matches[i+1].start()
+                    inner_html = html[start_pos:end_pos]
+                else:
+                    # Last item: scan until end of section (</ul>) or reasonable limit
+                    # Since we can't easily find the closing </ul> for the section without parsing, 
+                    # we'll taking a generous chunk, or search for the next section start.
+                    # Moodle sections usually end with </ul><div class="summary"> or similar.
+                    # We will try to find the next <li class="section main"> or </ul> that closes the list.
+                    # Fallback: take next 20000 chars - sufficient for any activity info.
+                    inner_html = html[start_pos:start_pos+50000]
+
                 category = None
                 if 'modtype_assign' in activity_type_str: category = 'assignments'
                 elif 'modtype_ubfile' in activity_type_str: category = 'files'
                 elif 'modtype_ubboard' in activity_type_str: category = 'boards'
                 elif 'modtype_vod' in activity_type_str: category = 'vods'
                 elif 'modtype_quiz' in activity_type_str or 'quiz' in activity_type_str: category = 'assignments'
+                elif 'modtype_feedback' in activity_type_str: category = 'assignments' # Treat surveys as assignments
                 
                 if category:
                     name_match = re.search(r'<span class="instancename">(.*?)<', inner_html)
@@ -267,6 +303,21 @@ class MoodleClient:
                         if date_match:
                             item_data['start_date'] = date_match.group(1)
                             item_data['end_date'] = date_match.group(2)
+                    elif 'modtype_feedback' in activity_type_str:
+                        # Parse deadline from availability info
+                        deadline_str = None
+                        # Pattern 1: 종료 일시: <strong>2025년 12월 08일</strong>
+                        end_match = re.search(r'종료.*?일시\s*:\s*<strong>(.*?)</strong>', inner_html, re.DOTALL | re.IGNORECASE)
+                        if end_match:
+                            deadline_str = end_match.group(1)
+                        else:
+                            # Pattern 2: <strong>2025년 9월 07일</strong> 까지 사용가능
+                            until_match = re.search(r'<strong>(.*?)</strong>\s*까지\s*사용가능', inner_html, re.DOTALL | re.IGNORECASE)
+                            if until_match:
+                                deadline_str = until_match.group(1)
+                        
+                        if deadline_str:
+                            item_data['deadline_text'] = self.parse_korean_date(deadline_str)
                     elif category == 'assignments':
                         due_match = re.search(r'(?:Due:|due is|deadline is|마감:|일시:|종료일시:)\s*([^<]+)', inner_html, re.IGNORECASE)
                         if due_match: item_data['deadline_text'] = due_match.group(1).strip()

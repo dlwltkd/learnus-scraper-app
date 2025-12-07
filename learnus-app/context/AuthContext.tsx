@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 import { Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login as apiLogin, setupAxiosInterceptors } from '../services/api';
 
 interface AuthContextType {
@@ -8,6 +9,7 @@ interface AuthContextType {
     logout: () => void;
     autoLogout: boolean;
     resetAutoLogout: () => void;
+    isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -15,6 +17,8 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [autoLogout, setAutoLogout] = useState(false);
+
+    const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
         setupAxiosInterceptors(() => {
@@ -25,12 +29,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 [{ text: "확인", onPress: () => logout() }]
             );
         });
+        loadStorage();
     }, []);
+
+    const loadStorage = async () => {
+        try {
+            const storedCookie = await AsyncStorage.getItem('userToken');
+            if (storedCookie) {
+                console.log("AuthContext: Restoring session...");
+                // Validate or just set token
+                // For now, we assume if we have a token, we are logged in.
+                // You might want to validate it with an API call here.
+                await apiLogin(storedCookie);
+                setIsLoggedIn(true);
+            }
+        } catch (e) {
+            console.error("Failed to load auth storage", e);
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     const login = async (cookie: string) => {
         console.log("AuthContext: Login requested");
         try {
             await apiLogin(cookie);
+            await AsyncStorage.setItem('userToken', cookie);
             setIsLoggedIn(true);
             setAutoLogout(false);
         } catch (e) {
@@ -39,8 +63,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
-    const logout = () => {
+    const logout = async () => {
         console.log("AuthContext: Logout requested");
+        try {
+            await AsyncStorage.removeItem('userToken');
+        } catch (e) {
+            console.error("Failed to clear auth storage", e);
+        }
         setAutoLogout(true);
         setIsLoggedIn(false);
     };
@@ -50,7 +79,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ isLoggedIn, login, logout, autoLogout, resetAutoLogout }}>
+        <AuthContext.Provider value={{ isLoggedIn, login, logout, autoLogout, resetAutoLogout, isLoading }}>
             {children}
         </AuthContext.Provider>
     );

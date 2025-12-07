@@ -112,6 +112,8 @@ def parse_date(date_str):
     except: pass
     try: return datetime.strptime(date_str, "%Y-%m-%d %H:%M")
     except: pass
+    try: return datetime.strptime(date_str, "%Y-%m-%d")
+    except: pass
     try:
         clean = re.sub(r'[년월일\(\)요일]', ' ', date_str)
         clean = " ".join(clean.split())
