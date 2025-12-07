@@ -11,24 +11,23 @@ import uuid
 import json
 from datetime import datetime, timedelta
 import re
+from scheduler import check_notices_job, sync_dashboard_job
 from apscheduler.schedulers.background import BackgroundScheduler
-import scheduler as my_scheduler # Import our new logic
-
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 SessionLocal = init_db()
-SessionLocal = init_db()
-app = FastAPI(title="LearnUs Connect API (Beta)")
 sched = BackgroundScheduler()
+
+app = FastAPI(title="LearnUs Connect API (Beta)")
 
 @app.on_event("startup")
 def startup_event():
     logger.info("Starting Background Scheduler...")
     # Add jobs - passed 'SessionLocal' to allow jobs to create their own sessions
-    sched.add_job(my_scheduler.check_notices_job, 'interval', minutes=5, args=[SessionLocal])
-    sched.add_job(my_scheduler.sync_dashboard_job, 'interval', minutes=60, args=[SessionLocal])
+    sched.add_job(check_notices_job, 'interval', minutes=5, args=[SessionLocal])
+    sched.add_job(sync_dashboard_job, 'interval', minutes=60, args=[SessionLocal])
     sched.start()
 
 @app.on_event("shutdown")
@@ -108,7 +107,6 @@ class SessionSyncRequest(BaseModel):
 class PushTokenRequest(BaseModel):
     token: str
 
-
 # Date Parser helper...
 class StatsResponse(BaseModel):
     total_assignments_due: int
@@ -183,15 +181,16 @@ def login(creds: LoginRequest, db: Session = Depends(get_db)):
     user.moodle_cookies = cookies_json
     db.commit()
     db.refresh(user)
+    db.refresh(user)
     return {"status": "success", "api_token": user.api_token, "username": user.username}
 
 @app.post("/auth/push-token")
 def register_push_token(req: PushTokenRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not req.token: raise HTTPException(400, "Token required")
     user.push_token = req.token
     db.commit()
-    logger.info(f"Registered Push Token for {user.username}: {req.token}")
-    return {"status": "success", "message": "Push token registered"}
-
+    logger.info(f"Registered push token for {user.username}: {req.token[:15]}...")
+    return {"status": "success"}
 
 @app.post("/auth/sync-session")
 def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
@@ -365,13 +364,11 @@ def get_post_detail(post_id: int, user: User = Depends(get_current_user), db: Se
     if not post: raise HTTPException(404, "Post not found")
     
     # Security: Ensure user has access to the board/course?
-    # Actually, if they have the ID, it's fairly safe, but let's check course access
     board = post.board
     course = db.query(Course).filter(Course.id == board.course_id, Course.owner_id == user.id).first()
     if not course: raise HTTPException(403, "Access denied")
     
     return {"id": post.id, "title": post.title, "writer": post.writer, "date": post.date, "url": post.url, "content": post.content}
-
 
 @app.get("/dashboard/overview", response_model=DashboardOverviewResponse)
 def get_dashboard_overview(user: User = Depends(get_current_user), db: Session = Depends(get_db)):

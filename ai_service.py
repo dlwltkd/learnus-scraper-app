@@ -75,3 +75,34 @@ class AIService:
         except Exception as e:
             print(f"Error generating summary for {course_name}: {e}")
             return "요약을 생성하는 중 오류가 발생했습니다."
+
+    def summarize_text(self, text: str, max_length: int = 150) -> str:
+        """
+        Summarizes a long text into a concise notification body (approx max_length chars).
+        """
+        if not text or len(text) < 50:
+            return text[:max_length]
+
+        prompt = f"""
+        Summarize the following academic notice into a very concise single sentence (Korean, Polite/Honorific).
+        It must be suitable for a push notification body (max {max_length} chars).
+        Focus on the core action/info (e.g. "Exam schedule changed to...", "New assignment posted...").
+        
+        Text:
+        {text[:2000]}
+        """
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a concise notification summarizer."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=100,
+                temperature=0.5
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"Error summarizing text: {e}")
+            return text[:max_length]

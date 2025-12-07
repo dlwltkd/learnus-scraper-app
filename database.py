@@ -21,6 +21,9 @@ class User(Base):
     moodle_password = Column(String, nullable=True)
     moodle_cookies = Column(Text, nullable=True) # JSON
     
+    # Push Notifications
+    push_token = Column(String, nullable=True)
+    
     courses = relationship("Course", back_populates="owner", cascade="all, delete-orphan")
 
 class Course(Base):
