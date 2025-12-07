@@ -19,27 +19,34 @@ def migrate():
     
     with engine.connect() as conn:
         try:
-            if engine.dialect.name == 'postgresql':
-                # Valid Postgres Check
-                res = conn.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name='users' AND column_name='notification_preferences'"))
-                if res.scalar() > 0:
-                    print("Column 'notification_preferences' already exists (PG).")
-                    return
-                
-                print("Adding column for PostgreSQL...")
-                conn.execute(text("ALTER TABLE users ADD COLUMN notification_preferences JSON DEFAULT '{}'"))
-            
+            # Helper to check column existence
+            def col_exists(table, col):
+                if engine.dialect.name == 'postgresql':
+                    res = conn.execute(text(f"SELECT count(*) FROM information_schema.columns WHERE table_name='{table}' AND column_name='{col}'"))
+                    return res.scalar() > 0
+                else:
+                    res = conn.execute(text(f"PRAGMA table_info({table})"))
+                    return col in [row[1] for row in res.fetchall()]
+
+            # 1. Check/Add push_token
+            if not col_exists('users', 'push_token'):
+                print("Adding 'push_token' column...")
+                if engine.dialect.name == 'postgresql':
+                    conn.execute(text("ALTER TABLE users ADD COLUMN push_token TEXT"))
+                else:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN push_token TEXT"))
             else:
-                # SQLite Check
-                # PRAGMA table_info returns tuples (cid, name, type, notnull, dflt_value, pk)
-                res = conn.execute(text("PRAGMA table_info(users)"))
-                columns = [row[1] for row in res.fetchall()]
-                if 'notification_preferences' in columns:
-                    print("Column 'notification_preferences' already exists (SQLite).")
-                    return
-                
-                print("Adding column for SQLite...")
-                conn.execute(text("ALTER TABLE users ADD COLUMN notification_preferences TEXT DEFAULT '{}'"))
+                print("Column 'push_token' already exists.")
+
+            # 2. Check/Add notification_preferences
+            if not col_exists('users', 'notification_preferences'):
+                print("Adding 'notification_preferences' column...")
+                if engine.dialect.name == 'postgresql':
+                    conn.execute(text("ALTER TABLE users ADD COLUMN notification_preferences JSON DEFAULT '{}'"))
+                else:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN notification_preferences TEXT DEFAULT '{}'"))
+            else:
+                print("Column 'notification_preferences' already exists.")
             
             conn.commit()
             print("Migration successful.")
