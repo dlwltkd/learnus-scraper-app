@@ -6,3 +6,5 @@ pydantic>=2.6.0
 psycopg2-binary>=2.9.9
 openai>=1.0.0
 python-dotenv>=1.0.0
+apscheduler>=3.10.4
+expo-server-sdk>=1.4.0

@@ -14,6 +14,7 @@ class User(Base):
     
     # API Auth
     api_token = Column(String, unique=True, index=True, nullable=True)
+    push_token = Column(String, nullable=True)
     
     # Moodle Credentials/Session
     moodle_username = Column(String, nullable=True)

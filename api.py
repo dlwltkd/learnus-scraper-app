@@ -11,12 +11,30 @@ import uuid
 import json
 from datetime import datetime, timedelta
 import re
+from apscheduler.schedulers.background import BackgroundScheduler
+import scheduler as my_scheduler # Import our new logic
+
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 SessionLocal = init_db()
+SessionLocal = init_db()
 app = FastAPI(title="LearnUs Connect API (Beta)")
+sched = BackgroundScheduler()
+
+@app.on_event("startup")
+def startup_event():
+    logger.info("Starting Background Scheduler...")
+    # Add jobs - passed 'SessionLocal' to allow jobs to create their own sessions
+    sched.add_job(my_scheduler.check_notices_job, 'interval', minutes=5, args=[SessionLocal])
+    sched.add_job(my_scheduler.sync_dashboard_job, 'interval', minutes=60, args=[SessionLocal])
+    sched.start()
+
+@app.on_event("shutdown")
+def shutdown_event():
+    sched.shutdown()
+
 
 def get_db():
     db = SessionLocal()
@@ -86,6 +104,10 @@ class LoginRequest(BaseModel):
 
 class SessionSyncRequest(BaseModel):
     cookies: str
+
+class PushTokenRequest(BaseModel):
+    token: str
+
 
 # Date Parser helper...
 class StatsResponse(BaseModel):
@@ -162,6 +184,14 @@ def login(creds: LoginRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     return {"status": "success", "api_token": user.api_token, "username": user.username}
+
+@app.post("/auth/push-token")
+def register_push_token(req: PushTokenRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    user.push_token = req.token
+    db.commit()
+    logger.info(f"Registered Push Token for {user.username}: {req.token}")
+    return {"status": "success", "message": "Push token registered"}
+
 
 @app.post("/auth/sync-session")
 def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
@@ -327,6 +357,21 @@ def get_posts(board_id: int, user: User = Depends(get_current_user), db: Session
     if not course: raise HTTPException(403, "Access denied")
     posts = db.query(Post).filter(Post.board_id == board.id).order_by(Post.date.desc()).all()
     return [{"id": p.id, "title": p.title, "writer": p.writer, "date": p.date, "url": p.url, "content": p.content} for p in posts]
+
+@app.get("/posts/{post_id}", response_model=PostResponse)
+def get_post_detail(post_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # post_id here is internal DB ID because notification sends internal ID
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post: raise HTTPException(404, "Post not found")
+    
+    # Security: Ensure user has access to the board/course?
+    # Actually, if they have the ID, it's fairly safe, but let's check course access
+    board = post.board
+    course = db.query(Course).filter(Course.id == board.course_id, Course.owner_id == user.id).first()
+    if not course: raise HTTPException(403, "Access denied")
+    
+    return {"id": post.id, "title": post.title, "writer": post.writer, "date": post.date, "url": post.url, "content": post.content}
+
 
 @app.get("/dashboard/overview", response_model=DashboardOverviewResponse)
 def get_dashboard_overview(user: User = Depends(get_current_user), db: Session = Depends(get_db)):

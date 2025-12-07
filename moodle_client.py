@@ -80,6 +80,14 @@ class MoodleClient:
         except Exception as e:
             self.logger.warning(f"Failed to refresh sesskey: {e}")
 
+    def is_session_valid(self):
+        try:
+            res = self.session.get(f"{self.base_url}/my/", timeout=10)
+            if "login/index.php" in res.url: return False
+            return True
+        except: return False
+
+
     def login(self, username, password):
         login_url = f"{self.base_url}/login/index.php"
         try:
