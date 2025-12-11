@@ -43,6 +43,7 @@ yarn-error.log
 
 
 # LearnUs Specific
+google-services.json
 credentials.json
 session.json
 cookies.pkl
