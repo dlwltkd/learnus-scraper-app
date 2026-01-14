@@ -461,9 +461,6 @@ def process_vod_watching(vod_ids: List[int], db: Session, user_id: int):
     user = db.query(User).get(user_id)
     if not user: return
     client = get_moodle_client(user)
-    # Filter by moodle_id instead of id
-    vods = db.query(VOD).filter(VOD.moodle_id.in_(vod_ids)).all()
-    vods_by_course = {}
     for v in vods:
         if v.course.owner_id != user_id: continue
         if v.course_id not in vods_by_course: vods_by_course[v.course_id] = []

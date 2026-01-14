@@ -1,10 +1,21 @@
-import React, { useState, useRef } from 'react';
-import { StyleSheet, View, Text, StatusBar, Platform } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+    StyleSheet,
+    View,
+    Text,
+    StatusBar,
+    Platform,
+    Animated,
+    TouchableOpacity,
+} from 'react-native';
 import { WebView } from 'react-native-webview';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+
 import { loginWithCookies } from './services/api';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import Button from './components/Button';
-import { Ionicons } from '@expo/vector-icons';
 
 interface LoginScreenProps {
     onLoginSuccess: (token: string) => Promise<boolean>;
@@ -12,7 +23,11 @@ interface LoginScreenProps {
     onAutoLogoutComplete?: () => void;
 }
 
-export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutComplete }: LoginScreenProps) {
+export default function LoginScreen({
+    onLoginSuccess,
+    autoLogout,
+    onAutoLogoutComplete,
+}: LoginScreenProps) {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const isLoggingOutRef = useRef(false);
 
@@ -22,9 +37,28 @@ export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutCo
     const hasLoggedOut = useRef(false);
     const currentUrlRef = useRef('https://ys.learnus.org/login/index.php');
 
-    React.useEffect(() => {
+    // Animations
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const slideAnim = useRef(new Animated.Value(30)).current;
+
+    useEffect(() => {
+        Animated.parallel([
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 600,
+                useNativeDriver: true,
+            }),
+            Animated.timing(slideAnim, {
+                toValue: 0,
+                duration: 600,
+                useNativeDriver: true,
+            }),
+        ]).start();
+    }, []);
+
+    useEffect(() => {
         if (autoLogout) {
-            console.log("Auto-logout triggered. Clearing cookies.");
+            console.log('Auto-logout triggered. Clearing cookies.');
             setIsLoggingOut(true);
             isLoggingOutRef.current = true;
             setTimeout(() => {
@@ -56,18 +90,20 @@ export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutCo
         }
     }, [autoLogout]);
 
-
-
     const handleNavigationStateChange = (navState: any) => {
         const { url } = navState;
         currentUrlRef.current = url;
         if (url.includes('/login/logout.php')) {
-            hasLoggedOut.current = false; return;
+            hasLoggedOut.current = false;
+            return;
         }
         const checkCookieScript = `if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(document.cookie);`;
         webViewRef.current?.injectJavaScript(checkCookieScript);
 
-        const isDashboard = url === 'https://ys.learnus.org/' || url === 'https://ys.learnus.org' || url.includes('/my/');
+        const isDashboard =
+            url === 'https://ys.learnus.org/' ||
+            url === 'https://ys.learnus.org' ||
+            url.includes('/my/');
         if (!isDashboard) hasLoggedOut.current = true;
     };
 
@@ -75,15 +111,12 @@ export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutCo
 
     const onMessage = async (event: any) => {
         const data = event.nativeEvent.data;
-        if (data.startsWith("DEBUG") || isLoggingOutRef.current) return;
-        if (data === "COOKIES_CLEARED") return;
+        if (data.startsWith('DEBUG') || isLoggingOutRef.current) return;
+        if (data === 'COOKIES_CLEARED') return;
 
         const isLoginPage = currentUrlRef.current.includes('/login/');
         if (isLoginPage) return;
 
-        // Only attempt to sync if we are on a known "logged in" page (Dashboard, My Page, Course view)
-        // This prevents trying to sync on the Landing page (which might have a guest cookie)
-        // or SSO intermediate pages, creating loops or false positives.
         const isAuthenticatedPage =
             currentUrlRef.current === 'https://ys.learnus.org/' ||
             currentUrlRef.current === 'https://ys.learnus.org' ||
@@ -94,16 +127,12 @@ export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutCo
         if (!isAuthenticatedPage) return;
 
         if (data && data.includes('MoodleSession') && !data.includes('MoodleSession=deleted')) {
-            // Found a session cookie, exchange for API Token
             try {
-
-
                 const result = await loginWithCookies(data);
                 if (result.status === 'success' && result.api_token) {
                     const success = await onLoginSuccess(result.api_token);
                     if (!success) {
-                        console.log("Login failed in App (invalid token?), clearing cookies to retry...");
-                        // Clear cookies to prevent infinite loop
+                        console.log('Login failed in App (invalid token?), clearing cookies to retry...');
                         const clearCookieScript = `
                         (function() {
                             var cookies = document.cookie.split(";");
@@ -123,34 +152,217 @@ export default function LoginScreen({ onLoginSuccess, autoLogout, onAutoLogoutCo
                     }
                 }
             } catch (e) {
-                console.log("Session Sync Failed", e);
+                console.log('Session Sync Failed', e);
             }
         }
     };
 
+    const handleReset = () => {
+        if (!isLoggingOutRef.current) {
+            setIsLoggingOut(true);
+            isLoggingOutRef.current = true;
+            webViewRef.current?.injectJavaScript(
+                `window.location.href='https://ys.learnus.org/passni/sso/spLogout.php';`
+            );
+            setTimeout(() => {
+                setIsLoggingOut(false);
+                isLoggingOutRef.current = false;
+            }, 5000);
+        }
+    };
+
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container} edges={['top']}>
             <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
-            <View style={styles.header}>
-                <View style={styles.logoRow}>
-                    <Ionicons name="school" size={24} color={Colors.primary} />
-                    <Text style={styles.logoText}>LearnUs Connect</Text>
+
+            {/* Header */}
+            <Animated.View
+                style={[
+                    styles.header,
+                    {
+                        opacity: fadeAnim,
+                        transform: [{ translateY: slideAnim }],
+                    },
+                ]}
+            >
+                <View style={styles.logoContainer}>
+                    <LinearGradient
+                        colors={[Colors.primary, Colors.secondary]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.logoGradient}
+                    >
+                        <Ionicons name="school" size={24} color={Colors.textInverse} />
+                    </LinearGradient>
+                    <View style={styles.logoText}>
+                        <Text style={styles.logoTitle}>LearnUs Connect</Text>
+                        <Text style={styles.logoSubtitle}>연세대학교 학습관리</Text>
+                    </View>
                 </View>
-            </View>
-            <View style={{ flex: 1 }}>
+            </Animated.View>
+
+            {/* WebView Container */}
+            <View style={styles.webViewContainer}>
+                {/* Controls */}
                 <View style={styles.webViewControls}>
-                    <Button title={isLoggingOut ? "Logging out..." : "Reset"} onPress={() => { if (!isLoggingOutRef.current) { setIsLoggingOut(true); isLoggingOutRef.current = true; webViewRef.current?.injectJavaScript(`window.location.href='https://ys.learnus.org/passni/sso/spLogout.php';`); setTimeout(() => { setIsLoggingOut(false); isLoggingOutRef.current = false; }, 5000); } }} variant="ghost" style={{ paddingVertical: 8 }} disabled={isLoggingOut} />
+                    <View style={styles.urlBar}>
+                        <Ionicons name="lock-closed" size={14} color={Colors.success} />
+                        <Text style={styles.urlText} numberOfLines={1}>
+                            ys.learnus.org
+                        </Text>
+                    </View>
+
+                    <TouchableOpacity
+                        style={[styles.resetButton, isLoggingOut && styles.resetButtonDisabled]}
+                        onPress={handleReset}
+                        disabled={isLoggingOut}
+                    >
+                        <Ionicons
+                            name="refresh"
+                            size={18}
+                            color={isLoggingOut ? Colors.textTertiary : Colors.textSecondary}
+                        />
+                        <Text style={[styles.resetButtonText, isLoggingOut && styles.resetButtonTextDisabled]}>
+                            {isLoggingOut ? '처리 중...' : '초기화'}
+                        </Text>
+                    </TouchableOpacity>
                 </View>
-                <WebView ref={webViewRef} source={{ uri: url }} cacheEnabled={false} onNavigationStateChange={handleNavigationStateChange} injectedJavaScript={injectedJavaScript} onMessage={onMessage} style={{ flex: 1 }} />
+
+                {/* WebView */}
+                <View style={styles.webViewWrapper}>
+                    <WebView
+                        ref={webViewRef}
+                        source={{ uri: url }}
+                        cacheEnabled={false}
+                        onNavigationStateChange={handleNavigationStateChange}
+                        injectedJavaScript={injectedJavaScript}
+                        onMessage={onMessage}
+                        style={styles.webView}
+                    />
+                </View>
             </View>
-        </View>
+
+            {/* Footer Hint */}
+            <View style={styles.footer}>
+                <Ionicons name="information-circle-outline" size={16} color={Colors.textTertiary} />
+                <Text style={styles.footerText}>
+                    연세포털 계정으로 로그인하세요
+                </Text>
+            </View>
+        </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: Colors.background, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
-    header: { padding: Spacing.m, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: Colors.border },
-    logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    logoText: { fontSize: 18, fontWeight: '700', color: Colors.primary },
-    webViewControls: { flexDirection: 'row', justifyContent: 'flex-end', padding: Spacing.s, backgroundColor: Colors.background, borderBottomWidth: 1, borderBottomColor: Colors.border },
+    container: {
+        flex: 1,
+        backgroundColor: Colors.background,
+    },
+
+    // Header
+    header: {
+        paddingHorizontal: Spacing.l,
+        paddingVertical: Spacing.m,
+        backgroundColor: Colors.background,
+    },
+    logoContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    logoGradient: {
+        width: 48,
+        height: 48,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: Spacing.m,
+    },
+    logoText: {
+        flex: 1,
+    },
+    logoTitle: {
+        ...Typography.header2,
+        fontSize: 20,
+        color: Colors.textPrimary,
+    },
+    logoSubtitle: {
+        ...Typography.caption,
+        color: Colors.textSecondary,
+        marginTop: 2,
+    },
+
+    // WebView Container
+    webViewContainer: {
+        flex: 1,
+        marginHorizontal: Spacing.l,
+        marginBottom: Spacing.m,
+        borderRadius: Layout.borderRadius.xl,
+        overflow: 'hidden',
+        backgroundColor: Colors.surface,
+        borderWidth: 1,
+        borderColor: Colors.border,
+        ...Layout.shadow.default,
+    },
+    webViewControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: Spacing.m,
+        paddingVertical: Spacing.s,
+        backgroundColor: Colors.surfaceHighlight,
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.divider,
+    },
+    urlBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: Colors.surface,
+        paddingHorizontal: Spacing.s,
+        paddingVertical: Spacing.xs,
+        borderRadius: Layout.borderRadius.s,
+        gap: 6,
+    },
+    urlText: {
+        ...Typography.caption,
+        color: Colors.textSecondary,
+    },
+    resetButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: Spacing.m,
+        paddingVertical: Spacing.xs,
+        borderRadius: Layout.borderRadius.full,
+        backgroundColor: Colors.surface,
+        gap: 4,
+    },
+    resetButtonDisabled: {
+        opacity: 0.6,
+    },
+    resetButtonText: {
+        ...Typography.buttonSmall,
+        color: Colors.textSecondary,
+    },
+    resetButtonTextDisabled: {
+        color: Colors.textTertiary,
+    },
+    webViewWrapper: {
+        flex: 1,
+    },
+    webView: {
+        flex: 1,
+        backgroundColor: Colors.surface,
+    },
+
+    // Footer
+    footer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: Spacing.m,
+        gap: 6,
+    },
+    footerText: {
+        ...Typography.caption,
+        color: Colors.textTertiary,
+    },
 });

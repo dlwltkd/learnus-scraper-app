@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(frontend-design)",
+      "Bash(dir /b \"C:\\\\Users\\\\birke\\\\OneDrive\\\\Desktop\\\\projects\\\\learnus_connect\\\\learnus-app\\\\components\")",
+      "Skill(frontend-design:frontend-design)"
+    ]
+  }
+}
