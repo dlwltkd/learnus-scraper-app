@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1037255267564",
+    "project_id": "learnus-pushnotif",
+    "storage_bucket": "learnus-pushnotif.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1037255267564:android:29b6494fc5ae2e9a1b41c9",
+        "android_client_info": {
+          "package_name": "com.jisang.learnusconnect"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBlif-2k4calZMdT90163vkY2T7M8kFYBg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
