@@ -497,14 +497,16 @@ class MoodleClient:
             self.session.post(action_url, data={'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 1, 'positionfrom': 0, 'positionto': 0, 'logtime': args[22]})
             
             interval_sec = interval_ms / 1000.0
-            sleep_time = interval_sec / speed
+            sleep_time = interval_sec / speed  # With speed=1.0, this equals real-time
             current = 0
+            self.logger.info(f"VOD duration: {duration}s, interval: {interval_sec}s, sleep_time: {sleep_time}s")
             while current < duration:
-                # time.sleep(sleep_time) # Non-blocking in loop would be better
-                # Simulate loop step
+                time.sleep(sleep_time)  # Wait real-time between updates (1x speed)
                 current += interval_sec
-                if current > duration: current = duration
+                if current > duration:
+                    current = duration
                 self.session.post(action_url, data={'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 8, 'positionfrom': current, 'positionto': current, 'logtime': args[22]})
+                self.logger.debug(f"VOD progress: {current}/{duration}s")
             return True
         except Exception as e:
             self.logger.error(f"Watch failed: {e}")

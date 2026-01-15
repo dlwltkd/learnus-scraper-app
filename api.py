@@ -3,7 +3,7 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from database import init_db, User, Course, Assignment, VOD, Board, Post
 from moodle_client import MoodleClient
 import logging
@@ -457,24 +457,53 @@ class WatchVodsRequest(BaseModel):
     vod_ids: List[int]
 
 def process_vod_watching(vod_ids: List[int], db: Session, user_id: int):
-    logger.info(f"Starting background VOD watching for User {user_id}...")
+    logger.info(f"Starting background VOD watching for User {user_id} with VOD IDs: {vod_ids}")
     user = db.query(User).get(user_id)
-    if not user: return
+    if not user:
+        logger.error(f"User {user_id} not found")
+        return
+
     client = get_moodle_client(user)
-    for v in vods:
-        if v.course.owner_id != user_id: continue
-        if v.course_id not in vods_by_course: vods_by_course[v.course_id] = []
-        vods_by_course[v.course_id].append(v)
-    for course_id, course_vods in vods_by_course.items():
-        for vod in course_vods:
-            try:
-                success = client.watch_vod(vod.moodle_id)
-                logger.info(f"Watched VOD {vod.title}: {success}")
-            except Exception as e: logger.error(f"Error watching {vod.title}: {e}")
+
+    # Query VODs using the provided vod_ids (which are moodle_ids)
+    vods = db.query(VOD).join(Course).filter(
+        VOD.moodle_id.in_(vod_ids),
+        Course.owner_id == user_id
+    ).all()
+
+    if not vods:
+        logger.warning(f"No VODs found for ids: {vod_ids}")
+        return
+
+    logger.info(f"Found {len(vods)} VODs to watch in parallel")
+
+    # Watch all VODs in parallel
+    def watch_single_vod(vod):
+        try:
+            logger.info(f"Starting to watch VOD: {vod.title} (moodle_id: {vod.moodle_id})")
+            success = client.watch_vod(vod.moodle_id, speed=1.0)
+            logger.info(f"Finished watching VOD {vod.title}: {success}")
+            return vod, success
+        except Exception as e:
+            logger.error(f"Error watching {vod.title}: {e}")
+            return vod, False
+
+    with ThreadPoolExecutor(max_workers=len(vods)) as executor:
+        futures = [executor.submit(watch_single_vod, vod) for vod in vods]
+        for future in as_completed(futures):
+            vod, success = future.result()
+
+    # After all VODs watched, sync courses to update completion status
+    logger.info("All VODs watched, syncing courses...")
+    course_ids = set(v.course_id for v in vods)
+    for course_id in course_ids:
         course = db.query(Course).get(course_id)
         if course:
-            try: client.sync_course_to_db(course.moodle_id, db, user_id)
-            except Exception as e: logger.error(f"Sync error: {e}")
+            try:
+                client.sync_course_to_db(course.moodle_id, db, user_id)
+                logger.info(f"Synced course {course.name}")
+            except Exception as e:
+                logger.error(f"Sync error for course {course_id}: {e}")
 
 @app.post("/vod/watch")
 def watch_vods(request: WatchVodsRequest, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):

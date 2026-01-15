@@ -21,7 +21,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { RectButton, Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Markdown from 'react-native-markdown-display';
-import { LinearGradient } from 'expo-linear-gradient';
 
 import { getDashboardOverview, syncAllActiveCourses, completeAssignments, fetchAISummary } from './services/api';
 import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
@@ -99,12 +98,7 @@ const AISummaryCard = ({ summary, onPress, index }: { summary: any; onPress: () 
                 onPress={onPress}
                 activeOpacity={0.9}
             >
-                <LinearGradient
-                    colors={[Colors.primary + '08', Colors.secondary + '05']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.aiCardGradient}
-                >
+                <View style={styles.aiCardGradient}>
                     <View style={styles.aiHeader}>
                         <View style={styles.aiIconContainer}>
                             <Ionicons name="sparkles" size={16} color={Colors.textInverse} />
@@ -124,7 +118,7 @@ const AISummaryCard = ({ summary, onPress, index }: { summary: any; onPress: () 
                         <Text style={styles.readMore}>자세히 보기</Text>
                         <Ionicons name="arrow-forward" size={14} color={Colors.primary} />
                     </View>
-                </LinearGradient>
+                </View>
             </TouchableOpacity>
         </Animated.View>
     );

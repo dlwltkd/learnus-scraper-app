@@ -72,5 +72,7 @@ session_debug.json
 .DS_Store
 Thumbs.db
 
+#claude
+.claude/
 # Documentation
 DEPLOYMENT.md
