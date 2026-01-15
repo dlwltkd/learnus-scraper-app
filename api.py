@@ -449,8 +449,16 @@ def get_ai_summary(user: User = Depends(get_current_user), db: Session = Depends
         notice_board = db.query(Board).filter(Board.course_id == course.id, Board.title.like('%공지%')).first()
         if notice_board:
             announcements = db.query(Post).filter(Post.board_id == notice_board.id).limit(5).all()
-        summary_text = ai_service.generate_course_summary(course.name, announcements, assignments, vods)
-        summaries.append({"course_id": course.id, "course_name": course.name, "summary": summary_text})
+
+        # generate_course_summary now returns structured JSON
+        summary_data = ai_service.generate_course_summary(course.name, announcements, assignments, vods)
+
+        # Merge course info with AI-generated summary data
+        summaries.append({
+            "course_id": course.id,
+            "course_name": course.name,
+            **summary_data  # Spread the AI response (status, urgent, upcoming, etc.)
+        })
     return {"summaries": summaries}
 
 class WatchVodsRequest(BaseModel):
