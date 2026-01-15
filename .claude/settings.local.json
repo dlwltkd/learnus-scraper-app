@@ -7,7 +7,9 @@
       "Bash(npx expo install:*)",
       "Bash(npx expo start --clear)",
       "Bash(timeout:*)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge-base:*)"
     ]
   }
 }
