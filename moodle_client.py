@@ -260,8 +260,6 @@ class MoodleClient:
                 link, subject, date_str = match.groups()
                 contents['announcements'].append({'subject': subject, 'date': date_str.strip(), 'url': link})
 
-            contents['announcements'].append({'subject': subject, 'date': date_str.strip(), 'url': link})
-
             activity_start_pattern = r'<li\s+[^>]*class="activity\s+([^"]+)"\s+id="module-(\d+)"[^>]*>'
             activity_matches = list(re.finditer(activity_start_pattern, html, re.DOTALL))
             
