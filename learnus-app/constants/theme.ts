@@ -19,6 +19,7 @@ export const Colors = {
     surfaceGlass: 'rgba(255, 255, 255, 0.85)',
     surfaceHighlight: '#F7F9FC',
     surfaceMuted: '#F2F5F9',
+    surfaceAlt: '#F0F3F8',               // Alternative surface for contrast
 
     // === TEXT HIERARCHY ===
     textPrimary: '#1A1D26',          // Deep charcoal, not pure black
