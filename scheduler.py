@@ -17,7 +17,7 @@ logger = logging.getLogger("Watcher")
 
 # Helper to get client for user
 def get_client(user: User):
-    client = MoodleClient(user.username, user.password)
+    client = MoodleClient(user.moodle_username, user.moodle_password)
     # Restore session if available
     if user.moodle_cookies:
         client.set_cookies(user.moodle_cookies)
@@ -25,8 +25,8 @@ def get_client(user: User):
         # if not client.is_session_valid(): login...
     else:
         # Full login
-        if not client.login(user.username, user.password):
-            logger.error(f"Failed to login user {user.username}")
+        if not client.login(user.moodle_username, user.moodle_password):
+            logger.error(f"Failed to login user {user.moodle_username}")
     return client
 
 def send_push_notification(user: User, course: Course, post: Post):

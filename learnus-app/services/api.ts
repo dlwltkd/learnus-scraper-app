@@ -151,8 +151,8 @@ export const watchVods = async (vodIds: number[]) => {
     return response.data;
 };
 
-export const completeAssignments = async (assignmentIds: number[]) => {
-    const response = await api.post('/assignment/complete', { assignment_ids: assignmentIds });
+export const completeAssignments = async (assignmentIds: number[], completed: boolean = true) => {
+    const response = await api.post('/assignment/complete', { assignment_ids: assignmentIds, completed });
     return response.data;
 };
 

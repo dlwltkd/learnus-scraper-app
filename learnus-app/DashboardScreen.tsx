@@ -357,19 +357,30 @@ const DashboardScreen = () => {
         try {
             const isUpcoming = data.upcoming_assignments?.some((item: any) => item.id === id);
 
+            // Find the current assignment to get its current completion status
+            const currentAssignment = isUpcoming
+                ? data.upcoming_assignments?.find((item: any) => item.id === id)
+                : data.missed_assignments?.find((item: any) => item.id === id);
+
+            const newCompletedStatus = !currentAssignment?.is_completed;
+
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
             if (isUpcoming) {
                 const updatedUpcoming = data.upcoming_assignments.map((item: any) =>
-                    item.id === id ? { ...item, is_completed: !item.is_completed } : item
+                    item.id === id ? { ...item, is_completed: newCompletedStatus } : item
                 );
                 setData({ ...data, upcoming_assignments: updatedUpcoming });
             } else {
-                const updatedMissed = data.missed_assignments.filter((item: any) => item.id !== id);
+                // For missed assignments, toggle instead of removing
+                const updatedMissed = data.missed_assignments.map((item: any) =>
+                    item.id === id ? { ...item, is_completed: newCompletedStatus } : item
+                );
                 setData({ ...data, missed_assignments: updatedMissed });
             }
 
-            await completeAssignments([id]);
+            // Pass the new completion status to the API
+            await completeAssignments([id], newCompletedStatus);
         } catch (e) {
             console.error(e);
             Alert.alert('오류', '과제 완료 처리에 실패했습니다.');

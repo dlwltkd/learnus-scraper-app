@@ -11,7 +11,6 @@ import {
 import { WebView } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 
 import { loginWithCookies } from './services/api';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
@@ -186,14 +185,9 @@ export default function LoginScreen({
                 ]}
             >
                 <View style={styles.logoContainer}>
-                    <LinearGradient
-                        colors={[Colors.primary, Colors.secondary]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.logoGradient}
-                    >
+                    <View style={styles.logoGradient}>
                         <Ionicons name="school" size={24} color={Colors.textInverse} />
-                    </LinearGradient>
+                    </View>
                     <View style={styles.logoText}>
                         <Text style={styles.logoTitle}>LearnUs Connect</Text>
                         <Text style={styles.logoSubtitle}>연세대학교 학습관리</Text>
@@ -273,6 +267,7 @@ const styles = StyleSheet.create({
         width: 48,
         height: 48,
         borderRadius: 14,
+        backgroundColor: Colors.primary,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: Spacing.m,

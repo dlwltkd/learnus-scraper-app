@@ -10,7 +10,6 @@ import {
     View,
 } from 'react-native';
 import { Colors, Layout, Typography, Spacing } from '../constants/theme';
-import { LinearGradient } from 'expo-linear-gradient';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'success';
 type ButtonSize = 'sm' | 'md' | 'lg';

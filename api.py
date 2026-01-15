@@ -512,6 +512,7 @@ def watch_vods(request: WatchVodsRequest, background_tasks: BackgroundTasks, use
 
 class CompleteAssignmentsRequest(BaseModel):
     assignment_ids: List[int]
+    completed: Optional[bool] = True  # Default to True for backwards compatibility
 
 @app.post("/assignment/complete")
 def complete_assignments(request: CompleteAssignmentsRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -520,10 +521,10 @@ def complete_assignments(request: CompleteAssignmentsRequest, user: User = Depen
         # Filter by moodle_id instead of id
         assign = db.query(Assignment).join(Course).filter(Assignment.moodle_id == assign_id, Course.owner_id == user.id).first()
         if assign:
-            assign.is_completed = True
+            assign.is_completed = request.completed
             count += 1
     db.commit()
-    return {"status": "success", "updated_count": count}
+    return {"status": "success", "updated_count": count, "completed": request.completed}
 
 @app.post("/debug/create-test-assignment")
 def create_test_assignment(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
