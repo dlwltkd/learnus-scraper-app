@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from './context/AuthContext';
+import { useUser } from './context/UserContext';
 import { ScreenHeader } from './components/Header';
 
 // ============================================
@@ -118,6 +119,7 @@ const SettingSection = ({ title, children }: SettingSectionProps) => (
 export default function SettingsScreen() {
     const navigation = useNavigation();
     const { logout } = useAuth();
+    const { profile } = useUser();
 
     const handleLogout = () => {
         Alert.alert(
@@ -149,15 +151,19 @@ export default function SettingsScreen() {
                 {/* Profile Section */}
                 <View style={styles.profileSection}>
                     <View style={styles.profileAvatar}>
-                        <Ionicons name="person" size={32} color={Colors.primary} />
+                        {profile.name ? (
+                            <Text style={styles.profileAvatarText}>{profile.name.charAt(0).toUpperCase()}</Text>
+                        ) : (
+                            <Ionicons name="person" size={32} color={Colors.primary} />
+                        )}
                     </View>
                     <View style={styles.profileInfo}>
-                        <Text style={styles.profileName}>LearnUs 사용자</Text>
+                        <Text style={styles.profileName}>{profile.name || 'LearnUs 사용자'}</Text>
                         <Text style={styles.profileEmail}>연세대학교</Text>
                     </View>
                     <TouchableOpacity
                         style={styles.profileEditButton}
-                        onPress={() => handleComingSoon('내 정보')}
+                        onPress={() => (navigation as any).navigate('MyInfo')}
                     >
                         <Ionicons name="pencil" size={16} color={Colors.textSecondary} />
                     </TouchableOpacity>
@@ -170,7 +176,7 @@ export default function SettingsScreen() {
                         iconColor={Colors.primary}
                         title="내 정보"
                         subtitle="프로필 및 계정 정보"
-                        onPress={() => handleComingSoon('내 정보')}
+                        onPress={() => (navigation as any).navigate('MyInfo')}
                         isFirst
                     />
                     <SettingItem
@@ -217,7 +223,7 @@ export default function SettingsScreen() {
                         icon="chatbubble-outline"
                         iconColor={Colors.primary}
                         title="피드백 보내기"
-                        onPress={() => Linking.openURL('mailto:support@example.com')}
+                        onPress={() => Linking.openURL('mailto:dlwltkd@yonsei.ac.kr')}
                     />
                     <SettingItem
                         icon="document-text-outline"
@@ -229,7 +235,7 @@ export default function SettingsScreen() {
                         icon="shield-checkmark-outline"
                         iconColor={Colors.textSecondary}
                         title="개인정보 처리방침"
-                        onPress={() => handleComingSoon('개인정보 처리방침')}
+                        onPress={() => (navigation as any).navigate('PrivacyPolicy')}
                         isLast
                     />
                 </SettingSection>
@@ -292,6 +298,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: Spacing.m,
+    },
+    profileAvatarText: {
+        fontSize: 28,
+        fontWeight: '700',
+        color: Colors.primary,
     },
     profileInfo: {
         flex: 1,

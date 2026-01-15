@@ -17,11 +17,14 @@ import PostDetailScreen from './PostDetailScreen';
 import ManageCoursesScreen from './ManageCoursesScreen';
 import HelpScreen from './HelpScreen';
 import NotificationSettingsScreen from './NotificationSettingsScreen';
+import PrivacyPolicyScreen from './PrivacyPolicyScreen';
+import MyInfoScreen from './MyInfoScreen';
 
 import CustomTabBar from './components/TabBar';
 import { Colors, Layout, Typography } from './constants/theme';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { UserProvider } from './context/UserContext';
 
 import { getDashboardOverview, registerPushToken } from './services/api';
 import {
@@ -188,10 +191,24 @@ function AppContent() {
               }}
             />
             <Stack.Screen
+              name="MyInfo"
+              component={MyInfoScreen}
+              options={{
+                title: '내 정보',
+              }}
+            />
+            <Stack.Screen
               name="Help"
               component={HelpScreen}
               options={{
                 title: '도움말',
+              }}
+            />
+            <Stack.Screen
+              name="PrivacyPolicy"
+              component={PrivacyPolicyScreen}
+              options={{
+                title: '개인정보 처리방침',
               }}
             />
           </>
@@ -221,7 +238,9 @@ export default function App() {
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <AuthProvider>
-          <AppContent />
+          <UserProvider>
+            <AppContent />
+          </UserProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

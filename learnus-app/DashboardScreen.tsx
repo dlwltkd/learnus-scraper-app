@@ -20,10 +20,10 @@ import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { RectButton, Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Markdown from 'react-native-markdown-display';
 
 import { getDashboardOverview, syncAllActiveCourses, completeAssignments, fetchAISummary } from './services/api';
 import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
+import { useUser } from './context/UserContext';
 import Card from './components/Card';
 import Badge, { StatusBadge } from './components/Badge';
 import Button, { IconButton } from './components/Button';
@@ -63,24 +63,82 @@ const StatItem = ({ label, value, total, color = Colors.primary, icon }: StatIte
 );
 
 // ============================================
-// AI SUMMARY CARD
+// AI SUMMARY TYPES & CONFIG
 // ============================================
-const AISummaryCard = ({ summary, onPress, index }: { summary: any; onPress: () => void; index: number }) => {
-    const slideAnim = useRef(new Animated.Value(50)).current;
+const CARD_WIDTH = SCREEN_WIDTH * 0.78;
+const CARD_HEIGHT = 195;
+
+const STATUS_CONFIG = {
+    calm: {
+        color: '#10B981',
+        bgColor: 'rgba(16, 185, 129, 0.08)',
+        borderColor: 'rgba(16, 185, 129, 0.2)',
+        icon: 'checkmark-circle' as const,
+        label: '여유',
+    },
+    busy: {
+        color: '#F59E0B',
+        bgColor: 'rgba(245, 158, 11, 0.08)',
+        borderColor: 'rgba(245, 158, 11, 0.2)',
+        icon: 'time' as const,
+        label: '바쁨',
+    },
+    urgent: {
+        color: '#EF4444',
+        bgColor: 'rgba(239, 68, 68, 0.08)',
+        borderColor: 'rgba(239, 68, 68, 0.2)',
+        icon: 'alert-circle' as const,
+        label: '긴급',
+    },
+};
+
+interface SummaryItem {
+    title: string;
+    due: string;
+    type: 'assignment' | 'vod';
+}
+
+interface AISummary {
+    course_id: number;
+    course_name: string;
+    status: 'calm' | 'busy' | 'urgent';
+    status_message: string;
+    urgent: { count: number; items: SummaryItem[] };
+    upcoming: { count: number; items: SummaryItem[] };
+    announcement: { has_new: boolean; summary: string | null };
+    insight: string;
+}
+
+// ============================================
+// AI SUMMARY CARD (Fixed Height)
+// ============================================
+const AISummaryCard = ({ summary, onPress, index }: { summary: AISummary; onPress: () => void; index: number }) => {
+    const slideAnim = useRef(new Animated.Value(40)).current;
     const opacityAnim = useRef(new Animated.Value(0)).current;
+    const scaleAnim = useRef(new Animated.Value(0.95)).current;
+
+    const statusConfig = STATUS_CONFIG[summary.status] || STATUS_CONFIG.calm;
 
     useEffect(() => {
         Animated.parallel([
-            Animated.timing(slideAnim, {
+            Animated.spring(slideAnim, {
                 toValue: 0,
-                duration: 400,
-                delay: index * 100,
+                tension: 50,
+                friction: 8,
+                delay: index * 80,
                 useNativeDriver: true,
             }),
             Animated.timing(opacityAnim, {
                 toValue: 1,
-                duration: 400,
-                delay: index * 100,
+                duration: 300,
+                delay: index * 80,
+                useNativeDriver: true,
+            }),
+            Animated.spring(scaleAnim, {
+                toValue: 1,
+                tension: 50,
+                friction: 8,
+                delay: index * 80,
                 useNativeDriver: true,
             }),
         ]).start();
@@ -89,38 +147,261 @@ const AISummaryCard = ({ summary, onPress, index }: { summary: any; onPress: () 
     return (
         <Animated.View
             style={{
-                transform: [{ translateX: slideAnim }],
+                transform: [{ translateX: slideAnim }, { scale: scaleAnim }],
                 opacity: opacityAnim,
             }}
         >
             <TouchableOpacity
-                style={styles.aiCard}
+                style={[aiStyles.card, { borderColor: statusConfig.borderColor }]}
                 onPress={onPress}
-                activeOpacity={0.9}
+                activeOpacity={0.92}
             >
-                <View style={styles.aiCardGradient}>
-                    <View style={styles.aiHeader}>
-                        <View style={styles.aiIconContainer}>
-                            <Ionicons name="sparkles" size={16} color={Colors.textInverse} />
+                {/* Status Indicator Bar */}
+                <View style={[aiStyles.statusBar, { backgroundColor: statusConfig.color }]} />
+
+                {/* Card Content */}
+                <View style={aiStyles.cardContent}>
+                    {/* Header */}
+                    <View style={aiStyles.cardHeader}>
+                        <View style={aiStyles.courseInfo}>
+                            <View style={[aiStyles.statusBadge, { backgroundColor: statusConfig.bgColor }]}>
+                                <Ionicons name={statusConfig.icon} size={12} color={statusConfig.color} />
+                                <Text style={[aiStyles.statusLabel, { color: statusConfig.color }]}>
+                                    {statusConfig.label}
+                                </Text>
+                            </View>
+                            <Text style={aiStyles.courseName} numberOfLines={1}>
+                                {summary.course_name}
+                            </Text>
                         </View>
-                        <Text style={styles.aiCourseName} numberOfLines={1}>
-                            {summary.course_name}
-                        </Text>
+                        <View style={aiStyles.aiTag}>
+                            <Ionicons name="sparkles" size={10} color={Colors.secondary} />
+                        </View>
                     </View>
 
-                    <View style={styles.aiContentContainer}>
-                        <Markdown style={cardMarkdownStyles}>
-                            {summary.summary}
-                        </Markdown>
+                    {/* Quick Stats */}
+                    <View style={aiStyles.statsRow}>
+                        {summary.urgent?.count > 0 && (
+                            <View style={[aiStyles.statChip, aiStyles.urgentChip]}>
+                                <Ionicons name="alert-circle" size={12} color="#EF4444" />
+                                <Text style={[aiStyles.statText, { color: '#EF4444' }]}>
+                                    긴급 {summary.urgent.count}
+                                </Text>
+                            </View>
+                        )}
+                        {summary.upcoming?.count > 0 && (
+                            <View style={[aiStyles.statChip, aiStyles.upcomingChip]}>
+                                <Ionicons name="time-outline" size={12} color="#F59E0B" />
+                                <Text style={[aiStyles.statText, { color: '#F59E0B' }]}>
+                                    예정 {summary.upcoming.count}
+                                </Text>
+                            </View>
+                        )}
+                        {summary.announcement?.has_new && (
+                            <View style={[aiStyles.statChip, aiStyles.announcementChip]}>
+                                <Ionicons name="megaphone-outline" size={12} color={Colors.primary} />
+                                <Text style={[aiStyles.statText, { color: Colors.primary }]}>새 공지</Text>
+                            </View>
+                        )}
+                        {(!summary.urgent?.count && !summary.upcoming?.count && !summary.announcement?.has_new) && (
+                            <View style={[aiStyles.statChip, aiStyles.calmChip]}>
+                                <Ionicons name="leaf-outline" size={12} color="#10B981" />
+                                <Text style={[aiStyles.statText, { color: '#10B981' }]}>할 일 없음</Text>
+                            </View>
+                        )}
                     </View>
 
-                    <View style={styles.aiFooter}>
-                        <Text style={styles.readMore}>자세히 보기</Text>
-                        <Ionicons name="arrow-forward" size={14} color={Colors.primary} />
+                    {/* Status Message */}
+                    <Text style={aiStyles.statusMessage} numberOfLines={2}>
+                        {summary.status_message}
+                    </Text>
+
+                    {/* Top Priority Item Preview */}
+                    {summary.urgent?.items?.[0] && (
+                        <View style={aiStyles.priorityPreview}>
+                            <View style={aiStyles.priorityDot} />
+                            <Text style={aiStyles.priorityText} numberOfLines={1}>
+                                {summary.urgent.items[0].title}
+                            </Text>
+                            <Text style={aiStyles.priorityDue}>{summary.urgent.items[0].due}</Text>
+                        </View>
+                    )}
+
+                    {/* Footer */}
+                    <View style={aiStyles.cardFooter}>
+                        <Text style={aiStyles.viewMore}>자세히 보기</Text>
+                        <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />
                     </View>
                 </View>
             </TouchableOpacity>
         </Animated.View>
+    );
+};
+
+// ============================================
+// AI SUMMARY MODAL (Bottom Sheet Style)
+// ============================================
+const AISummaryModal = ({
+    summary,
+    visible,
+    onClose,
+}: {
+    summary: AISummary | null;
+    visible: boolean;
+    onClose: () => void;
+}) => {
+    const slideAnim = useRef(new Animated.Value(300)).current;
+    const backdropAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+        if (visible) {
+            Animated.parallel([
+                Animated.spring(slideAnim, {
+                    toValue: 0,
+                    tension: 65,
+                    friction: 11,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(backdropAnim, {
+                    toValue: 1,
+                    duration: 200,
+                    useNativeDriver: true,
+                }),
+            ]).start();
+        } else {
+            slideAnim.setValue(300);
+            backdropAnim.setValue(0);
+        }
+    }, [visible]);
+
+    if (!summary) return null;
+
+    const statusConfig = STATUS_CONFIG[summary.status] || STATUS_CONFIG.calm;
+
+    const renderSection = (
+        title: string,
+        icon: keyof typeof Ionicons.glyphMap,
+        iconColor: string,
+        items: SummaryItem[],
+        emptyText: string
+    ) => (
+        <View style={modalStyles.section}>
+            <View style={modalStyles.sectionHeader}>
+                <View style={[modalStyles.sectionIcon, { backgroundColor: `${iconColor}15` }]}>
+                    <Ionicons name={icon} size={16} color={iconColor} />
+                </View>
+                <Text style={modalStyles.sectionTitle}>{title}</Text>
+                {items.length > 0 && (
+                    <View style={[modalStyles.countBadge, { backgroundColor: `${iconColor}15` }]}>
+                        <Text style={[modalStyles.countText, { color: iconColor }]}>{items.length}</Text>
+                    </View>
+                )}
+            </View>
+            {items.length > 0 ? (
+                <View style={modalStyles.itemsList}>
+                    {items.map((item, idx) => (
+                        <View key={idx} style={[modalStyles.listItem, idx === items.length - 1 && { borderBottomWidth: 0 }]}>
+                            <View style={modalStyles.itemLeft}>
+                                <Ionicons
+                                    name={item.type === 'assignment' ? 'document-text-outline' : 'play-circle-outline'}
+                                    size={16}
+                                    color={Colors.textSecondary}
+                                />
+                                <Text style={modalStyles.itemTitle} numberOfLines={1}>{item.title}</Text>
+                            </View>
+                            <View style={[modalStyles.dueBadge, {
+                                backgroundColor: item.due === '오늘' || item.due === 'D-1' ? '#FEE2E2' : '#FEF3C7'
+                            }]}>
+                                <Text style={[modalStyles.dueText, {
+                                    color: item.due === '오늘' || item.due === 'D-1' ? '#DC2626' : '#D97706'
+                                }]}>{item.due}</Text>
+                            </View>
+                        </View>
+                    ))}
+                </View>
+            ) : (
+                <Text style={modalStyles.emptyText}>{emptyText}</Text>
+            )}
+        </View>
+    );
+
+    return (
+        <Modal animationType="none" transparent visible={visible} onRequestClose={onClose}>
+            <Animated.View style={[modalStyles.backdrop, { opacity: backdropAnim }]}>
+                <TouchableOpacity style={{ flex: 1 }} onPress={onClose} activeOpacity={1} />
+            </Animated.View>
+
+            <Animated.View style={[modalStyles.container, { transform: [{ translateY: slideAnim }] }]}>
+                {/* Handle */}
+                <View style={modalStyles.handleContainer}>
+                    <View style={modalStyles.handle} />
+                </View>
+
+                {/* Header */}
+                <View style={[modalStyles.header, { borderBottomColor: statusConfig.borderColor }]}>
+                    <View style={modalStyles.headerTop}>
+                        <View style={[modalStyles.statusIndicator, { backgroundColor: statusConfig.color }]}>
+                            <Ionicons name={statusConfig.icon} size={18} color="#FFF" />
+                        </View>
+                        <View style={modalStyles.headerInfo}>
+                            <Text style={modalStyles.courseTitle} numberOfLines={1}>
+                                {summary.course_name}
+                            </Text>
+                            <Text style={[modalStyles.statusText, { color: statusConfig.color }]}>
+                                {statusConfig.label} · {summary.status_message}
+                            </Text>
+                        </View>
+                        <TouchableOpacity style={modalStyles.closeButton} onPress={onClose}>
+                            <Ionicons name="close" size={22} color={Colors.textSecondary} />
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                {/* Content */}
+                <ScrollView
+                    style={modalStyles.content}
+                    showsVerticalScrollIndicator={false}
+                    contentContainerStyle={{ paddingBottom: 40 }}
+                >
+                    {/* Urgent Section */}
+                    {renderSection('긴급', 'alert-circle', '#EF4444', summary.urgent?.items || [], '긴급한 항목이 없어요 👍')}
+
+                    {/* Upcoming Section */}
+                    {renderSection('예정', 'time-outline', '#F59E0B', summary.upcoming?.items || [], '예정된 항목이 없어요')}
+
+                    {/* Announcement Section */}
+                    <View style={modalStyles.section}>
+                        <View style={modalStyles.sectionHeader}>
+                            <View style={[modalStyles.sectionIcon, { backgroundColor: 'rgba(99, 102, 241, 0.1)' }]}>
+                                <Ionicons name="megaphone-outline" size={16} color="#6366F1" />
+                            </View>
+                            <Text style={modalStyles.sectionTitle}>공지사항</Text>
+                            {summary.announcement?.has_new && (
+                                <View style={modalStyles.newBadge}>
+                                    <Text style={modalStyles.newBadgeText}>NEW</Text>
+                                </View>
+                            )}
+                        </View>
+                        {summary.announcement?.summary ? (
+                            <View style={modalStyles.announcementBox}>
+                                <Text style={modalStyles.announcementText}>{summary.announcement.summary}</Text>
+                            </View>
+                        ) : (
+                            <Text style={modalStyles.emptyText}>최근 공지사항이 없어요</Text>
+                        )}
+                    </View>
+
+                    {/* AI Insight */}
+                    <View style={modalStyles.insightBox}>
+                        <View style={modalStyles.insightHeader}>
+                            <Ionicons name="sparkles" size={16} color={Colors.secondary} />
+                            <Text style={modalStyles.insightLabel}>AI 코멘트</Text>
+                        </View>
+                        <Text style={modalStyles.insightText}>{summary.insight}</Text>
+                    </View>
+                </ScrollView>
+            </Animated.View>
+        </Modal>
     );
 };
 
@@ -264,6 +545,7 @@ const AssignmentItem = ({ item, onComplete, isMissed = false }: AssignmentItemPr
 // ============================================
 const DashboardScreen = () => {
     const navigation = useNavigation();
+    const { profile } = useUser();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [data, setData] = useState<any>(null);
@@ -275,9 +557,9 @@ const DashboardScreen = () => {
     });
 
     // AI Summary state
-    const [aiSummaries, setAiSummaries] = useState<any[]>([]);
+    const [aiSummaries, setAiSummaries] = useState<AISummary[]>([]);
     const [loadingAI, setLoadingAI] = useState(false);
-    const [selectedSummary, setSelectedSummary] = useState<any>(null);
+    const [selectedSummary, setSelectedSummary] = useState<AISummary | null>(null);
 
     // Animations
     const syncRotation = useRef(new Animated.Value(0)).current;
@@ -395,9 +677,13 @@ const DashboardScreen = () => {
 
     const getGreeting = () => {
         const hour = new Date().getHours();
-        if (hour < 12) return '좋은 아침이에요';
-        if (hour < 18) return '좋은 오후에요';
-        return '좋은 저녁이에요';
+        const name = profile.name;
+        let greeting = '';
+        if (hour < 12) greeting = '좋은 아침이에요';
+        else if (hour < 18) greeting = '좋은 오후에요';
+        else greeting = '좋은 저녁이에요';
+
+        return name ? `${name}님,\n${greeting}` : greeting;
     };
 
     if (loading) {
@@ -512,13 +798,14 @@ const DashboardScreen = () => {
                         <ScrollView
                             horizontal
                             showsHorizontalScrollIndicator={false}
-                            contentContainerStyle={styles.aiScroll}
+                            contentContainerStyle={{ paddingRight: Spacing.l }}
                             decelerationRate="fast"
-                            snapToInterval={SCREEN_WIDTH * 0.7 + Spacing.m}
+                            snapToInterval={CARD_WIDTH + Spacing.m}
+                            snapToAlignment="start"
                         >
                             {aiSummaries.map((item, index) => (
                                 <AISummaryCard
-                                    key={index}
+                                    key={item.course_id}
                                     summary={item}
                                     index={index}
                                     onPress={() => setSelectedSummary(item)}
@@ -585,105 +872,341 @@ const DashboardScreen = () => {
             </ScrollView>
 
             {/* AI Summary Modal */}
-            <Modal
-                animationType="fade"
-                transparent
+            <AISummaryModal
+                summary={selectedSummary}
                 visible={!!selectedSummary}
-                onRequestClose={() => setSelectedSummary(null)}
-            >
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <View style={styles.modalHeader}>
-                            <View style={styles.modalTitleRow}>
-                                <View style={styles.modalIcon}>
-                                    <Ionicons name="sparkles" size={20} color={Colors.textInverse} />
-                                </View>
-                                <Text style={styles.modalTitle} numberOfLines={2}>
-                                    {selectedSummary?.course_name}
-                                </Text>
-                            </View>
-                            <IconButton
-                                icon={<Ionicons name="close" size={22} color={Colors.textPrimary} />}
-                                onPress={() => setSelectedSummary(null)}
-                                variant="ghost"
-                                size="sm"
-                            />
-                        </View>
-                        <ScrollView
-                            style={styles.modalBody}
-                            showsVerticalScrollIndicator={false}
-                        >
-                            <Markdown style={modalMarkdownStyles}>
-                                {selectedSummary?.summary}
-                            </Markdown>
-                        </ScrollView>
-                    </View>
-                </View>
-            </Modal>
+                onClose={() => setSelectedSummary(null)}
+            />
         </SafeAreaView>
     );
 };
 
 // ============================================
-// MARKDOWN STYLES
+// AI CARD STYLES
 // ============================================
-const cardMarkdownStyles = StyleSheet.create({
-    body: {
-        fontSize: 13,
-        color: Colors.textSecondary,
-        lineHeight: 19,
+const aiStyles = StyleSheet.create({
+    card: {
+        width: CARD_WIDTH,
+        height: CARD_HEIGHT,
+        marginRight: Spacing.m,
+        borderRadius: 20,
+        backgroundColor: Colors.surface,
+        borderWidth: 1.5,
+        overflow: 'hidden',
+        ...Layout.shadow.default,
     },
-    strong: {
-        fontWeight: '600',
-        color: Colors.textPrimary,
+    statusBar: {
+        height: 3,
+        width: '100%',
     },
-    heading1: {
-        fontSize: 14,
-        fontWeight: '700',
-        marginBottom: 4,
-        color: Colors.textPrimary,
+    cardContent: {
+        flex: 1,
+        padding: Spacing.m,
+        paddingTop: Spacing.sm,
     },
-    paragraph: {
-        marginTop: 0,
-        marginBottom: 6,
-    },
-    bullet_list: {
-        marginBottom: 6,
-    },
-    list_item: {
+    cardHeader: {
         flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        marginBottom: Spacing.sm,
+    },
+    courseInfo: {
+        flex: 1,
+        marginRight: Spacing.s,
+    },
+    statusBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'flex-start',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 10,
+        marginBottom: 6,
+    },
+    statusLabel: {
+        fontSize: 11,
+        fontWeight: '600',
+        marginLeft: 4,
+    },
+    courseName: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: Colors.textPrimary,
+        letterSpacing: -0.3,
+    },
+    aiTag: {
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    statsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginBottom: Spacing.sm,
+    },
+    statChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        gap: 4,
+    },
+    urgentChip: {
+        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    },
+    upcomingChip: {
+        backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    },
+    announcementChip: {
+        backgroundColor: `${Colors.primary}10`,
+    },
+    calmChip: {
+        backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    },
+    statText: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    statusMessage: {
+        fontSize: 13,
+        lineHeight: 19,
+        color: Colors.textSecondary,
+        marginBottom: Spacing.sm,
+    },
+    priorityPreview: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(239, 68, 68, 0.05)',
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderRadius: 10,
+        marginBottom: Spacing.sm,
+    },
+    priorityDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#EF4444',
+        marginRight: 8,
+    },
+    priorityText: {
+        flex: 1,
+        fontSize: 12,
+        color: Colors.textPrimary,
+        fontWeight: '500',
+    },
+    priorityDue: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#EF4444',
+    },
+    cardFooter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        marginTop: 'auto',
+    },
+    viewMore: {
+        fontSize: 12,
+        color: Colors.textTertiary,
+        marginRight: 2,
     },
 });
 
-const modalMarkdownStyles = StyleSheet.create({
-    body: {
-        fontSize: 16,
-        color: Colors.textPrimary,
-        lineHeight: 26,
+// ============================================
+// AI MODAL STYLES
+// ============================================
+const modalStyles = StyleSheet.create({
+    backdrop: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.4)',
     },
-    strong: {
-        fontWeight: '700',
-        color: Colors.primary,
+    container: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: Colors.background,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        maxHeight: '85%',
+        ...Layout.shadow.lg,
     },
-    heading1: {
-        fontSize: 20,
-        fontWeight: '700',
-        marginBottom: 12,
-        marginTop: 16,
-        color: Colors.textPrimary,
+    handleContainer: {
+        alignItems: 'center',
+        paddingVertical: 12,
     },
-    heading2: {
+    handle: {
+        width: 36,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: Colors.border,
+    },
+    header: {
+        paddingHorizontal: Spacing.l,
+        paddingBottom: Spacing.m,
+        borderBottomWidth: 1,
+    },
+    headerTop: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    statusIndicator: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: Spacing.m,
+    },
+    headerInfo: {
+        flex: 1,
+    },
+    courseTitle: {
         fontSize: 18,
-        fontWeight: '600',
-        marginBottom: 8,
-        marginTop: 12,
+        fontWeight: '700',
+        color: Colors.textPrimary,
+        marginBottom: 2,
+    },
+    statusText: {
+        fontSize: 13,
+        fontWeight: '500',
+    },
+    closeButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: Colors.surfaceAlt || Colors.surface,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    content: {
+        paddingHorizontal: Spacing.l,
+        paddingTop: Spacing.m,
+    },
+    section: {
+        marginBottom: Spacing.l,
+    },
+    sectionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: Spacing.sm,
+    },
+    sectionIcon: {
+        width: 28,
+        height: 28,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: Spacing.s,
+    },
+    sectionTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: Colors.textPrimary,
+        flex: 1,
+    },
+    countBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    countText: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    newBadge: {
+        backgroundColor: '#EF4444',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    newBadgeText: {
+        fontSize: 9,
+        fontWeight: '800',
+        color: '#FFF',
+        letterSpacing: 0.5,
+    },
+    itemsList: {
+        backgroundColor: Colors.surface,
+        borderRadius: 12,
+        overflow: 'hidden',
+    },
+    listItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: Spacing.m,
+        paddingVertical: Spacing.sm,
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.border,
+    },
+    itemLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: Spacing.s,
+    },
+    itemTitle: {
+        fontSize: 14,
+        color: Colors.textPrimary,
+        marginLeft: Spacing.s,
+        flex: 1,
+    },
+    dueBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+    },
+    dueText: {
+        fontSize: 11,
+        fontWeight: '700',
+    },
+    emptyText: {
+        fontSize: 14,
+        color: Colors.textTertiary,
+        fontStyle: 'italic',
+        paddingVertical: Spacing.s,
+    },
+    announcementBox: {
+        backgroundColor: Colors.surface,
+        borderRadius: 12,
+        padding: Spacing.m,
+        borderLeftWidth: 3,
+        borderLeftColor: '#6366F1',
+    },
+    announcementText: {
+        fontSize: 14,
+        lineHeight: 21,
         color: Colors.textPrimary,
     },
-    paragraph: {
-        marginBottom: 12,
+    insightBox: {
+        backgroundColor: 'rgba(139, 92, 246, 0.06)',
+        borderRadius: 16,
+        padding: Spacing.m,
+        borderWidth: 1,
+        borderColor: 'rgba(139, 92, 246, 0.15)',
     },
-    bullet_list: {
-        marginBottom: 12,
+    insightHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: Spacing.s,
+    },
+    insightLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: Colors.secondary,
+        marginLeft: 6,
+    },
+    insightText: {
+        fontSize: 14,
+        lineHeight: 22,
+        color: Colors.textPrimary,
     },
 });
 
@@ -851,57 +1374,6 @@ const styles = StyleSheet.create({
         ...Typography.body2,
         marginLeft: Spacing.s,
     },
-    aiScroll: {
-        paddingRight: Spacing.l,
-    },
-    aiCard: {
-        width: SCREEN_WIDTH * 0.7,
-        marginRight: Spacing.m,
-        borderRadius: Layout.borderRadius.xl,
-        overflow: 'hidden',
-        backgroundColor: Colors.surface,
-        borderWidth: 1,
-        borderColor: Colors.border,
-        ...Layout.shadow.default,
-    },
-    aiCardGradient: {
-        padding: Spacing.l,
-        minHeight: 180,
-    },
-    aiHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: Spacing.m,
-    },
-    aiIconContainer: {
-        width: 32,
-        height: 32,
-        borderRadius: 10,
-        backgroundColor: Colors.secondary,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: Spacing.s,
-    },
-    aiCourseName: {
-        ...Typography.subtitle1,
-        flex: 1,
-    },
-    aiContentContainer: {
-        flex: 1,
-        overflow: 'hidden',
-    },
-    aiFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        marginTop: Spacing.s,
-    },
-    readMore: {
-        ...Typography.buttonSmall,
-        color: Colors.primary,
-        marginRight: 4,
-    },
-
     // Assignment Cards
     assignmentCard: {
         flexDirection: 'row',
@@ -997,54 +1469,6 @@ const styles = StyleSheet.create({
     },
     emptySubtitle: {
         ...Typography.body2,
-    },
-
-    // Modal
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: Colors.overlay,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: Spacing.l,
-    },
-    modalContent: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.xl,
-        width: '100%',
-        maxHeight: '85%',
-        overflow: 'hidden',
-        ...Layout.shadow.lg,
-    },
-    modalHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        padding: Spacing.l,
-        paddingBottom: Spacing.m,
-        borderBottomWidth: 1,
-        borderBottomColor: Colors.divider,
-    },
-    modalTitleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-        marginRight: Spacing.m,
-    },
-    modalIcon: {
-        width: 36,
-        height: 36,
-        borderRadius: 12,
-        backgroundColor: Colors.secondary,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: Spacing.m,
-    },
-    modalTitle: {
-        ...Typography.header3,
-        flex: 1,
-    },
-    modalBody: {
-        padding: Spacing.l,
     },
 });
 

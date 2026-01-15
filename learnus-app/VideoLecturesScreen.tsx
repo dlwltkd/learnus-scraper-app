@@ -27,13 +27,9 @@ if (Platform.OS === 'android') {
     }
 }
 
-const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollapsed, onToggle, action }: any) => (
-    <View style={styles.sectionHeader}>
-        <TouchableOpacity
-            style={styles.sectionHeaderLeft}
-            onPress={isCollapsible ? onToggle : undefined}
-            activeOpacity={isCollapsible ? 0.7 : 1}
-        >
+const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollapsed, onToggle, action }: any) => {
+    const content = (
+        <>
             <Ionicons name={icon} size={20} color={iconColor || Colors.primary} style={{ marginRight: 8 }} />
             <Text style={styles.sectionTitle}>{title}</Text>
             {isCollapsible && isCollapsed && count !== undefined && count > 0 && (
@@ -49,10 +45,22 @@ const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollaps
                     style={{ marginLeft: 8 }}
                 />
             )}
-        </TouchableOpacity>
-        {action}
-    </View>
-);
+        </>
+    );
+
+    return (
+        <View style={styles.sectionHeader}>
+            {isCollapsible ? (
+                <TouchableOpacity style={styles.sectionHeaderLeft} onPress={onToggle} activeOpacity={0.7}>
+                    {content}
+                </TouchableOpacity>
+            ) : (
+                <View style={styles.sectionHeaderLeft}>{content}</View>
+            )}
+            {action}
+        </View>
+    );
+};
 
 const VideoLecturesScreen = () => {
     const [loading, setLoading] = useState(true);
@@ -324,15 +332,15 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: Spacing.m,
-        paddingHorizontal: Spacing.xs,
     },
     sectionHeaderLeft: {
         flexDirection: 'row',
         alignItems: 'center',
     },
     sectionTitle: {
-        ...Typography.header2,
-        fontSize: 20,
+        fontSize: 18,
+        fontWeight: '700',
+        color: Colors.textPrimary,
     },
     countBadge: {
         backgroundColor: Colors.error,
