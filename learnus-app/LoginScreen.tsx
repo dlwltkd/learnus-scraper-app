@@ -7,13 +7,14 @@ import {
     Platform,
     Animated,
     TouchableOpacity,
+    ActivityIndicator,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { loginWithCookies } from './services/api';
-import { Colors, Spacing, Layout, Typography } from './constants/theme';
+import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
 import Button from './components/Button';
 
 interface LoginScreenProps {
@@ -29,16 +30,20 @@ export default function LoginScreen({
 }: LoginScreenProps) {
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const isLoggingOutRef = useRef(false);
+    const [isAuthenticating, setIsAuthenticating] = useState(false);
 
     // WebView State
     const [url, setUrl] = useState('https://ys.learnus.org/login/index.php');
     const webViewRef = useRef<WebView>(null);
     const hasLoggedOut = useRef(false);
     const currentUrlRef = useRef('https://ys.learnus.org/login/index.php');
+    const wasOnLoginPage = useRef(true);
 
     // Animations
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const slideAnim = useRef(new Animated.Value(30)).current;
+    const loadingOpacity = useRef(new Animated.Value(0)).current;
+    const pulseAnim = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
         Animated.parallel([
@@ -54,6 +59,41 @@ export default function LoginScreen({
             }),
         ]).start();
     }, []);
+
+    // Loading overlay animation
+    useEffect(() => {
+        if (isAuthenticating) {
+            Animated.timing(loadingOpacity, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+            }).start();
+
+            // Pulse animation for the icon
+            const pulse = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(pulseAnim, {
+                        toValue: 1.1,
+                        duration: 800,
+                        useNativeDriver: true,
+                    }),
+                    Animated.timing(pulseAnim, {
+                        toValue: 1,
+                        duration: 800,
+                        useNativeDriver: true,
+                    }),
+                ])
+            );
+            pulse.start();
+            return () => pulse.stop();
+        } else {
+            Animated.timing(loadingOpacity, {
+                toValue: 0,
+                duration: 200,
+                useNativeDriver: true,
+            }).start();
+        }
+    }, [isAuthenticating]);
 
     useEffect(() => {
         if (autoLogout) {
@@ -92,8 +132,31 @@ export default function LoginScreen({
     const handleNavigationStateChange = (navState: any) => {
         const { url } = navState;
         currentUrlRef.current = url;
+
+        const isLoginPage = url.includes('/login/index.php') || url.includes('/login/');
+        const isSSOCredentialsPage = url.includes('infra.yonsei.ac.kr/sso');
+
+        // Track if user is on SSO credentials page
+        if (isSSOCredentialsPage) {
+            wasOnLoginPage.current = true; // Mark that we're on SSO page
+        }
+
+        // Detect when user leaves SSO credentials page (clicked "log on")
+        // They'll be redirected to learnus.org - show loading overlay
+        if (wasOnLoginPage.current && !isSSOCredentialsPage && !isLoginPage && !isLoggingOutRef.current) {
+            setIsAuthenticating(true);
+        }
+
+        // Reset tracking when back on login page
+        if (isLoginPage) {
+            wasOnLoginPage.current = false;
+            setIsAuthenticating(false);
+        }
+
         if (url.includes('/login/logout.php')) {
             hasLoggedOut.current = false;
+            setIsAuthenticating(false);
+            wasOnLoginPage.current = false;
             return;
         }
         const checkCookieScript = `if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(document.cookie);`;
@@ -132,6 +195,8 @@ export default function LoginScreen({
                     const success = await onLoginSuccess(result.api_token);
                     if (!success) {
                         console.log('Login failed in App (invalid token?), clearing cookies to retry...');
+                        setIsAuthenticating(false);
+                        wasOnLoginPage.current = true;
                         const clearCookieScript = `
                         (function() {
                             var cookies = document.cookie.split(";");
@@ -149,9 +214,12 @@ export default function LoginScreen({
                         `;
                         webViewRef.current?.injectJavaScript(clearCookieScript);
                     }
+                    // Success case: loading will be hidden when screen unmounts
                 }
             } catch (e) {
                 console.log('Session Sync Failed', e);
+                setIsAuthenticating(false);
+                wasOnLoginPage.current = true;
             }
         }
     };
@@ -159,6 +227,8 @@ export default function LoginScreen({
     const handleReset = () => {
         if (!isLoggingOutRef.current) {
             setIsLoggingOut(true);
+            setIsAuthenticating(false);
+            wasOnLoginPage.current = true;
             isLoggingOutRef.current = true;
             webViewRef.current?.injectJavaScript(
                 `window.location.href='https://ys.learnus.org/passni/sso/spLogout.php';`
@@ -233,6 +303,35 @@ export default function LoginScreen({
                         onMessage={onMessage}
                         style={styles.webView}
                     />
+
+                    {/* Loading Overlay */}
+                    {isAuthenticating && (
+                        <Animated.View
+                            style={[
+                                styles.loadingOverlay,
+                                { opacity: loadingOpacity },
+                            ]}
+                            pointerEvents="auto"
+                        >
+                            <Animated.View
+                                style={[
+                                    styles.loadingCard,
+                                    { transform: [{ scale: pulseAnim }] },
+                                ]}
+                            >
+                                <View style={styles.loadingIconContainer}>
+                                    <Ionicons name="school" size={32} color={Colors.primary} />
+                                </View>
+                                <Text style={styles.loadingTitle}>로그인 중...</Text>
+                                <Text style={styles.loadingSubtitle}>연세포털 인증을 처리하고 있습니다</Text>
+                                <ActivityIndicator
+                                    size="small"
+                                    color={Colors.primary}
+                                    style={styles.loadingSpinner}
+                                />
+                            </Animated.View>
+                        </Animated.View>
+                    )}
                 </View>
             </View>
 
@@ -346,6 +445,47 @@ const styles = StyleSheet.create({
     webView: {
         flex: 1,
         backgroundColor: Colors.surface,
+    },
+
+    // Loading Overlay
+    loadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(248, 249, 252, 0.95)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 10,
+    },
+    loadingCard: {
+        backgroundColor: Colors.surface,
+        borderRadius: Layout.borderRadius.xl,
+        padding: Spacing.xl,
+        alignItems: 'center',
+        ...Layout.shadow.lg,
+        borderWidth: 1,
+        borderColor: Colors.border,
+        minWidth: 220,
+    },
+    loadingIconContainer: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: Colors.primaryLighter,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: Spacing.m,
+    },
+    loadingTitle: {
+        ...Typography.subtitle1,
+        color: Colors.textPrimary,
+        marginBottom: Spacing.xs,
+    },
+    loadingSubtitle: {
+        ...Typography.caption,
+        color: Colors.textSecondary,
+        textAlign: 'center',
+    },
+    loadingSpinner: {
+        marginTop: Spacing.m,
     },
 
     // Footer

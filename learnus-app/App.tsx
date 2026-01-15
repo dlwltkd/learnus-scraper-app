@@ -25,6 +25,7 @@ import { Colors, Layout, Typography } from './constants/theme';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserProvider } from './context/UserContext';
+import { ToastProvider } from './context/ToastContext';
 
 import { getDashboardOverview, registerPushToken } from './services/api';
 import {
@@ -237,11 +238,13 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <UserProvider>
-            <AppContent />
-          </UserProvider>
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <UserProvider>
+              <AppContent />
+            </UserProvider>
+          </AuthProvider>
+        </ToastProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

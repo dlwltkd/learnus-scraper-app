@@ -7,7 +7,6 @@ import {
     RefreshControl,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
     StatusBar,
     Modal,
     Animated,
@@ -24,6 +23,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { getDashboardOverview, syncAllActiveCourses, completeAssignments, fetchAISummary } from './services/api';
 import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
 import { useUser } from './context/UserContext';
+import { useToast } from './context/ToastContext';
 import Card from './components/Card';
 import Badge, { StatusBadge } from './components/Badge';
 import Button, { IconButton } from './components/Button';
@@ -546,6 +546,7 @@ const AssignmentItem = ({ item, onComplete, isMissed = false }: AssignmentItemPr
 const DashboardScreen = () => {
     const navigation = useNavigation();
     const { profile } = useUser();
+    const { showSuccess, showError } = useToast();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [data, setData] = useState<any>(null);
@@ -605,7 +606,7 @@ const DashboardScreen = () => {
             }
         } catch (e) {
             console.error(e);
-            Alert.alert('오류', 'AI 요약을 불러오는데 실패했습니다.');
+            showError('오류', 'AI 요약을 불러오는데 실패했습니다.');
         } finally {
             setLoadingAI(false);
         }
@@ -625,9 +626,9 @@ const DashboardScreen = () => {
         try {
             await syncAllActiveCourses();
             await loadDashboard();
-            Alert.alert('동기화 완료', '모든 활성 강의가 동기화되었습니다.');
+            showSuccess('동기화 완료', '모든 활성 강의가 동기화되었습니다.');
         } catch (e) {
-            Alert.alert('동기화 실패', '일부 강의 동기화에 실패했습니다.');
+            showError('동기화 실패', '일부 강의 동기화에 실패했습니다.');
         } finally {
             setSyncing(false);
             syncRotation.stopAnimation();
@@ -665,7 +666,7 @@ const DashboardScreen = () => {
             await completeAssignments([id], newCompletedStatus);
         } catch (e) {
             console.error(e);
-            Alert.alert('오류', '과제 완료 처리에 실패했습니다.');
+            showError('오류', '과제 완료 처리에 실패했습니다.');
             loadDashboard();
         }
     };

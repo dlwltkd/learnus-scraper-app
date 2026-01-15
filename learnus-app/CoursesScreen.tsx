@@ -7,7 +7,6 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     RefreshControl,
-    Alert,
     Animated,
     LayoutAnimation,
     Platform,
@@ -18,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { getCourses, syncCourse } from './services/api';
+import { useToast } from './context/ToastContext';
 import { ScreenHeader } from './components/Header';
 import Badge from './components/Badge';
 import EmptyState from './components/EmptyState';
@@ -166,6 +166,7 @@ const CourseCard = ({ item, index, onPress, onSync, syncing }: CourseCardProps) 
 // ============================================
 export default function CoursesScreen() {
     const navigation = useNavigation();
+    const { showSuccess, showError } = useToast();
     const [courses, setCourses] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -197,9 +198,9 @@ export default function CoursesScreen() {
         try {
             await syncCourse(courseId);
             await loadCourses();
-            Alert.alert('동기화 완료', '강의 내용이 업데이트되었습니다.');
+            showSuccess('동기화 완료', '강의 내용이 업데이트되었습니다.');
         } catch (e) {
-            Alert.alert('동기화 실패', '강의 내용을 업데이트하지 못했습니다.');
+            showError('동기화 실패', '강의 내용을 업데이트하지 못했습니다.');
         } finally {
             setSyncingId(null);
         }

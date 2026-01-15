@@ -9,7 +9,9 @@
       "Bash(timeout:*)",
       "Bash(ping:*)",
       "Bash(git checkout:*)",
-      "Bash(git merge-base:*)"
+      "Bash(git merge-base:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python -c:*)"
     ]
   }
 }

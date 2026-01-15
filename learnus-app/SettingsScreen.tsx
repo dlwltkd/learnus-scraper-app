@@ -4,7 +4,6 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
-    Alert,
     ScrollView,
     Animated,
     Linking,
@@ -15,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useAuth } from './context/AuthContext';
 import { useUser } from './context/UserContext';
+import { useToast } from './context/ToastContext';
 import { ScreenHeader } from './components/Header';
 
 // ============================================
@@ -120,24 +120,20 @@ export default function SettingsScreen() {
     const navigation = useNavigation();
     const { logout } = useAuth();
     const { profile } = useUser();
+    const { showConfirm, showInfo } = useToast();
 
     const handleLogout = () => {
-        Alert.alert(
+        showConfirm(
             '로그아웃',
             '정말 로그아웃 하시겠습니까?',
-            [
-                { text: '취소', style: 'cancel' },
-                {
-                    text: '로그아웃',
-                    style: 'destructive',
-                    onPress: () => logout(),
-                },
-            ]
+            () => logout(),
+            '로그아웃',
+            '취소'
         );
     };
 
     const handleComingSoon = (feature: string) => {
-        Alert.alert('알림', `${feature} 기능은 현재 개발 중입니다.`);
+        showInfo('알림', `${feature} 기능은 현재 개발 중입니다.`);
     };
 
     return (

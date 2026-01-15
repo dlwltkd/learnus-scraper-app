@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
-import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login as apiLogin, setupAxiosInterceptors, clearAuthToken } from '../services/api';
+import { useToast } from './ToastContext';
 
 interface AuthContextType {
     isLoggedIn: boolean;
@@ -15,6 +15,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+    const { showAlert } = useToast();
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [autoLogout, setAutoLogout] = useState(false);
 
@@ -23,10 +24,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         setupAxiosInterceptors(() => {
             console.log("AuthContext: Session expired, logging out...");
-            Alert.alert(
+            showAlert(
                 "세션 만료",
                 "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
-                [{ text: "확인", onPress: () => logout() }]
+                [{ text: "확인", onPress: () => logout() }],
+                'warning'
             );
         });
         loadStorage();

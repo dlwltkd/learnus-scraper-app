@@ -8,17 +8,18 @@ import {
     KeyboardAvoidingView,
     Platform,
     Animated,
-    Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { useUser } from './context/UserContext';
+import { useToast } from './context/ToastContext';
 
 export default function MyInfoScreen() {
     const navigation = useNavigation();
     const { profile, updateName } = useUser();
+    const { showSuccess, showError } = useToast();
     const [name, setName] = useState(profile.name);
     const [isFocused, setIsFocused] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -71,11 +72,10 @@ export default function MyInfoScreen() {
         setIsSaving(true);
         try {
             await updateName(name.trim());
-            Alert.alert('저장 완료', '이름이 저장되었습니다.', [
-                { text: '확인', onPress: () => navigation.goBack() }
-            ]);
+            showSuccess('저장 완료', '이름이 저장되었습니다.');
+            navigation.goBack();
         } catch (e) {
-            Alert.alert('오류', '저장에 실패했습니다.');
+            showError('오류', '저장에 실패했습니다.');
         } finally {
             setIsSaving(false);
         }

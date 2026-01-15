@@ -7,7 +7,6 @@ import {
     RefreshControl,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
     StatusBar,
     Animated,
     LayoutAnimation,
@@ -19,6 +18,7 @@ import { RectButton, Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getDashboardOverview, watchVods } from './services/api';
+import { useToast } from './context/ToastContext';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 
 if (Platform.OS === 'android') {
@@ -63,6 +63,7 @@ const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollaps
 };
 
 const VideoLecturesScreen = () => {
+    const { showSuccess, showError, showInfo } = useToast();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
     const [watchingVods, setWatchingVods] = useState(false);
@@ -99,14 +100,14 @@ const VideoLecturesScreen = () => {
         try {
             const vodIds = data.available_vods.map((v: any) => v.id);
             await watchVods(vodIds);
-            Alert.alert("처리 시작", "강의 시청 처리가 백그라운드에서 시작되었습니다.");
+            showInfo("처리 시작", "강의 시청 처리가 백그라운드에서 시작되었습니다.");
 
             // Mark all as completed locally
             const updatedAvailable = data.available_vods.map((item: any) => ({ ...item, is_completed: true }));
             setData({ ...data, available_vods: updatedAvailable });
 
         } catch (e) {
-            Alert.alert("오류", "강의 시청 처리에 실패했습니다.");
+            showError("오류", "강의 시청 처리에 실패했습니다.");
         } finally {
             setWatchingVods(false);
         }
@@ -131,7 +132,7 @@ const VideoLecturesScreen = () => {
             await watchVods([id]);
         } catch (e) {
             console.error(e);
-            Alert.alert("오류", "강의 완료 처리에 실패했습니다.");
+            showError("오류", "강의 완료 처리에 실패했습니다.");
             loadData();
         }
     };
