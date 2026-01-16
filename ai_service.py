@@ -16,6 +16,10 @@ class AIService:
         Returns structured data for better frontend rendering.
         """
 
+        # Pre-filter: only include INCOMPLETE assignments and VODs
+        incomplete_assignments = [a for a in assignments if not a.is_completed]
+        incomplete_vods = [v for v in vods if not v.is_completed]
+
         # Prepare data for the prompt
         data_context = {
             "course_name": course_name,
@@ -25,12 +29,12 @@ class AIService:
                 for a in announcements[:5]
             ],
             "assignments": [
-                {"title": a.title, "due_date": str(a.due_date) if a.due_date else None, "is_completed": a.is_completed}
-                for a in assignments
+                {"title": a.title, "due_date": str(a.due_date) if a.due_date else None}
+                for a in incomplete_assignments
             ],
             "vods": [
-                {"title": v.title, "start_date": str(v.start_date), "end_date": str(v.end_date), "is_completed": v.is_completed}
-                for v in vods
+                {"title": v.title, "start_date": str(v.start_date), "end_date": str(v.end_date)}
+                for v in incomplete_vods
             ]
         }
 
@@ -66,13 +70,15 @@ Return ONLY valid JSON in this exact structure (no markdown, no code blocks):
 }}
 
 Rules:
-- "status": "urgent" if items due within 2 days, "busy" if within 5 days, "calm" otherwise
+- All items provided are INCOMPLETE (not yet submitted/watched) - analyze them all
+- "status": "urgent" if any item is due within 2 days, "busy" if within 5 days, "calm" if no pending items or all due later
+- "urgent.items": items due within 2 days
+- "upcoming.items": items due within 3-7 days
 - "due" format: "D-N" for N days remaining, "오늘" for today, "내일" for tomorrow
 - Maximum 3 items in urgent.items and upcoming.items
 - All text in Korean (해요체)
 - Keep summaries concise (under 50 chars each)
-- Be encouraging but realistic
-- Only include incomplete items (is_completed: false)"""
+- Be encouraging but realistic"""
 
         try:
             response = self.client.chat.completions.create(
