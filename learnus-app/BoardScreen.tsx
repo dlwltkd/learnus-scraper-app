@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, ActivityIndicator, StatusBar } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getPosts } from './services/api';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { COLORS, FONTS, SPACING } from './constants/theme';
+import { Colors, Typography, Spacing, Layout } from './constants/theme';
 import Card from './components/Card';
-import Icon from './components/Icon';
 
 export default function BoardScreen() {
     const route = useRoute();
@@ -17,8 +17,8 @@ export default function BoardScreen() {
     useEffect(() => {
         navigation.setOptions({
             title: board.title,
-            headerStyle: { backgroundColor: COLORS.surface },
-            headerTintColor: COLORS.text,
+            headerStyle: { backgroundColor: Colors.surface },
+            headerTintColor: Colors.textPrimary,
         });
         loadPosts();
     }, []);
@@ -43,11 +43,11 @@ export default function BoardScreen() {
                 <Text style={styles.postTitle} numberOfLines={2}>{item.title}</Text>
                 <View style={styles.metaRow}>
                     <View style={styles.metaItem}>
-                        <Icon name="person-outline" size={14} color={COLORS.textSecondary} />
+                        <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
                         <Text style={styles.metaText}>{item.writer}</Text>
                     </View>
                     <View style={styles.metaItem}>
-                        <Icon name="time-outline" size={14} color={COLORS.textSecondary} />
+                        <Ionicons name="time-outline" size={14} color={Colors.textSecondary} />
                         <Text style={styles.metaText}>{item.date}</Text>
                     </View>
                 </View>
@@ -58,14 +58,14 @@ export default function BoardScreen() {
     if (loading) {
         return (
             <View style={styles.centered}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
+                <ActivityIndicator size="large" color={Colors.primary} />
             </View>
         );
     }
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+            <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
             <FlatList
                 data={posts}
                 renderItem={renderItem}
@@ -80,7 +80,7 @@ export default function BoardScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: COLORS.background,
+        backgroundColor: Colors.background,
     },
     centered: {
         flex: 1,
@@ -88,39 +88,35 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     list: {
-        padding: SPACING.md,
+        padding: Spacing.l,
     },
     postItem: {
-        marginBottom: SPACING.sm,
+        marginBottom: Spacing.m,
     },
     postTitle: {
-        fontSize: FONTS.sizes.md,
-        fontWeight: '600',
-        color: COLORS.text,
-        marginBottom: SPACING.sm,
-        lineHeight: 22,
+        ...Typography.subtitle1,
+        marginBottom: Spacing.s,
     },
     metaRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         borderTopWidth: 1,
-        borderTopColor: COLORS.border,
-        paddingTop: SPACING.sm,
-        marginTop: SPACING.xs,
+        borderTopColor: Colors.border,
+        paddingTop: Spacing.s,
+        marginTop: Spacing.xs,
     },
     metaItem: {
         flexDirection: 'row',
         alignItems: 'center',
+        gap: 4,
     },
     metaText: {
-        fontSize: FONTS.sizes.xs,
-        color: COLORS.textSecondary,
-        marginLeft: 4,
+        ...Typography.caption,
     },
     emptyText: {
+        ...Typography.body1,
         textAlign: 'center',
         marginTop: 40,
-        color: COLORS.textLight,
-        fontSize: FONTS.sizes.md,
+        color: Colors.textTertiary,
     },
 });

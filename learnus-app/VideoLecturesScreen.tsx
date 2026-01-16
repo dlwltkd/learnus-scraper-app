@@ -339,9 +339,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     sectionTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: Colors.textPrimary,
+        ...Typography.header3,
     },
     countBadge: {
         backgroundColor: Colors.error,

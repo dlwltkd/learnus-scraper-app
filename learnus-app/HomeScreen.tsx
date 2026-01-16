@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getCourses, syncCourse, syncCoursesList } from './services/api';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { COLORS, FONTS, SPACING } from './constants/theme';
+import { Colors, Typography, Spacing, Layout } from './constants/theme';
 import Card from './components/Card';
 import Button from './components/Button';
-import Icon from './components/Icon';
 
 type RootStackParamList = {
     CourseDetail: { course: any };
@@ -62,7 +62,7 @@ export default function HomeScreen() {
         }
     };
 
-    const activeCourses = courses.filter(c => c.is_active !== false); // Default to true if undefined
+    const activeCourses = courses.filter(c => c.is_active !== false);
 
     const renderItem = ({ item }: { item: any }) => (
         <TouchableOpacity
@@ -72,7 +72,7 @@ export default function HomeScreen() {
             <Card style={styles.card}>
                 <View style={styles.cardContent}>
                     <View style={styles.iconContainer}>
-                        <Icon name="book-outline" size={24} color={COLORS.primary} />
+                        <Ionicons name="book-outline" size={24} color={Colors.primary} />
                     </View>
                     <View style={styles.textContainer}>
                         <Text style={styles.courseName} numberOfLines={2}>{item.name}</Text>
@@ -86,7 +86,7 @@ export default function HomeScreen() {
                         loading={syncing === item.id}
                         variant="outline"
                         style={styles.syncButton}
-                        icon={!syncing ? <Icon name="refresh" size={16} color={COLORS.primary} /> : undefined}
+                        icon={!syncing ? <Ionicons name="refresh" size={16} color={Colors.primary} /> : undefined}
                     />
                 </View>
             </Card>
@@ -96,27 +96,27 @@ export default function HomeScreen() {
     if (loading) {
         return (
             <View style={styles.centered}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
+                <ActivityIndicator size="large" color={Colors.primary} />
             </View>
         );
     }
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+            <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
             <View style={styles.header}>
                 <Button
                     title="목록 동기화"
                     onPress={handleSyncList}
                     variant="ghost"
-                    icon={<Icon name="cloud-download-outline" size={20} color={COLORS.primary} />}
+                    icon={<Ionicons name="cloud-download-outline" size={20} color={Colors.primary} />}
                 />
                 <Button
                     title="관리"
                     onPress={() => (navigation as any).navigate('ManageCourses')}
                     variant="ghost"
-                    icon={<Icon name="settings-outline" size={20} color={COLORS.textSecondary} />}
-                    style={{ marginLeft: SPACING.sm }}
+                    icon={<Ionicons name="settings-outline" size={20} color={Colors.textSecondary} />}
+                    style={{ marginLeft: Spacing.s }}
                 />
             </View>
             <FlatList
@@ -135,13 +135,13 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: COLORS.background,
+        backgroundColor: Colors.background,
     },
     header: {
-        padding: SPACING.sm,
-        backgroundColor: COLORS.surface,
+        padding: Spacing.s,
+        backgroundColor: Colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
+        borderBottomColor: Colors.border,
         flexDirection: 'row',
         justifyContent: 'flex-end',
         alignItems: 'center',
@@ -152,13 +152,13 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     list: {
-        padding: SPACING.md,
+        padding: Spacing.l,
     },
     card: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: SPACING.md,
+        paddingVertical: Spacing.m,
     },
     cardContent: {
         flexDirection: 'row',
@@ -168,25 +168,22 @@ const styles = StyleSheet.create({
     iconContainer: {
         width: 48,
         height: 48,
-        borderRadius: 24,
-        backgroundColor: COLORS.background,
+        borderRadius: Layout.borderRadius.full,
+        backgroundColor: Colors.primaryLighter,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: SPACING.md,
+        marginRight: Spacing.m,
     },
     textContainer: {
         flex: 1,
-        marginRight: SPACING.sm,
+        marginRight: Spacing.s,
     },
     courseName: {
-        fontSize: FONTS.sizes.md,
-        fontWeight: 'bold',
-        color: COLORS.text,
+        ...Typography.subtitle1,
         marginBottom: 4,
     },
     courseId: {
-        fontSize: FONTS.sizes.xs,
-        color: COLORS.textSecondary,
+        ...Typography.caption,
     },
     actionContainer: {
         justifyContent: 'center',
@@ -194,7 +191,7 @@ const styles = StyleSheet.create({
     syncButton: {
         paddingVertical: 6,
         paddingHorizontal: 12,
-        borderRadius: 8,
+        borderRadius: Layout.borderRadius.s,
         minWidth: 80,
     },
 });

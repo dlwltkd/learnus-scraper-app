@@ -227,6 +227,7 @@ export default function CoursesScreen() {
                     label: '편집',
                     onPress: () => (navigation as any).navigate('ManageCourses'),
                 }}
+                style={{ paddingHorizontal: 0 }}
             />
 
             {/* Quick stats */}
@@ -297,7 +298,6 @@ const styles = StyleSheet.create({
     },
     statsContainer: {
         flexDirection: 'row',
-        paddingHorizontal: Spacing.l,
         marginTop: Spacing.s,
     },
     statPill: {

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, FlatList, Switch, ActivityIndicator, StatusBar } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getCourses, toggleCourseActive } from './services/api';
-import { COLORS, FONTS, SPACING } from './constants/theme';
+import { Colors, Typography, Spacing, Layout } from './constants/theme';
 import Card from './components/Card';
-import Icon from './components/Icon';
 
 export default function ManageCoursesScreen() {
     const [courses, setCourses] = useState<any[]>([]);
@@ -41,19 +41,19 @@ export default function ManageCoursesScreen() {
     const renderItem = ({ item }: { item: any }) => (
         <Card style={styles.item}>
             <View style={styles.contentContainer}>
-                <View style={styles.iconContainer}>
-                    <Icon name="book-outline" size={24} color={item.is_active ? COLORS.primary : COLORS.textLight} />
+                <View style={[styles.iconContainer, { backgroundColor: item.is_active ? Colors.primaryLighter : Colors.surfaceMuted }]}>
+                    <Ionicons name="book-outline" size={24} color={item.is_active ? Colors.primary : Colors.textTertiary} />
                 </View>
                 <View style={{ flex: 1 }}>
-                    <Text style={[styles.name, !item.is_active && { color: COLORS.textLight }]}>{item.name}</Text>
+                    <Text style={[styles.name, !item.is_active && { color: Colors.textTertiary }]}>{item.name}</Text>
                     <Text style={styles.id}>ID: {item.id}</Text>
                 </View>
             </View>
             <Switch
                 value={item.is_active}
                 onValueChange={() => handleToggle(item.id, item.is_active)}
-                trackColor={{ false: COLORS.border, true: COLORS.primary }}
-                thumbColor={COLORS.surface}
+                trackColor={{ false: Colors.border, true: Colors.primary }}
+                thumbColor={Colors.surface}
             />
         </Card>
     );
@@ -61,14 +61,14 @@ export default function ManageCoursesScreen() {
     if (loading) {
         return (
             <View style={styles.centered}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
+                <ActivityIndicator size="large" color={Colors.primary} />
             </View>
         );
     }
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+            <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
             <FlatList
                 data={courses}
                 renderItem={renderItem}
@@ -82,7 +82,7 @@ export default function ManageCoursesScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: COLORS.background,
+        backgroundColor: Colors.background,
     },
     centered: {
         flex: 1,
@@ -90,37 +90,33 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     list: {
-        padding: SPACING.md,
+        padding: Spacing.l,
     },
     item: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: SPACING.md,
+        paddingVertical: Spacing.m,
     },
     contentContainer: {
         flexDirection: 'row',
         alignItems: 'center',
         flex: 1,
-        marginRight: SPACING.md,
+        marginRight: Spacing.m,
     },
     iconContainer: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: COLORS.background,
+        width: 44,
+        height: 44,
+        borderRadius: Layout.borderRadius.m,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: SPACING.md,
+        marginRight: Spacing.m,
     },
     name: {
-        fontSize: FONTS.sizes.md,
-        fontWeight: '500',
-        color: COLORS.text,
+        ...Typography.subtitle1,
         marginBottom: 4,
     },
     id: {
-        fontSize: FONTS.sizes.xs,
-        color: COLORS.textSecondary,
+        ...Typography.caption,
     },
 });

@@ -777,14 +777,11 @@ const DashboardScreen = () => {
                         action={
                             aiSummaries.length > 0 && !loadingAI ? (
                                 <TouchableOpacity
-                                    style={styles.refreshButton}
+                                    style={styles.aiRefreshButton}
                                     onPress={loadAISummaries}
-                                    activeOpacity={0.7}
+                                    activeOpacity={0.6}
                                 >
-                                    <View style={styles.refreshButtonInner}>
-                                        <Ionicons name="refresh" size={14} color={Colors.secondary} />
-                                        <Text style={styles.refreshButtonText}>새로고침</Text>
-                                    </View>
+                                    <Ionicons name="refresh-outline" size={16} color={Colors.textTertiary} />
                                 </TouchableOpacity>
                             ) : null
                         }
@@ -1110,20 +1107,18 @@ const modalStyles = StyleSheet.create({
     sectionHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: Spacing.sm,
+        marginBottom: Spacing.m,
     },
     sectionIcon: {
-        width: 28,
-        height: 28,
-        borderRadius: 8,
+        width: 32,
+        height: 32,
+        borderRadius: 10,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: Spacing.s,
     },
     sectionTitle: {
-        fontSize: 15,
-        fontWeight: '700',
-        color: Colors.textPrimary,
+        ...Typography.header3,
         flex: 1,
     },
     countBadge: {
@@ -1147,25 +1142,8 @@ const modalStyles = StyleSheet.create({
         color: '#FFF',
         letterSpacing: 0.5,
     },
-    refreshButton: {
-        paddingVertical: Spacing.xs,
-        paddingHorizontal: Spacing.s,
-    },
-    refreshButtonInner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        backgroundColor: Colors.secondaryLight,
-        paddingVertical: 6,
-        paddingHorizontal: 10,
-        borderRadius: Layout.borderRadius.full,
-        borderWidth: 1,
-        borderColor: Colors.secondary + '30',
-    },
-    refreshButtonText: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: Colors.secondary,
+    aiRefreshButton: {
+        padding: Spacing.xs,
     },
     itemsList: {
         backgroundColor: Colors.surface,

@@ -25,26 +25,9 @@ export default function MyInfoScreen() {
     const [isSaving, setIsSaving] = useState(false);
 
     // Animations
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(30)).current;
     const inputScale = useRef(new Animated.Value(1)).current;
 
     const hasChanges = name !== profile.name;
-
-    useEffect(() => {
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 500,
-                useNativeDriver: true,
-            }),
-            Animated.timing(slideAnim, {
-                toValue: 0,
-                duration: 500,
-                useNativeDriver: true,
-            }),
-        ]).start();
-    }, []);
 
     const handleFocus = () => {
         setIsFocused(true);
@@ -87,15 +70,7 @@ export default function MyInfoScreen() {
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={styles.keyboardView}
             >
-                <Animated.View
-                    style={[
-                        styles.content,
-                        {
-                            opacity: fadeAnim,
-                            transform: [{ translateY: slideAnim }],
-                        },
-                    ]}
-                >
+                <View style={styles.content}>
                     {/* Profile Avatar */}
                     <View style={styles.avatarSection}>
                         <View style={styles.avatarContainer}>
@@ -189,7 +164,7 @@ export default function MyInfoScreen() {
                             {isSaving ? '저장 중...' : '저장하기'}
                         </Text>
                     </TouchableOpacity>
-                </Animated.View>
+                </View>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
