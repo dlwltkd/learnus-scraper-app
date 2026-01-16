@@ -774,6 +774,20 @@ const DashboardScreen = () => {
                         title="AI 브리핑"
                         icon="sparkles"
                         iconColor={Colors.secondary}
+                        action={
+                            aiSummaries.length > 0 && !loadingAI ? (
+                                <TouchableOpacity
+                                    style={styles.refreshButton}
+                                    onPress={loadAISummaries}
+                                    activeOpacity={0.7}
+                                >
+                                    <View style={styles.refreshButtonInner}>
+                                        <Ionicons name="refresh" size={14} color={Colors.secondary} />
+                                        <Text style={styles.refreshButtonText}>새로고침</Text>
+                                    </View>
+                                </TouchableOpacity>
+                            ) : null
+                        }
                     />
 
                     {!loadingAI && aiSummaries.length === 0 && (
@@ -1132,6 +1146,26 @@ const modalStyles = StyleSheet.create({
         fontWeight: '800',
         color: '#FFF',
         letterSpacing: 0.5,
+    },
+    refreshButton: {
+        paddingVertical: Spacing.xs,
+        paddingHorizontal: Spacing.s,
+    },
+    refreshButtonInner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: Colors.secondaryLight,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: Layout.borderRadius.full,
+        borderWidth: 1,
+        borderColor: Colors.secondary + '30',
+    },
+    refreshButtonText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: Colors.secondary,
     },
     itemsList: {
         backgroundColor: Colors.surface,
