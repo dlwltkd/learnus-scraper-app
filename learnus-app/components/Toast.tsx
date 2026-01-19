@@ -28,27 +28,27 @@ interface ToastProps {
 const TOAST_CONFIG = {
     success: {
         icon: 'checkmark-circle' as const,
-        color: Colors.success,
-        bgColor: Colors.successLight,
-        borderColor: 'rgba(34, 197, 94, 0.3)',
+        color: '#22C55E',
+        softBg: 'rgba(34, 197, 94, 0.12)',
+        iconBg: 'rgba(34, 197, 94, 0.15)',
     },
     error: {
         icon: 'close-circle' as const,
-        color: Colors.error,
-        bgColor: Colors.errorLight,
-        borderColor: 'rgba(239, 68, 68, 0.3)',
+        color: '#EF4444',
+        softBg: 'rgba(239, 68, 68, 0.12)',
+        iconBg: 'rgba(239, 68, 68, 0.15)',
     },
     info: {
         icon: 'information-circle' as const,
-        color: Colors.primary,
-        bgColor: Colors.primaryLighter,
-        borderColor: 'rgba(49, 130, 246, 0.3)',
+        color: '#3182F6',
+        softBg: 'rgba(49, 130, 246, 0.12)',
+        iconBg: 'rgba(49, 130, 246, 0.15)',
     },
     warning: {
-        icon: 'warning' as const,
-        color: Colors.warning,
-        bgColor: Colors.warningLight,
-        borderColor: 'rgba(245, 158, 11, 0.3)',
+        icon: 'alert-circle' as const,
+        color: '#F59E0B',
+        softBg: 'rgba(245, 158, 11, 0.12)',
+        iconBg: 'rgba(245, 158, 11, 0.15)',
     },
 };
 
@@ -61,31 +61,32 @@ const Toast: React.FC<ToastProps> = ({
     onHide,
 }) => {
     const insets = useSafeAreaInsets();
-    const translateY = useRef(new Animated.Value(-150)).current;
+    const translateY = useRef(new Animated.Value(-100)).current;
     const opacity = useRef(new Animated.Value(0)).current;
-    const scale = useRef(new Animated.Value(0.9)).current;
+    const scale = useRef(new Animated.Value(0.92)).current;
 
     const config = TOAST_CONFIG[type];
 
     useEffect(() => {
         if (visible) {
-            // Slide in with spring animation
+            // Entrance animation - smooth and refined
             Animated.parallel([
                 Animated.spring(translateY, {
                     toValue: 0,
-                    damping: 18,
-                    stiffness: 200,
+                    damping: 22,
+                    stiffness: 280,
+                    mass: 0.8,
                     useNativeDriver: true,
                 }),
                 Animated.timing(opacity, {
                     toValue: 1,
-                    duration: Animation.duration.fast,
+                    duration: 200,
                     useNativeDriver: true,
                 }),
                 Animated.spring(scale, {
                     toValue: 1,
-                    damping: 15,
-                    stiffness: 180,
+                    damping: 20,
+                    stiffness: 260,
                     useNativeDriver: true,
                 }),
             ]).start();
@@ -102,18 +103,18 @@ const Toast: React.FC<ToastProps> = ({
     const hideToast = () => {
         Animated.parallel([
             Animated.timing(translateY, {
-                toValue: -150,
-                duration: Animation.duration.normal,
+                toValue: -100,
+                duration: 250,
                 useNativeDriver: true,
             }),
             Animated.timing(opacity, {
                 toValue: 0,
-                duration: Animation.duration.fast,
+                duration: 180,
                 useNativeDriver: true,
             }),
             Animated.timing(scale, {
-                toValue: 0.9,
-                duration: Animation.duration.fast,
+                toValue: 0.92,
+                duration: 180,
                 useNativeDriver: true,
             }),
         ]).start(() => {
@@ -128,45 +129,51 @@ const Toast: React.FC<ToastProps> = ({
             style={[
                 styles.container,
                 {
-                    top: insets.top + 10,
+                    top: insets.top + 8,
                     transform: [{ translateY }, { scale }],
                     opacity,
                 },
             ]}
         >
             <TouchableOpacity
-                activeOpacity={0.95}
+                activeOpacity={0.98}
                 onPress={hideToast}
-                style={[
-                    styles.toast,
-                    {
-                        backgroundColor: config.bgColor,
-                        borderColor: config.borderColor,
-                    },
-                ]}
+                style={styles.touchable}
             >
-                {/* Accent bar on the left */}
-                <View style={[styles.accentBar, { backgroundColor: config.color, height: 100, width: 7 }]} />
+                <View style={styles.toast}>
+                    {/* Soft colored background layer */}
+                    <View
+                        style={[
+                            styles.colorLayer,
+                            { backgroundColor: config.softBg }
+                        ]}
+                    />
 
-                {/* Icon */}
-                <View style={[styles.iconContainer, { backgroundColor: `${config.color}15` }]}>
-                    <Ionicons name={config.icon} size={24} color={config.color} />
+                    {/* Main content */}
+                    <View style={styles.mainContent}>
+                        {/* Icon with soft background */}
+                        <View style={[styles.iconContainer, { backgroundColor: config.iconBg }]}>
+                            <Ionicons name={config.icon} size={20} color={config.color} />
+                        </View>
+
+                        {/* Text content */}
+                        <View style={styles.textContent}>
+                            <Text style={styles.title} numberOfLines={1}>
+                                {title}
+                            </Text>
+                            {message && (
+                                <Text style={styles.message} numberOfLines={2}>
+                                    {message}
+                                </Text>
+                            )}
+                        </View>
+
+                        {/* Dismiss indicator */}
+                        <View style={styles.dismissHint}>
+                            <Ionicons name="close" size={16} color={Colors.textTertiary} />
+                        </View>
+                    </View>
                 </View>
-
-                {/* Content */}
-                <View style={styles.content}>
-                    <Text style={[styles.title, { color: config.color }]}>{title}</Text>
-                    {message && (
-                        <Text style={styles.message} numberOfLines={2}>
-                            {message}
-                        </Text>
-                    )}
-                </View>
-
-                {/* Close button */}
-                <TouchableOpacity onPress={hideToast} style={styles.closeButton}>
-                    <Ionicons name="close" size={18} color={Colors.textTertiary} />
-                </TouchableOpacity>
             </TouchableOpacity>
         </Animated.View>
     );
@@ -181,57 +188,69 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: Spacing.m,
     },
+    touchable: {
+        width: '100%',
+        maxWidth: 400,
+    },
     toast: {
-        width: SCREEN_WIDTH - Spacing.m * 2,
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: Spacing.m,
-        paddingRight: Spacing.m,
-        paddingLeft: 0,
-        borderRadius: Layout.borderRadius.l,
-        borderWidth: 1,
+        backgroundColor: Colors.surface,
+        borderRadius: 16,
         overflow: 'hidden',
-        ...Layout.shadow.lg,
+        borderWidth: 1,
+        borderColor: 'rgba(0, 0, 0, 0.06)',
         ...Platform.select({
+            ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.12,
+                shadowRadius: 24,
+            },
             android: {
-                elevation: 8,
+                elevation: 12,
             },
         }),
     },
-    accentBar: {
-        width: 4,
-        height: '100%',
-        position: 'absolute',
-        left: 0,
-        top: 0,
-        bottom: 0,
-        borderTopLeftRadius: Layout.borderRadius.l,
-        borderBottomLeftRadius: Layout.borderRadius.l,
+    colorLayer: {
+        ...StyleSheet.absoluteFillObject,
+        opacity: 0.5,
+    },
+    mainContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
     },
     iconContainer: {
-        width: 44,
-        height: 44,
-        borderRadius: Layout.borderRadius.m,
+        width: 36,
+        height: 36,
+        borderRadius: 10,
         justifyContent: 'center',
         alignItems: 'center',
-        marginLeft: Spacing.m,
     },
-    content: {
+    textContent: {
         flex: 1,
-        marginLeft: Spacing.m,
+        marginLeft: 12,
+        marginRight: 8,
     },
     title: {
-        ...Typography.subtitle1,
-        fontWeight: '700',
+        fontSize: 15,
+        fontWeight: '600',
+        color: Colors.textPrimary,
+        letterSpacing: -0.2,
     },
     message: {
-        ...Typography.body2,
+        fontSize: 13,
         color: Colors.textSecondary,
         marginTop: 2,
+        lineHeight: 18,
     },
-    closeButton: {
-        padding: Spacing.xs,
-        marginLeft: Spacing.s,
+    dismissHint: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: 'rgba(0, 0, 0, 0.04)',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });
 

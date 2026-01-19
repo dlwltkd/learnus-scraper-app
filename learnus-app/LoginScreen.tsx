@@ -37,7 +37,7 @@ export default function LoginScreen({
     const webViewRef = useRef<WebView>(null);
     const hasLoggedOut = useRef(false);
     const currentUrlRef = useRef('https://ys.learnus.org/login/index.php');
-    const wasOnLoginPage = useRef(true);
+    const wasOnLoginPage = useRef(false);
 
     // Animations
     const fadeAnim = useRef(new Animated.Value(0)).current;

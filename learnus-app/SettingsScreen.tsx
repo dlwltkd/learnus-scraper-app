@@ -225,7 +225,7 @@ export default function SettingsScreen() {
                         icon="document-text-outline"
                         iconColor={Colors.textSecondary}
                         title="이용약관"
-                        onPress={() => handleComingSoon('이용약관')}
+                        onPress={() => (navigation as any).navigate('TermsOfService')}
                     />
                     <SettingItem
                         icon="shield-checkmark-outline"
@@ -252,7 +252,7 @@ export default function SettingsScreen() {
                 {/* App Version */}
                 <View style={styles.versionContainer}>
                     <Text style={styles.versionText}>LearnUs Connect</Text>
-                    <Text style={styles.versionNumber}>버전 1.0.0</Text>
+                    <Text style={styles.versionNumber}>버전 0.1.2</Text>
                 </View>
 
                 <View style={{ height: 40 }} />

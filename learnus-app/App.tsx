@@ -19,6 +19,8 @@ import HelpScreen from './HelpScreen';
 import NotificationSettingsScreen from './NotificationSettingsScreen';
 import PrivacyPolicyScreen from './PrivacyPolicyScreen';
 import MyInfoScreen from './MyInfoScreen';
+import TermsOfServiceScreen from './TermsOfServiceScreen';
+import NotificationHistoryScreen from './NotificationHistoryScreen';
 
 import CustomTabBar from './components/TabBar';
 import { Colors, Layout, Typography } from './constants/theme';
@@ -31,6 +33,7 @@ import { getDashboardOverview, registerPushToken } from './services/api';
 import {
   registerForPushNotificationsAsync,
   registerBackgroundFetchAsync,
+  setupNotificationReceivedListener,
 } from './services/NotificationService';
 
 const Stack = createStackNavigator();
@@ -131,7 +134,6 @@ function AppContent() {
             ...Typography.subtitle1,
             fontSize: 17,
           },
-          headerBackTitleVisible: false,
           cardStyle: {
             backgroundColor: Colors.background,
           },
@@ -212,6 +214,20 @@ function AppContent() {
                 title: '개인정보 처리방침',
               }}
             />
+            <Stack.Screen
+              name="TermsOfService"
+              component={TermsOfServiceScreen}
+              options={{
+                title: '이용약관',
+              }}
+            />
+            <Stack.Screen
+              name="NotificationHistory"
+              component={NotificationHistoryScreen}
+              options={{
+                title: '알림 기록',
+              }}
+            />
           </>
         )}
       </Stack.Navigator>
@@ -233,6 +249,13 @@ export default function App() {
 
     setupNotifications();
     registerBackgroundFetchAsync();
+
+    // Set up listener to save received notifications to history
+    const notificationListener = setupNotificationReceivedListener();
+
+    return () => {
+      notificationListener.remove();
+    };
   }, []);
 
   return (

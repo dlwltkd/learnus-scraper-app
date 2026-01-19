@@ -35,16 +35,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     const loadStorage = async () => {
+        const storedCookie = await AsyncStorage.getItem('userToken');
+
+        // No stored token - skip loading, show login immediately
+        if (!storedCookie) {
+            setIsLoading(false);
+            return;
+        }
+
+        // Has token - keep loading while validating
         try {
-            const storedCookie = await AsyncStorage.getItem('userToken');
-            if (storedCookie) {
-                console.log("AuthContext: Restoring session...");
-                // Validate or just set token
-                // For now, we assume if we have a token, we are logged in.
-                // You might want to validate it with an API call here.
-                await apiLogin(storedCookie);
-                setIsLoggedIn(true);
-            }
+            console.log("AuthContext: Restoring session...");
+            await apiLogin(storedCookie);
+            setIsLoggedIn(true);
         } catch (e) {
             console.error("Failed to load auth storage", e);
         } finally {

@@ -15,7 +15,7 @@ import {
     UIManager,
     Dimensions,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { RectButton, Swipeable } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -24,6 +24,7 @@ import { getDashboardOverview, syncAllActiveCourses, completeAssignments, fetchA
 import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
 import { useUser } from './context/UserContext';
 import { useToast } from './context/ToastContext';
+import { getUnreadCount } from './services/NotificationHistoryService';
 import Card from './components/Card';
 import Badge, { StatusBadge } from './components/Badge';
 import Button, { IconButton } from './components/Button';
@@ -551,6 +552,7 @@ const DashboardScreen = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [data, setData] = useState<any>(null);
     const [syncing, setSyncing] = useState(false);
+    const [unreadNotifications, setUnreadNotifications] = useState(0);
 
     // Collapsible state
     const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
@@ -592,9 +594,21 @@ const DashboardScreen = () => {
         }
     };
 
+    const loadUnreadCount = async () => {
+        const count = await getUnreadCount();
+        setUnreadNotifications(count);
+    };
+
+    useFocusEffect(
+        useCallback(() => {
+            loadUnreadCount();
+        }, [])
+    );
+
     const onRefresh = useCallback(() => {
         setRefreshing(true);
         loadDashboard();
+        loadUnreadCount();
     }, []);
 
     const loadAISummaries = async () => {
@@ -724,20 +738,43 @@ const DashboardScreen = () => {
                         </Text>
                     </View>
 
-                    <TouchableOpacity
-                        style={[styles.syncButton, syncing && styles.syncButtonActive]}
-                        onPress={handleSyncAll}
-                        disabled={syncing}
-                        activeOpacity={0.8}
-                    >
-                        <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                    <View style={styles.headerButtons}>
+                        {/* Notification History Button */}
+                        <TouchableOpacity
+                            style={styles.headerButton}
+                            onPress={() => (navigation as any).navigate('NotificationHistory')}
+                            activeOpacity={0.8}
+                        >
                             <Ionicons
-                                name="refresh"
+                                name="notifications-outline"
                                 size={22}
-                                color={syncing ? Colors.primary : Colors.textSecondary}
+                                color={Colors.textSecondary}
                             />
-                        </Animated.View>
-                    </TouchableOpacity>
+                            {unreadNotifications > 0 && (
+                                <View style={styles.notificationBadge}>
+                                    <Text style={styles.notificationBadgeText}>
+                                        {unreadNotifications > 9 ? '9+' : unreadNotifications}
+                                    </Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+
+                        {/* Sync Button */}
+                        <TouchableOpacity
+                            style={[styles.headerButton, syncing && styles.syncButtonActive]}
+                            onPress={handleSyncAll}
+                            disabled={syncing}
+                            activeOpacity={0.8}
+                        >
+                            <Animated.View style={{ transform: [{ rotate: spin }] }}>
+                                <Ionicons
+                                    name="refresh"
+                                    size={22}
+                                    color={syncing ? Colors.primary : Colors.textSecondary}
+                                />
+                            </Animated.View>
+                        </TouchableOpacity>
+                    </View>
                 </Animated.View>
 
                 {/* Stats Card */}
@@ -1262,16 +1299,40 @@ const styles = StyleSheet.create({
         ...Typography.body2,
         marginTop: 4,
     },
-    syncButton: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
+    headerButtons: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.s,
+    },
+    headerButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         backgroundColor: Colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
         borderColor: Colors.border,
         ...Layout.shadow.sm,
+    },
+    notificationBadge: {
+        position: 'absolute',
+        top: -2,
+        right: -2,
+        minWidth: 18,
+        height: 18,
+        borderRadius: 9,
+        backgroundColor: Colors.error,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 4,
+        borderWidth: 2,
+        borderColor: Colors.surface,
+    },
+    notificationBadgeText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#FFF',
     },
     syncButtonActive: {
         backgroundColor: Colors.primaryLighter,

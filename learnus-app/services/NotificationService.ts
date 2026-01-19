@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { getDashboardOverview, fetchAISummary, loadAuthToken } from './api';
 import { NotificationSettings } from '../NotificationSettingsScreen';
+import { addNotification, NotificationHistoryItem } from './NotificationHistoryService';
 
 const BACKGROUND_FETCH_TASK = 'BACKGROUND_NOTIFICATION_TASK';
 const NOTIFICATION_SETTINGS_KEY = 'notification_settings';
@@ -72,8 +73,14 @@ function getTimeOffset(setting: string): number {
 }
 
 // Helper to schedule a notification for a specific date
-async function scheduleReminder(title: string, body: string, triggerDate: Date) {
-    if (triggerDate <= new Date()) return; // Don't schedule for past
+async function scheduleReminder(
+    title: string,
+    body: string,
+    triggerDate: Date,
+    type: NotificationHistoryItem['type'] = 'general',
+    data?: NotificationHistoryItem['data']
+) {
+    if (triggerDate <= new Date()) return false; // Don't schedule for past
 
     try {
         await Notifications.scheduleNotificationAsync({
@@ -81,6 +88,7 @@ async function scheduleReminder(title: string, body: string, triggerDate: Date) 
                 title,
                 body,
                 sound: true,
+                data: { type, saveToHistory: true, ...data },
             },
             trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: triggerDate },
         });
@@ -90,6 +98,20 @@ async function scheduleReminder(title: string, body: string, triggerDate: Date) 
         console.log("Failed to schedule notification", e);
         return false;
     }
+}
+
+// Listener to save received notifications to history
+export function setupNotificationReceivedListener() {
+    return Notifications.addNotificationReceivedListener(async (notification) => {
+        const { title, body, data } = notification.request.content;
+        if (data?.saveToHistory && title && body) {
+            const type = (data.type as NotificationHistoryItem['type']) || 'general';
+            await addNotification(title, body, type, {
+                courseId: data.courseId as number | undefined,
+                courseName: data.courseName as string | undefined,
+            });
+        }
+    });
 }
 
 export async function checkAndScheduleNotifications() {
@@ -134,7 +156,9 @@ export async function checkAndScheduleNotifications() {
                 if (await scheduleReminder(
                     `과제 마감 알림 ${status}`,
                     `'${a.title}' 과제가 곧 마감됩니다. (${a.course_name})`,
-                    fireDate
+                    fireDate,
+                    'assignment',
+                    { courseId: a.course_id, courseName: a.course_name }
                 )) {
                     scheduledDetails.push(`[과제] ${a.title} (${fireDate.toLocaleString()})`);
                 }
@@ -165,7 +189,9 @@ export async function checkAndScheduleNotifications() {
                 if (await scheduleReminder(
                     `강의 출석 마감 임박`,
                     `'${v.title}' 강의 수강이 곧 마감됩니다. (${v.course_name})`,
-                    fireDate
+                    fireDate,
+                    'vod',
+                    { courseId: v.course_id, courseName: v.course_name }
                 )) {
                     scheduledDetails.push(`[강의] ${v.title} (${fireDate.toLocaleString()})`);
                 }
@@ -184,7 +210,9 @@ export async function checkAndScheduleNotifications() {
                 if (await scheduleReminder(
                     `강의 오픈 알림`,
                     `'${v.title}' 강의가 열렸습니다. (${v.course_name})\n~ ${v.end_date || '?'}까지 시청 가능`,
-                    startDate
+                    startDate,
+                    'vod',
+                    { courseId: v.course_id, courseName: v.course_name }
                 )) {
                     scheduledDetails.push(`[오픈] ${v.title} (${startDate.toLocaleString()})`);
                 }
@@ -214,15 +242,44 @@ export async function testScheduleNotification() {
     await scheduleReminder("테스트 알림", "5초 후 알림이 도착합니다.", new Date(Date.now() + 5000));
 }
 
-async function scheduleNotification(title: string, body: string) {
+async function scheduleNotification(
+    title: string,
+    body: string,
+    type: NotificationHistoryItem['type'] = 'general',
+    data?: NotificationHistoryItem['data']
+) {
     await Notifications.scheduleNotificationAsync({
         content: {
             title,
             body,
             sound: true,
+            data: { type, ...data },
         },
         trigger: null, // Immediate
     });
+
+    // Save to notification history
+    await addNotification(title, body, type, data);
+}
+
+// Send and save notification for announcements/공지
+export async function sendAnnouncementNotification(
+    title: string,
+    body: string,
+    courseId: number,
+    courseName: string
+) {
+    await scheduleNotification(title, body, 'announcement', { courseId, courseName });
+}
+
+// Send and save AI summary notification
+export async function sendAISummaryNotification(
+    title: string,
+    body: string,
+    courseId: number,
+    courseName: string
+) {
+    await scheduleNotification(title, body, 'ai_summary', { courseId, courseName });
 }
 
 TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
