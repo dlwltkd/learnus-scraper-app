@@ -1,4 +1,5 @@
 # Python
+
 __pycache__/
 *.py[cod]
 *$py.class
@@ -74,5 +75,6 @@ Thumbs.db
 
 #claude
 .claude/
+agent.md   
 # Documentation
 DEPLOYMENT.md

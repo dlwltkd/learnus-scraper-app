@@ -61,9 +61,11 @@ def send_push_notification(user: User, course: Course, post: Post):
                     title=f"📢 {course.name}",
                     body=msg_body,
                     data={
-                        "type": "notice",
+                        "type": "announcement",
                         "postId": post.id,
-                        "courseId": course.id
+                        "courseId": course.id,
+                        "courseName": course.name,
+                        "saveToHistory": True
                     }
                 )
              )
@@ -126,7 +128,7 @@ def process_user_updates(user: User, db: Session):
                         db.commit()
 
                         if notify_assignment:
-                            send_simple_push(user, f"[{course.name}] 새로운 과제 등장!", f"{item['name']}")
+                            send_simple_push(user, f"[{course.name}] 새로운 과제 등장!", f"{item['name']}", "assignment", course.name)
 
                     else:
                         # Update existing
@@ -153,7 +155,7 @@ def process_user_updates(user: User, db: Session):
 
                         if notify_vod:
                             body = f"새로운 동영상 강의\n시청 기한: {item.get('start_date', '?')} ~ {item.get('end_date', '?')}"
-                            send_simple_push(user, f"[{course.name}] {item['name']}", body)
+                            send_simple_push(user, f"[{course.name}] {item['name']}", body, "vod", course.name)
                     else:
                         vod.is_completed = item['is_completed']
 
@@ -199,7 +201,7 @@ def process_user_updates(user: User, db: Session):
         logger.error(f"Error updating user {user.username}: {e}")
         pass
 
-def send_simple_push(user: User, title: str, body: str):
+def send_simple_push(user: User, title: str, body: str, notif_type: str = "general", course_name: str = None):
     try:
          res = PushClient().publish(
             PushMessage(
@@ -207,7 +209,11 @@ def send_simple_push(user: User, title: str, body: str):
                 sound="default",
                 title=title,
                 body=body,
-                data={"type": "info"}
+                data={
+                    "type": notif_type,
+                    "courseName": course_name,
+                    "saveToHistory": True
+                }
             )
          )
          logger.info(f"Sent simple push to {user.username}: {title}")
