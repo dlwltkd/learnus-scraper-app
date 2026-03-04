@@ -500,6 +500,12 @@ def process_vod_watching(vod_ids: List[int], db: Session, user_id: int):
         futures = [executor.submit(watch_single_vod, vod) for vod in vods]
         for future in as_completed(futures):
             vod, success = future.result()
+            if success:
+                db_vod = db.query(VOD).get(vod.id)
+                if db_vod:
+                    db_vod.is_completed = True
+                    db.commit()
+                    logger.info(f"Marked VOD {vod.title} as completed in DB")
 
     # After all VODs watched, sync courses to update completion status
     logger.info("All VODs watched, syncing courses...")

@@ -473,7 +473,7 @@ class MoodleClient:
         viewer_url = f"{self.base_url}/mod/vod/viewer.php?id={vod_id}"
         self.logger.info(f"Fetching VOD viewer: {viewer_url}")
         try:
-            response = self.session.get(viewer_url)
+            response = self.session.get(viewer_url, headers={"Referer": self.base_url})
             response.raise_for_status()
             html = response.text
             args = self.parse_progress_args(html)
