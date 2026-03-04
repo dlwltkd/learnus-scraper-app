@@ -176,6 +176,16 @@ export const deleteTestAssignments = async () => {
     return response.data;
 };
 
+export const createTestVod = async () => {
+    const response = await api.post('/debug/create-test-vod');
+    return response.data;
+};
+
+export const deleteTestVods = async () => {
+    const response = await api.post('/debug/delete-test-vods');
+    return response.data;
+};
+
 export const registerPushToken = async (token: string) => {
     const response = await api.post('/auth/push-token', { token });
     return response.data;

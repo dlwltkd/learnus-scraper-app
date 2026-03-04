@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { Ionicons } from '@expo/vector-icons';
-import { createTestAssignment, deleteTestAssignments, registerPushToken } from './services/api';
+import { createTestAssignment, deleteTestAssignments, createTestVod, deleteTestVods, registerPushToken } from './services/api';
 import { checkAndScheduleNotifications, testScheduleNotification, registerForPushNotificationsAsync } from './services/NotificationService';
 
 const NOTIFICATION_SETTINGS_KEY = 'notification_settings';
@@ -186,7 +186,18 @@ export default function NotificationSettingsScreen() {
                         alert("실패: " + e);
                     }
                 }}>
-                    <Text style={styles.testButtonText}>가상 과제 생성 (1시간 후 마감)</Text>
+                    <Text style={styles.testButtonText}>가상 과제 생성 (1h, 5h, 12h, 24h 후 마감)</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.testButton, { marginTop: 12 }]} onPress={async () => {
+                    try {
+                        const res = await createTestVod();
+                        alert(`테스트 데이터 생성 완료\n${res.message}`);
+                    } catch (e: any) {
+                        alert("실패: " + e);
+                    }
+                }}>
+                    <Text style={styles.testButtonText}>가상 VOD 생성 (현재 시청 가능)</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={[styles.testButton, { marginTop: 12 }]} onPress={async () => {
@@ -227,12 +238,23 @@ export default function NotificationSettingsScreen() {
                 <TouchableOpacity style={[styles.testButton, { marginTop: 12, borderColor: Colors.error }]} onPress={async () => {
                     try {
                         const res = await deleteTestAssignments();
-                        alert(`전체 삭제 완료\n${res.message}`);
+                        alert(`삭제 완료\n${res.message}`);
                     } catch (e) {
                         alert("실패: " + e);
                     }
                 }}>
                     <Text style={[styles.testButtonText, { color: Colors.error }]}>가상 과제 전체 삭제</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={[styles.testButton, { marginTop: 12, borderColor: Colors.error }]} onPress={async () => {
+                    try {
+                        const res = await deleteTestVods();
+                        alert(`삭제 완료\n${res.message}`);
+                    } catch (e) {
+                        alert("실패: " + e);
+                    }
+                }}>
+                    <Text style={[styles.testButtonText, { color: Colors.error }]}>가상 VOD 전체 삭제</Text>
                 </TouchableOpacity>
 
             </ScrollView>
