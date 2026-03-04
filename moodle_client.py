@@ -478,7 +478,7 @@ class MoodleClient:
             html = response.text
             args = self.parse_progress_args(html)
             if not args:
-                self.logger.error("Could not find amd.progress call.")
+                self.logger.error(f"Could not find amd.progress call. Status={response.status_code} URL={response.url} Snippet={html[:300]!r}")
                 return False
                 
             courseid = args[6]
@@ -491,20 +491,25 @@ class MoodleClient:
             isProgress = args[1]
             if not isProgress: return False
             
+            # Start watching
             self.session.post(action_url, data={'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 3, 'position': 0, 'attempts': attempt, 'interval': interval_ms})
-            self.session.post(action_url, data={'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 1, 'positionfrom': 0, 'positionto': 0, 'logtime': args[22]})
-            
+            self.session.post(action_url, data={'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 1, 'positionfrom': 0, 'positionto': 0, 'logtime': int(time.time())})
+
             interval_sec = interval_ms / 1000.0
-            sleep_time = interval_sec / speed  # With speed=1.0, this equals real-time
+            sleep_time = interval_sec / speed
+            previous = 0
             current = 0
             self.logger.info(f"VOD duration: {duration}s, interval: {interval_sec}s, sleep_time: {sleep_time}s")
             while current < duration:
-                time.sleep(sleep_time)  # Wait real-time between updates (1x speed)
-                current += interval_sec
-                if current > duration:
-                    current = duration
-                self.session.post(action_url, data={'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 8, 'positionfrom': current, 'positionto': current, 'logtime': args[22]})
-                self.logger.debug(f"VOD progress: {current}/{duration}s")
+                time.sleep(sleep_time)
+                previous = current
+                current = min(current + interval_sec, duration)
+                res = self.session.post(action_url, data={'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 8, 'positionfrom': previous, 'positionto': current, 'logtime': int(time.time())})
+                self.logger.debug(f"VOD progress: {current}/{duration}s — {res.text[:80]}")
+
+            # Send completion signal (state 5) — this is what actually marks the VOD as watched
+            res = self.session.post(action_url, data={'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 5, 'position': duration, 'attempts': attempt, 'interval': interval_ms})
+            self.logger.info(f"VOD {vod_id} completion signal sent. Response: {res.text[:200]}")
             return True
         except Exception as e:
             self.logger.error(f"Watch failed: {e}")

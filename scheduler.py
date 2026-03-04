@@ -85,6 +85,11 @@ def process_user_updates(user: User, db: Session):
         if not client:
             return  # No valid session - skip this user
 
+        # If this is the user's first scheduler run, populate the DB silently
+        # (all existing Moodle content is treated as already-known, no notifications sent).
+        # On all subsequent runs, notifications fire normally for genuinely new items.
+        is_first_sync = not user.notifications_initialized
+
         # Load Prefs
         prefs = user.notification_preferences or {}
         if isinstance(prefs, str):
@@ -92,9 +97,9 @@ def process_user_updates(user: User, db: Session):
             except: prefs = {}
 
         # Default True if not set
-        notify_assignment = prefs.get('new_assignment', True)
-        notify_vod = prefs.get('new_vod', True)
-        notify_notice = prefs.get('notice', True)
+        notify_assignment = prefs.get('new_assignment', True) and not is_first_sync
+        notify_vod = prefs.get('new_vod', True) and not is_first_sync
+        notify_notice = prefs.get('notice', True) and not is_first_sync
 
         courses = db.query(Course).filter(Course.owner_id == user.id, Course.is_active == True).all()
 
@@ -162,40 +167,48 @@ def process_user_updates(user: User, db: Session):
                 db.commit()
 
                 # --- Notices (Board) ---
-                if notify_notice:
-                     notice_board_info = next((b for b in contents.get('boards', []) if '공지' in b['name'] or 'Notice' in b['name']), None)
-                     if notice_board_info:
-                         board = db.query(Board).filter(Board.moodle_id == notice_board_info['id'], Board.course_id == course.id).first()
-                         if not board:
-                             board = Board(moodle_id=notice_board_info['id'], course_id=course.id, title=notice_board_info['name'], url=notice_board_info['url'])
-                             db.add(board)
-                             db.commit()
+                # Always sync boards/posts to DB so we know the baseline.
+                # Only send push if the user has notices enabled AND this isn't the first sync.
+                notice_board_info = next((b for b in contents.get('boards', []) if '공지' in b['name'] or 'Notice' in b['name']), None)
+                if notice_board_info:
+                    board = db.query(Board).filter(Board.moodle_id == notice_board_info['id'], Board.course_id == course.id).first()
+                    if not board:
+                        board = Board(moodle_id=notice_board_info['id'], course_id=course.id, title=notice_board_info['name'], url=notice_board_info['url'])
+                        db.add(board)
+                        db.commit()
 
-                         posts_data = client.get_board_posts(board.moodle_id)
-                         for p_data in posts_data:
-                             exists = db.query(Post).filter(
-                                 Post.board_id == board.id,
-                                 Post.title == p_data['subject'],
-                                 Post.date == p_data['date']
-                             ).first()
+                    posts_data = client.get_board_posts(board.moodle_id)
+                    for p_data in posts_data:
+                        exists = db.query(Post).filter(
+                            Post.board_id == board.id,
+                            Post.title == p_data['subject'],
+                            Post.date == p_data['date']
+                        ).first()
 
-                             if not exists:
-                                 new_post = Post(
-                                     board_id=board.id,
-                                     title=p_data['subject'],
-                                     writer=p_data['writer'],
-                                     date=p_data['date'],
-                                     url=p_data['url']
-                                 )
-                                 new_post.content = client.get_post_content(p_data['url'])
-                                 db.add(new_post)
-                                 db.commit()
+                        if not exists:
+                            new_post = Post(
+                                board_id=board.id,
+                                title=p_data['subject'],
+                                writer=p_data['writer'],
+                                date=p_data['date'],
+                                url=p_data['url']
+                            )
+                            new_post.content = client.get_post_content(p_data['url'])
+                            db.add(new_post)
+                            db.commit()
 
-                                 send_push_notification(user, course, new_post)
+                            if notify_notice:
+                                send_push_notification(user, course, new_post)
 
             except Exception as e:
                 logger.error(f"Error processing course {course.name} for user {user.username}: {e}")
                 continue
+
+        # After first silent sync, mark user as initialized so future runs send notifications
+        if is_first_sync:
+            user.notifications_initialized = True
+            db.commit()
+            logger.info(f"First sync complete for {user.username}. Notifications enabled going forward.")
 
     except Exception as e:
         logger.error(f"Error updating user {user.username}: {e}")

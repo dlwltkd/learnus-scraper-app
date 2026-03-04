@@ -25,6 +25,7 @@ class User(Base):
     # Push Notifications
     push_token = Column(String, nullable=True)
     notification_preferences = Column(JSON, default={})
+    notifications_initialized = Column(Boolean, default=False)  # False = first sync pending (no notifications)
     
     courses = relationship("Course", back_populates="owner", cascade="all, delete-orphan")
 
@@ -126,4 +127,16 @@ def init_db(db_url=None):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
     engine = create_engine(db_url)
     Base.metadata.create_all(engine)
+
+    # Migration: add notifications_initialized column if it doesn't exist yet.
+    # Existing users are marked True (already past first sync); new users default False.
+    from sqlalchemy import text, inspect as sa_inspect
+    inspector = sa_inspect(engine)
+    existing_cols = [col['name'] for col in inspector.get_columns('users')]
+    if 'notifications_initialized' not in existing_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN notifications_initialized BOOLEAN"))
+            conn.execute(text("UPDATE users SET notifications_initialized = 1"))
+            conn.commit()
+
     return sessionmaker(bind=engine)

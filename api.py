@@ -534,6 +534,38 @@ def complete_assignments(request: CompleteAssignmentsRequest, user: User = Depen
     db.commit()
     return {"status": "success", "updated_count": count, "completed": request.completed}
 
+@app.get("/debug/vod-inspect/{vod_id}")
+def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
+    """Fetch a VOD viewer page and return parsed amd.progress args for debugging."""
+    import re as _re, ast as _ast
+    client = get_moodle_client(user)
+    viewer_url = f"https://ys.learnus.org/mod/vod/viewer.php?id={vod_id}"
+    try:
+        resp = client.session.get(viewer_url, timeout=15)
+        html = resp.text
+        match = _re.search(r'amd\.progress\((.*?)\);', html, _re.DOTALL)
+        if not match:
+            return {
+                "vod_id": vod_id, "status_code": resp.status_code,
+                "final_url": str(resp.url), "amd_progress_found": False,
+                "html_snippet": html[:2000]
+            }
+        args_str = match.group(1).replace('true', 'True').replace('false', 'False').replace(r'\/', '/')
+        try:
+            args = _ast.literal_eval(f"[{args_str}]")
+        except Exception as e:
+            return {"vod_id": vod_id, "amd_progress_found": True, "parse_error": str(e), "args_str_preview": args_str[:500]}
+        return {
+            "vod_id": vod_id, "status_code": resp.status_code, "final_url": str(resp.url),
+            "amd_progress_found": True,
+            "isProgress": args[1], "isProgressPeriodCheck": args[5],
+            "courseid": args[6], "cmid": args[7], "trackid": args[8],
+            "attempt": args[9], "duration_sec": args[10], "interval_ms": args[12],
+            "logtime_from_page": args[22],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post("/debug/create-test-assignment")
 def create_test_assignment(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     # 1. Find or Create Test Course
@@ -573,11 +605,58 @@ def delete_test_assignments(user: User = Depends(get_current_user), db: Session 
     test_course = db.query(Course).filter(Course.owner_id == user.id, Course.name == "[TEST] Debug Course").first()
     if not test_course:
         return {"status": "success", "message": "No test course found, nothing to delete."}
-    
+
     deleted_count = db.query(Assignment).filter(Assignment.course_id == test_course.id).delete()
     db.commit()
-    
+
     return {"status": "success", "message": f"Deleted {deleted_count} test assignments."}
+
+@app.post("/debug/create-test-vod")
+def create_test_vod(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # 1. Find or Create Test Course
+    test_course = db.query(Course).filter(Course.owner_id == user.id, Course.name == "[TEST] Debug Course").first()
+    if not test_course:
+        test_course = Course(moodle_id=999999, owner_id=user.id, name="[TEST] Debug Course", is_active=True)
+        db.add(test_course)
+        db.commit()
+        db.refresh(test_course)
+
+    # 2. Create VODs with different end times (currently watchable)
+    # start_date = 1 hour ago (already available)
+    # end_date = varies (1h, 5h, 12h, 24h from now)
+    start_date = (datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+    offsets = [1, 5, 12, 24]
+    created_count = 0
+
+    for hours in offsets:
+        end_date = (datetime.now() + timedelta(hours=hours, minutes=2)).strftime("%Y-%m-%d %H:%M:%S")
+        vod = VOD(
+            moodle_id=int(datetime.now().timestamp()) + hours + 1000,  # Unique-ish ID (offset from assignments)
+            course_id=test_course.id,
+            title=f"Test VOD ({hours}h left) {datetime.now().strftime('%H:%M:%S')}",
+            start_date=start_date,
+            end_date=end_date,
+            is_completed=False,
+            has_tracking=True,
+            url="https://example.com/vod"
+        )
+        db.add(vod)
+        created_count += 1
+
+    db.commit()
+
+    return {"status": "success", "message": f"Created {created_count} VODs (Ending in 1h, 5h, 12h, 24h from now). They should appear in 'available_vods' on dashboard."}
+
+@app.post("/debug/delete-test-vods")
+def delete_test_vods(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    test_course = db.query(Course).filter(Course.owner_id == user.id, Course.name == "[TEST] Debug Course").first()
+    if not test_course:
+        return {"status": "success", "message": "No test course found, nothing to delete."}
+
+    deleted_count = db.query(VOD).filter(VOD.course_id == test_course.id).delete()
+    db.commit()
+
+    return {"status": "success", "message": f"Deleted {deleted_count} test VODs."}
 
 if __name__ == "__main__":
     import uvicorn
