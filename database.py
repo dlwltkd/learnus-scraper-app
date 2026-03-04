@@ -136,7 +136,7 @@ def init_db(db_url=None):
     if 'notifications_initialized' not in existing_cols:
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN notifications_initialized BOOLEAN"))
-            conn.execute(text("UPDATE users SET notifications_initialized = 1"))
+            conn.execute(text("UPDATE users SET notifications_initialized = TRUE"))
             conn.commit()
 
     return sessionmaker(bind=engine)

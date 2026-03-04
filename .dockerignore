@@ -1,0 +1,9 @@
+learnus-app/
+.git/
+.env
+__pycache__/
+*.pyc
+node_modules/
+.venv/
+venv/
+.expo/
