@@ -17,10 +17,10 @@ import {
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { RectButton, Swipeable } from 'react-native-gesture-handler';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getDashboardOverview, syncAllActiveCourses, completeAssignments, fetchAISummary } from './services/api';
+import { getDashboardOverview, syncAllActiveCourses, fetchAISummary } from './services/api';
 import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
 import { useUser } from './context/UserContext';
 import { useToast } from './context/ToastContext';
@@ -464,80 +464,53 @@ const SectionHeader = ({
 // ============================================
 interface AssignmentItemProps {
     item: any;
-    onComplete: () => void;
     isMissed?: boolean;
 }
 
-const AssignmentItem = ({ item, onComplete, isMissed = false }: AssignmentItemProps) => {
-    const swipeableRef = useRef<Swipeable>(null);
-
-    const renderRightActions = () => (
-        <RectButton
-            style={styles.swipeAction}
-            onPress={() => {
-                swipeableRef.current?.close();
-                onComplete();
-            }}
-        >
-            <Ionicons name="checkmark" size={24} color={Colors.textInverse} />
-            <Text style={styles.swipeActionText}>완료</Text>
-        </RectButton>
-    );
-
+const AssignmentItem = ({ item, isMissed = false }: AssignmentItemProps) => {
     return (
-        <Swipeable
-            ref={swipeableRef}
-            overshootRight={false}
-            renderRightActions={renderRightActions}
-            friction={2}
-        >
-            <View style={[styles.assignmentCard, item.is_completed && styles.assignmentCardCompleted]}>
-                <View style={[styles.assignmentIcon, isMissed && styles.assignmentIconMissed]}>
-                    <Ionicons
-                        name={isMissed ? 'alert-circle' : 'document-text-outline'}
-                        size={22}
-                        color={isMissed ? Colors.error : item.is_completed ? Colors.textTertiary : Colors.primary}
-                    />
-                </View>
-
-                <View style={styles.assignmentContent}>
-                    <Text style={styles.assignmentCourse} numberOfLines={1}>
-                        {item.course_name}
-                    </Text>
-                    <Text
-                        style={[
-                            styles.assignmentTitle,
-                            item.is_completed && styles.assignmentTitleCompleted,
-                        ]}
-                        numberOfLines={1}
-                    >
-                        {item.title}
-                    </Text>
-                    <View style={styles.assignmentMeta}>
-                        <Ionicons
-                            name="time-outline"
-                            size={12}
-                            color={isMissed ? Colors.error : Colors.textTertiary}
-                        />
-                        <Text style={[styles.assignmentDate, isMissed && styles.assignmentDateMissed]}>
-                            {item.due_date} 마감
-                        </Text>
-                    </View>
-                </View>
-
-                <TouchableOpacity
-                    onPress={onComplete}
-                    style={styles.checkButton}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                    <Ionicons
-                        name={item.is_completed ? 'checkmark-circle' : 'ellipse-outline'}
-                        size={26}
-                        color={item.is_completed ? Colors.success : Colors.border}
-                    />
-                </TouchableOpacity>
+        <View style={[styles.assignmentCard, item.is_completed && styles.assignmentCardCompleted]}>
+            <View style={[styles.assignmentIcon, isMissed && styles.assignmentIconMissed]}>
+                <Ionicons
+                    name={isMissed ? 'alert-circle' : 'document-text-outline'}
+                    size={22}
+                    color={isMissed ? Colors.error : item.is_completed ? Colors.textTertiary : Colors.primary}
+                />
             </View>
-        </Swipeable>
+
+            <View style={styles.assignmentContent}>
+                <Text style={styles.assignmentCourse} numberOfLines={1}>
+                    {item.course_name}
+                </Text>
+                <Text
+                    style={[
+                        styles.assignmentTitle,
+                        item.is_completed && styles.assignmentTitleCompleted,
+                    ]}
+                    numberOfLines={1}
+                >
+                    {item.title}
+                </Text>
+                <View style={styles.assignmentMeta}>
+                    <Ionicons
+                        name="time-outline"
+                        size={12}
+                        color={isMissed ? Colors.error : Colors.textTertiary}
+                    />
+                    <Text style={[styles.assignmentDate, isMissed && styles.assignmentDateMissed]}>
+                        {item.due_date} 마감
+                    </Text>
+                </View>
+            </View>
+
+            <View style={styles.checkButton}>
+                <Ionicons
+                    name={item.is_completed ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={26}
+                    color={item.is_completed ? Colors.success : Colors.border}
+                />
+            </View>
+        </View>
     );
 };
 
@@ -650,40 +623,7 @@ const DashboardScreen = () => {
         }
     };
 
-    const handleCompleteAssignment = async (id: number) => {
-        try {
-            const isUpcoming = data.upcoming_assignments?.some((item: any) => item.id === id);
 
-            // Find the current assignment to get its current completion status
-            const currentAssignment = isUpcoming
-                ? data.upcoming_assignments?.find((item: any) => item.id === id)
-                : data.missed_assignments?.find((item: any) => item.id === id);
-
-            const newCompletedStatus = !currentAssignment?.is_completed;
-
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-
-            if (isUpcoming) {
-                const updatedUpcoming = data.upcoming_assignments.map((item: any) =>
-                    item.id === id ? { ...item, is_completed: newCompletedStatus } : item
-                );
-                setData({ ...data, upcoming_assignments: updatedUpcoming });
-            } else {
-                // For missed assignments, toggle instead of removing
-                const updatedMissed = data.missed_assignments.map((item: any) =>
-                    item.id === id ? { ...item, is_completed: newCompletedStatus } : item
-                );
-                setData({ ...data, missed_assignments: updatedMissed });
-            }
-
-            // Pass the new completion status to the API
-            await completeAssignments([id], newCompletedStatus);
-        } catch (e) {
-            console.error(e);
-            showError('오류', '과제 완료 처리에 실패했습니다.');
-            loadDashboard();
-        }
-    };
 
     const spin = syncRotation.interpolate({
         inputRange: [0, 1],
@@ -814,7 +754,7 @@ const DashboardScreen = () => {
                         action={
                             aiSummaries.length > 0 && !loadingAI ? (
                                 <TouchableOpacity
-                                    style={styles.aiRefreshButton}
+                                    style={modalStyles.aiRefreshButton}
                                     onPress={loadAISummaries}
                                     activeOpacity={0.6}
                                 >
@@ -881,7 +821,6 @@ const DashboardScreen = () => {
                                 <AssignmentItem
                                     key={item.id}
                                     item={item}
-                                    onComplete={() => handleCompleteAssignment(item.id)}
                                     isMissed
                                 />
                             ))}
@@ -900,7 +839,6 @@ const DashboardScreen = () => {
                             <AssignmentItem
                                 key={item.id}
                                 item={item}
-                                onComplete={() => handleCompleteAssignment(item.id)}
                             />
                         ))}
                     </View>

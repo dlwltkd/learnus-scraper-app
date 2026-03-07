@@ -146,15 +146,7 @@ export const login = async (tokenOrCookie: string) => {
     }
 };
 
-export const watchVods = async (vodIds: number[]) => {
-    const response = await api.post('/vod/watch', { vod_ids: vodIds });
-    return response.data;
-};
 
-export const completeAssignments = async (assignmentIds: number[], completed: boolean = true) => {
-    const response = await api.post('/assignment/complete', { assignment_ids: assignmentIds, completed });
-    return response.data;
-};
 
 export const fetchAISummary = async () => {
     try {

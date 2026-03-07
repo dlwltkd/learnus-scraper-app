@@ -481,34 +481,50 @@ class MoodleClient:
                 self.logger.error(f"Could not find amd.progress call. Status={response.status_code} URL={response.url} Snippet={html[:300]!r}")
                 return False
                 
+            self.logger.info(f"VOD {vod_id} args: {args}")
             courseid = args[6]
             cmid = args[7]
             trackid = args[8]
             attempt = args[9]
-            duration = int(args[10]) or 900
+            raw_duration = int(args[10])
+            # args[17] may also hold duration; use the larger of the two as a sanity check
+            alt_duration = int(args[17]) if len(args) > 17 and args[17] else 0
+            duration = max(raw_duration, alt_duration) or 900
             interval_ms = args[12]
             action_url = f"{self.base_url}/mod/vod/action.php"
+            viewer_referer = viewer_url
+            ajax_headers = {
+                "Referer": viewer_referer,
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            }
             isProgress = args[1]
             if not isProgress: return False
-            
+
+            if duration < 60:
+                self.logger.warning(f"VOD {vod_id}: reported duration={duration}s is suspiciously short. Server may not count this as watched.")
+
+            sesskey = self.sesskey or ""
+
             # Start watching
-            self.session.post(action_url, data={'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 3, 'position': 0, 'attempts': attempt, 'interval': interval_ms})
-            self.session.post(action_url, data={'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 1, 'positionfrom': 0, 'positionto': 0, 'logtime': int(time.time())})
+            self.session.post(action_url, headers=ajax_headers, data={'sesskey': sesskey, 'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 3, 'position': 0, 'attempts': attempt, 'interval': interval_ms})
+            r0 = self.session.post(action_url, headers=ajax_headers, data={'sesskey': sesskey, 'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 1, 'positionfrom': 0, 'positionto': 0, 'logtime': int(time.time())})
+            self.logger.info(f"VOD {vod_id} start log response: {r0.text[:120]}")
 
             interval_sec = interval_ms / 1000.0
             sleep_time = interval_sec / speed
             previous = 0
             current = 0
-            self.logger.info(f"VOD duration: {duration}s, interval: {interval_sec}s, sleep_time: {sleep_time}s")
+            self.logger.info(f"VOD duration: {duration}s (raw={raw_duration}, alt={alt_duration}), interval: {interval_sec}s, sleep_time: {sleep_time}s")
             while current < duration:
                 time.sleep(sleep_time)
                 previous = current
                 current = min(current + interval_sec, duration)
-                res = self.session.post(action_url, data={'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 8, 'positionfrom': previous, 'positionto': current, 'logtime': int(time.time())})
-                self.logger.debug(f"VOD progress: {current}/{duration}s — {res.text[:80]}")
+                res = self.session.post(action_url, headers=ajax_headers, data={'sesskey': sesskey, 'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 8, 'positionfrom': previous, 'positionto': current, 'logtime': int(time.time())})
+                self.logger.info(f"VOD progress: {current}/{duration}s — {res.text[:120]}")
 
             # Send completion signal (state 5) — this is what actually marks the VOD as watched
-            res = self.session.post(action_url, data={'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 5, 'position': duration, 'attempts': attempt, 'interval': interval_ms})
+            res = self.session.post(action_url, headers=ajax_headers, data={'sesskey': sesskey, 'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 5, 'position': duration, 'attempts': attempt, 'interval': interval_ms})
             self.logger.info(f"VOD {vod_id} completion signal sent. Response: {res.text[:200]}")
             return True
         except Exception as e:

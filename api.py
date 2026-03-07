@@ -461,84 +461,7 @@ def get_ai_summary(user: User = Depends(get_current_user), db: Session = Depends
         })
     return {"summaries": summaries}
 
-class WatchVodsRequest(BaseModel):
-    vod_ids: List[int]
 
-def process_vod_watching(vod_ids: List[int], db: Session, user_id: int):
-    logger.info(f"Starting background VOD watching for User {user_id} with VOD IDs: {vod_ids}")
-    user = db.query(User).get(user_id)
-    if not user:
-        logger.error(f"User {user_id} not found")
-        return
-
-    client = get_moodle_client(user)
-
-    # Query VODs using the provided vod_ids (which are moodle_ids)
-    vods = db.query(VOD).join(Course).filter(
-        VOD.moodle_id.in_(vod_ids),
-        Course.owner_id == user_id
-    ).all()
-
-    if not vods:
-        logger.warning(f"No VODs found for ids: {vod_ids}")
-        return
-
-    logger.info(f"Found {len(vods)} VODs to watch in parallel")
-
-    # Watch all VODs in parallel
-    def watch_single_vod(vod):
-        try:
-            logger.info(f"Starting to watch VOD: {vod.title} (moodle_id: {vod.moodle_id})")
-            success = client.watch_vod(vod.moodle_id, speed=1.0)
-            logger.info(f"Finished watching VOD {vod.title}: {success}")
-            return vod, success
-        except Exception as e:
-            logger.error(f"Error watching {vod.title}: {e}")
-            return vod, False
-
-    with ThreadPoolExecutor(max_workers=len(vods)) as executor:
-        futures = [executor.submit(watch_single_vod, vod) for vod in vods]
-        for future in as_completed(futures):
-            vod, success = future.result()
-            if success:
-                db_vod = db.query(VOD).get(vod.id)
-                if db_vod:
-                    db_vod.is_completed = True
-                    db.commit()
-                    logger.info(f"Marked VOD {vod.title} as completed in DB")
-
-    # After all VODs watched, sync courses to update completion status
-    logger.info("All VODs watched, syncing courses...")
-    course_ids = set(v.course_id for v in vods)
-    for course_id in course_ids:
-        course = db.query(Course).get(course_id)
-        if course:
-            try:
-                client.sync_course_to_db(course.moodle_id, db, user_id)
-                logger.info(f"Synced course {course.name}")
-            except Exception as e:
-                logger.error(f"Sync error for course {course_id}: {e}")
-
-@app.post("/vod/watch")
-def watch_vods(request: WatchVodsRequest, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    background_tasks.add_task(process_vod_watching, request.vod_ids, db, user.id)
-    return {"status": "success", "message": "VOD watching started in background"}
-
-class CompleteAssignmentsRequest(BaseModel):
-    assignment_ids: List[int]
-    completed: Optional[bool] = True  # Default to True for backwards compatibility
-
-@app.post("/assignment/complete")
-def complete_assignments(request: CompleteAssignmentsRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    count = 0
-    for assign_id in request.assignment_ids:
-        # Filter by moodle_id instead of id
-        assign = db.query(Assignment).join(Course).filter(Assignment.moodle_id == assign_id, Course.owner_id == user.id).first()
-        if assign:
-            assign.is_completed = request.completed
-            count += 1
-    db.commit()
-    return {"status": "success", "updated_count": count, "completed": request.completed}
 
 @app.get("/debug/vod-inspect/{vod_id}")
 def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
@@ -568,6 +491,43 @@ def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
             "courseid": args[6], "cmid": args[7], "trackid": args[8],
             "attempt": args[9], "duration_sec": args[10], "interval_ms": args[12],
             "logtime_from_page": args[22],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/debug/vod-action-test/{vod_id}")
+def debug_vod_action_test(vod_id: int, user: User = Depends(get_current_user)):
+    """Fire one start_log POST to action.php and return the raw response for debugging."""
+    import re as _re, ast as _ast, time as _time
+    client = get_moodle_client(user)
+    viewer_url = f"https://ys.learnus.org/mod/vod/viewer.php?id={vod_id}"
+    try:
+        resp = client.session.get(viewer_url, headers={"Referer": "https://ys.learnus.org"}, timeout=15)
+        html = resp.text
+        match = _re.search(r'amd\.progress\((.*?)\);', html, _re.DOTALL)
+        if not match:
+            return {"error": "amd.progress not found", "final_url": str(resp.url), "html_snippet": html[:500]}
+        args_str = match.group(1).replace('true', 'True').replace('false', 'False').replace(r'\/', '/')
+        args = _ast.literal_eval(f"[{args_str}]")
+        courseid, cmid, trackid, attempt, interval_ms = args[6], args[7], args[8], args[9], args[12]
+        sesskey = client.sesskey or ""
+        action_url = "https://ys.learnus.org/mod/vod/action.php"
+        headers = {
+            "Referer": viewer_url,
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        }
+        r = client.session.post(action_url, headers=headers, data={
+            "sesskey": sesskey, "courseid": courseid, "cmid": cmid,
+            "type": "vod_log", "track": trackid, "attempt": attempt,
+            "state": 1, "positionfrom": 0, "positionto": 0, "logtime": int(_time.time())
+        }, timeout=15)
+        return {
+            "sesskey_used": sesskey[:8] + "..." if sesskey else "(empty)",
+            "action_status_code": r.status_code,
+            "action_final_url": str(r.url),
+            "action_response": r.text[:500],
+            "looks_like_homepage": "<html" in r.text[:100].lower(),
         }
     except Exception as e:
         return {"error": str(e)}
