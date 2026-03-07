@@ -469,7 +469,9 @@ class MoodleClient:
             return ast.literal_eval(f"[{args_str}]")
         except: return None
 
-    def watch_vod(self, vod_id, speed=1.0):
+    def watch_vod(self, vod_id):
+        """Watch a VOD by sending all tracking signals with realistic fake timestamps.
+        No actual sleeping — completes in seconds regardless of video duration."""
         viewer_url = f"{self.base_url}/mod/vod/viewer.php?id={vod_id}"
         self.logger.info(f"Fetching VOD viewer: {viewer_url}")
         try:
@@ -480,52 +482,65 @@ class MoodleClient:
             if not args:
                 self.logger.error(f"Could not find amd.progress call. Status={response.status_code} URL={response.url} Snippet={html[:300]!r}")
                 return False
-                
-            self.logger.info(f"VOD {vod_id} args: {args}")
+
+            isProgress = args[1]
+            if not isProgress:
+                self.logger.info(f"VOD {vod_id} has no progress tracking, skipping.")
+                return False
+
             courseid = args[6]
             cmid = args[7]
             trackid = args[8]
             attempt = args[9]
             raw_duration = int(args[10])
-            # args[17] may also hold duration; use the larger of the two as a sanity check
             alt_duration = int(args[17]) if len(args) > 17 and args[17] else 0
             duration = max(raw_duration, alt_duration) or 900
             interval_ms = args[12]
+            interval_sec = interval_ms / 1000.0
+
+            self.logger.info(f"VOD {vod_id}: duration={duration}s, interval={interval_sec}s, attempt={attempt}")
+
             action_url = f"{self.base_url}/mod/vod/action.php"
-            viewer_referer = viewer_url
             ajax_headers = {
-                "Referer": viewer_referer,
+                "Referer": viewer_url,
                 "X-Requested-With": "XMLHttpRequest",
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             }
-            isProgress = args[1]
-            if not isProgress: return False
-
-            if duration < 60:
-                self.logger.warning(f"VOD {vod_id}: reported duration={duration}s is suspiciously short. Server may not count this as watched.")
-
             sesskey = self.sesskey or ""
+            now = int(time.time())
+            start_time = now - duration  # fake session started `duration` seconds ago
 
-            # Start watching
-            self.session.post(action_url, headers=ajax_headers, data={'sesskey': sesskey, 'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 3, 'position': 0, 'attempts': attempt, 'interval': interval_ms})
-            r0 = self.session.post(action_url, headers=ajax_headers, data={'sesskey': sesskey, 'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 1, 'positionfrom': 0, 'positionto': 0, 'logtime': int(time.time())})
-            self.logger.info(f"VOD {vod_id} start log response: {r0.text[:120]}")
+            def post(data):
+                r = self.session.post(action_url, headers=ajax_headers,
+                                      data={'sesskey': sesskey, **data})
+                self.logger.info(f"VOD {vod_id} [{data.get('type')} state={data.get('state')}]: {r.text[:120]}")
+                return r
 
-            interval_sec = interval_ms / 1000.0
-            sleep_time = interval_sec / speed
-            previous = 0
-            current = 0
-            self.logger.info(f"VOD duration: {duration}s (raw={raw_duration}, alt={alt_duration}), interval: {interval_sec}s, sleep_time: {sleep_time}s")
-            while current < duration:
-                time.sleep(sleep_time)
-                previous = current
-                current = min(current + interval_sec, duration)
-                res = self.session.post(action_url, headers=ajax_headers, data={'sesskey': sesskey, 'courseid': courseid, 'cmid': cmid, 'type': 'vod_log', 'track': trackid, 'attempt': attempt, 'state': 8, 'positionfrom': previous, 'positionto': current, 'logtime': int(time.time())})
-                self.logger.info(f"VOD progress: {current}/{duration}s — {res.text[:120]}")
+            # 1. Window focus (viewer opened)
+            post({'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 3,
+                  'position': 0, 'attempts': attempt, 'interval': interval_ms})
 
-            # Send completion signal (state 5) — this is what actually marks the VOD as watched
-            res = self.session.post(action_url, headers=ajax_headers, data={'sesskey': sesskey, 'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 5, 'position': duration, 'attempts': attempt, 'interval': interval_ms})
-            self.logger.info(f"VOD {vod_id} completion signal sent. Response: {res.text[:200]}")
+            # 2. Start log — logtime = when viewing "started"
+            post({'type': 'vod_log', 'courseid': courseid, 'cmid': cmid, 'track': trackid,
+                  'attempt': attempt, 'state': 1, 'positionfrom': 0, 'positionto': 0,
+                  'logtime': start_time})
+
+            # 3. Periodic progress signals — spread logtimes evenly across duration
+            position = 0
+            while position < duration:
+                prev = position
+                position = min(position + interval_sec, duration)
+                elapsed = position / duration  # 0.0 → 1.0
+                logtime = start_time + int(elapsed * duration)
+                post({'type': 'vod_log', 'courseid': courseid, 'cmid': cmid, 'track': trackid,
+                      'attempt': attempt, 'state': 8, 'positionfrom': prev, 'positionto': position,
+                      'logtime': logtime})
+
+            # 4. Completion signal — logtime = now (session just ended)
+            res = post({'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 5,
+                        'position': duration, 'attempts': attempt, 'interval': interval_ms})
+
+            self.logger.info(f"VOD {vod_id} watch complete. Final response: {res.text[:200]}")
             return True
         except Exception as e:
             self.logger.error(f"Watch failed: {e}")
