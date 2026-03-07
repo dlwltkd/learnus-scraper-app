@@ -495,6 +495,52 @@ def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
     except Exception as e:
         return {"error": str(e)}
 
+@app.post("/debug/vod-watch-fast/{vod_id}")
+def debug_vod_watch_fast(vod_id: int, user: User = Depends(get_current_user)):
+    """Send all tracking signals (start, progress, completion) instantly with no sleeping.
+    Tests whether Moodle validates timing or just checks signal presence."""
+    import re as _re, ast as _ast, time as _time
+    client = get_moodle_client(user)
+    viewer_url = f"https://ys.learnus.org/mod/vod/viewer.php?id={vod_id}"
+    try:
+        resp = client.session.get(viewer_url, headers={"Referer": "https://ys.learnus.org"}, timeout=15)
+        html = resp.text
+        match = _re.search(r'amd\.progress\((.*?)\);', html, _re.DOTALL)
+        if not match:
+            return {"error": "amd.progress not found", "html_snippet": html[:500]}
+        args_str = match.group(1).replace('true', 'True').replace('false', 'False').replace(r'\/', '/')
+        args = _ast.literal_eval(f"[{args_str}]")
+        courseid, cmid, trackid, attempt = args[6], args[7], args[8], args[9]
+        duration = int(args[10]) or 900
+        interval_ms = args[12]
+        sesskey = client.sesskey or ""
+        action_url = "https://ys.learnus.org/mod/vod/action.php"
+        headers = {
+            "Referer": viewer_url,
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        }
+        results = []
+
+        def post(data):
+            r = client.session.post(action_url, headers=headers, data={**data, "sesskey": sesskey}, timeout=15)
+            results.append({"type": data.get("type"), "state": data.get("state"), "response": r.text[:200]})
+
+        # 1. Window focus
+        post({"type": "vod_track_for_onwindow", "track": trackid, "state": 3, "position": 0, "attempts": attempt, "interval": interval_ms})
+        # 2. Start log
+        post({"type": "vod_log", "courseid": courseid, "cmid": cmid, "track": trackid, "attempt": attempt, "state": 1, "positionfrom": 0, "positionto": 0, "logtime": int(_time.time())})
+        # 3. Mid progress (halfway)
+        post({"type": "vod_log", "courseid": courseid, "cmid": cmid, "track": trackid, "attempt": attempt, "state": 8, "positionfrom": 0, "positionto": duration // 2, "logtime": int(_time.time())})
+        # 4. End progress
+        post({"type": "vod_log", "courseid": courseid, "cmid": cmid, "track": trackid, "attempt": attempt, "state": 8, "positionfrom": duration // 2, "positionto": duration, "logtime": int(_time.time())})
+        # 5. Completion signal
+        post({"type": "vod_track_for_onwindow", "track": trackid, "state": 5, "position": duration, "attempts": attempt, "interval": interval_ms})
+
+        return {"vod_id": vod_id, "duration_sec": duration, "signals_sent": len(results), "results": results}
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.post("/debug/vod-action-test/{vod_id}")
 def debug_vod_action_test(vod_id: int, user: User = Depends(get_current_user)):
     """Fire one start_log POST to action.php and return the raw response for debugging."""
