@@ -498,7 +498,7 @@ def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
 @app.post("/vods/watch-all")
 def trigger_watch_all(background_tasks: BackgroundTasks, user: User = Depends(get_current_user)):
     """Manually trigger background VOD watching for the current user only."""
-    background_tasks.add_task(watch_vods_for_user, user, SessionLocal)
+    background_tasks.add_task(watch_vods_for_user, user.id, SessionLocal)
     return {"status": "started", "message": "VOD watching started in background"}
 
 @app.post("/debug/vod-watch-fast/{vod_id}")

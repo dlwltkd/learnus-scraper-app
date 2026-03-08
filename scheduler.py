@@ -238,21 +238,26 @@ def send_simple_push(user: User, title: str, body: str, notif_type: str = "gener
 
 _watch_running = set()  # track which user IDs are currently being watched
 
-def watch_vods_for_user(user, SessionLocal):
+def watch_vods_for_user(user_id, SessionLocal):
     """Watch all available unwatched VODs for a single user. Safe to call from any thread."""
-    if user.id in _watch_running:
-        logger.info(f"Skipping {user.username} — watch already in progress")
+    if user_id in _watch_running:
+        logger.info(f"Skipping user {user_id} — watch already in progress")
         return
 
-    client = get_client(user)
-    if not client:
-        return
-
-    now = datetime.now()
+    # Fetch user fresh in its own session to avoid detached instance issues
     db = SessionLocal()
     try:
+        user = db.query(User).filter_by(id=user_id).first()
+        if not user or not user.moodle_cookies:
+            return
+
+        client = get_client(user)
+        if not client:
+            return
+
+        now = datetime.now()
         vods = db.query(VOD).join(Course).filter(
-            Course.owner_id == user.id,
+            Course.owner_id == user_id,
             Course.is_active == True,
             VOD.is_completed == False,
             VOD.has_tracking == True,
@@ -270,43 +275,53 @@ def watch_vods_for_user(user, SessionLocal):
                 available.append(v)
             except Exception:
                 available.append(v)
+
+        cookies = json.loads(user.moodle_cookies)
+        username = user.username
     finally:
         db.close()
 
     if not available:
-        logger.info(f"No unwatched VODs for {user.username}")
+        logger.info(f"No unwatched VODs for user {user_id}")
         return
 
-    logger.info(f"Watching {len(available)} VODs for {user.username}")
-    _watch_running.add(user.id)
+    logger.info(f"Watching {len(available)} VODs for {username}")
+    _watch_running.add(user_id)
+
+    def watch_single_vod(vod_id, vod_db_id, vod_title, cookies):
+        # Each thread gets its own MoodleClient/session — requests.Session is not thread-safe
+        c = MoodleClient("https://ys.learnus.org", cookies=cookies)
+        success = c.watch_vod(vod_id)
+        if success:
+            inner_db = SessionLocal()
+            try:
+                db_vod = inner_db.query(VOD).filter_by(id=vod_db_id).first()
+                if db_vod:
+                    db_vod.is_completed = True
+                    inner_db.commit()
+                    logger.info(f"Marked VOD '{vod_title}' complete for user {user_id}")
+            finally:
+                inner_db.close()
+        return success
 
     def watch_user_vods(user_id, vod_list, cookies):
         try:
-            c = MoodleClient("https://ys.learnus.org", cookies=cookies)
             with ThreadPoolExecutor(max_workers=min(len(vod_list), 5)) as ex:
-                futures = {ex.submit(c.watch_vod, v.moodle_id): v for v in vod_list}
+                futures = {
+                    ex.submit(watch_single_vod, v.moodle_id, v.id, v.title, cookies): v
+                    for v in vod_list
+                }
                 for future in as_completed(futures):
                     vod = futures[future]
                     try:
-                        success = future.result()
-                        if success:
-                            inner_db = SessionLocal()
-                            try:
-                                db_vod = inner_db.query(VOD).filter_by(id=vod.id).first()
-                                if db_vod:
-                                    db_vod.is_completed = True
-                                    inner_db.commit()
-                                    logger.info(f"Marked VOD '{vod.title}' complete for user {user_id}")
-                            finally:
-                                inner_db.close()
+                        future.result()
                     except Exception as e:
                         logger.error(f"VOD '{vod.title}' watch error: {e}")
         finally:
             _watch_running.discard(user_id)
 
-    cookies = json.loads(user.moodle_cookies)
     t = ThreadPoolExecutor(max_workers=1)
-    t.submit(watch_user_vods, user.id, available, cookies)
+    t.submit(watch_user_vods, user_id, available, cookies)
     t.shutdown(wait=False)
 
 def watch_vods_job(SessionLocal):
@@ -317,7 +332,7 @@ def watch_vods_job(SessionLocal):
         users = db.query(User).filter(User.moodle_cookies.isnot(None)).all()
         for user in users:
             try:
-                watch_vods_for_user(user, SessionLocal)
+                watch_vods_for_user(user.id, SessionLocal)
             except Exception as e:
                 logger.error(f"watch_vods_job failed for {user.username}: {e}")
     finally:

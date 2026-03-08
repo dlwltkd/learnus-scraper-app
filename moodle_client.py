@@ -540,9 +540,10 @@ class MoodleClient:
             vod_log(3, 0)
             onwindow(0)
 
-            # 2. Periodic ticks advancing position through full duration
+            # 2. Periodic ticks — sleep the real interval between each, exactly as a browser would
             pos = 0.0
             while pos < duration:
+                time.sleep(interval_sec)
                 pos = min(pos + interval_sec, duration)
                 vod_log(8, pos)
                 onwindow(pos)
