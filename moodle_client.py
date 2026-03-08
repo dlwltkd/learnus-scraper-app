@@ -507,9 +507,6 @@ class MoodleClient:
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             }
             sesskey = self.sesskey or ""
-            now = int(time.time())
-            start_time = now - duration  # fake session started `duration` seconds ago
-
             def post(data):
                 r = self.session.post(action_url, headers=ajax_headers,
                                       data={'sesskey': sesskey, **data})
@@ -520,21 +517,20 @@ class MoodleClient:
             post({'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 3,
                   'position': 0, 'attempts': attempt, 'interval': interval_ms})
 
-            # 2. Start log — logtime = when viewing "started"
+            # 2. Start log
             post({'type': 'vod_log', 'courseid': courseid, 'cmid': cmid, 'track': trackid,
                   'attempt': attempt, 'state': 1, 'positionfrom': 0, 'positionto': 0,
-                  'logtime': start_time})
+                  'logtime': int(time.time())})
 
-            # 3. Periodic progress signals — spread logtimes evenly across duration
+            # 3. Periodic progress signals — sleep the real interval so server timestamps are accurate
             position = 0
             while position < duration:
+                time.sleep(interval_sec)
                 prev = position
                 position = min(position + interval_sec, duration)
-                elapsed = position / duration  # 0.0 → 1.0
-                logtime = start_time + int(elapsed * duration)
                 post({'type': 'vod_log', 'courseid': courseid, 'cmid': cmid, 'track': trackid,
                       'attempt': attempt, 'state': 8, 'positionfrom': prev, 'positionto': position,
-                      'logtime': logtime})
+                      'logtime': int(time.time())})
 
             # 4. Completion signal — logtime = now (session just ended)
             res = post({'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 5,

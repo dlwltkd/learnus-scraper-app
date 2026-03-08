@@ -1,6 +1,8 @@
 import logging
 import time
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
@@ -233,6 +235,91 @@ def send_simple_push(user: User, title: str, body: str, notif_type: str = "gener
     except Exception as exc:
         logger.error(f"Simple Expo Send Error: {exc}")
 
+
+_watch_running = set()  # track which user IDs are currently being watched
+
+def watch_vods_job(SessionLocal):
+    """
+    Watches all available unwatched VODs for all users in parallel threads.
+    Each VOD runs in its own thread, sleeping between progress signals.
+    Skips users already being watched from a previous run.
+    """
+    logger.info("Running VOD watch job...")
+    db = SessionLocal()
+    try:
+        users = db.query(User).filter(User.moodle_cookies.isnot(None)).all()
+        for user in users:
+            if user.id in _watch_running:
+                logger.info(f"Skipping {user.username} — watch already in progress")
+                continue
+
+            client = get_client(user)
+            if not client:
+                continue
+
+            now = datetime.now()
+            vods = db.query(VOD).join(Course).filter(
+                Course.owner_id == user.id,
+                Course.is_active == True,
+                VOD.is_completed == False,
+                VOD.has_tracking == True,
+            ).all()
+
+            # Only VODs currently in their viewing window
+            available = []
+            for v in vods:
+                try:
+                    start = datetime.fromisoformat(v.start_date) if v.start_date else None
+                    end = datetime.fromisoformat(v.end_date) if v.end_date else None
+                    if end and end < now:
+                        continue
+                    if start and start > now:
+                        continue
+                    available.append(v)
+                except Exception:
+                    available.append(v)
+
+            if not available:
+                continue
+
+            logger.info(f"Watching {len(available)} VODs for {user.username}")
+            _watch_running.add(user.id)
+
+            def watch_user_vods(user_id, vod_list, cookies):
+                try:
+                    from moodle_client import MoodleClient
+                    c = MoodleClient("https://ys.learnus.org", cookies=cookies)
+                    with ThreadPoolExecutor(max_workers=min(len(vod_list), 5)) as ex:
+                        futures = {ex.submit(c.watch_vod, v.moodle_id): v for v in vod_list}
+                        for future in as_completed(futures):
+                            vod = futures[future]
+                            try:
+                                success = future.result()
+                                if success:
+                                    inner_db = SessionLocal()
+                                    try:
+                                        db_vod = inner_db.query(VOD).filter_by(id=vod.id).first()
+                                        if db_vod:
+                                            db_vod.is_completed = True
+                                            inner_db.commit()
+                                            logger.info(f"Marked VOD '{vod.title}' complete for user {user_id}")
+                                    finally:
+                                        inner_db.close()
+                            except Exception as e:
+                                logger.error(f"VOD '{vod.title}' watch error: {e}")
+                finally:
+                    _watch_running.discard(user_id)
+
+            import json as _json
+            cookies = _json.loads(user.moodle_cookies)
+            t = ThreadPoolExecutor(max_workers=1)
+            t.submit(watch_user_vods, user.id, available, cookies)
+            t.shutdown(wait=False)
+
+    except Exception as e:
+        logger.error(f"watch_vods_job failed: {e}")
+    finally:
+        db.close()
 
 def check_notices_job(SessionLocal):
     """

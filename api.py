@@ -11,7 +11,7 @@ import uuid
 import json
 from datetime import datetime, timedelta
 import re
-from scheduler import check_notices_job, sync_dashboard_job
+from scheduler import check_notices_job, sync_dashboard_job, watch_vods_job
 from apscheduler.schedulers.background import BackgroundScheduler
 
 logging.basicConfig(level=logging.DEBUG)
@@ -494,6 +494,12 @@ def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
         }
     except Exception as e:
         return {"error": str(e)}
+
+@app.post("/vods/watch-all")
+def trigger_watch_all(background_tasks: BackgroundTasks, user: User = Depends(get_current_user)):
+    """Manually trigger background VOD watching for the current user."""
+    background_tasks.add_task(watch_vods_job, SessionLocal)
+    return {"status": "started", "message": "VOD watching started in background"}
 
 @app.post("/debug/vod-watch-fast/{vod_id}")
 def debug_vod_watch_fast(vod_id: int, user: User = Depends(get_current_user)):

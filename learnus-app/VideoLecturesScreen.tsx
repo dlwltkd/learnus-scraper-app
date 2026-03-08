@@ -1,146 +1,19 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, RefreshControl,
-    TouchableOpacity, ActivityIndicator, Dimensions,
-    LayoutAnimation, Platform, UIManager,
+    TouchableOpacity, ActivityIndicator,
+    LayoutAnimation, Platform, UIManager, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { getDashboardOverview } from './services/api';
+import { getDashboardOverview, watchAllVods } from './services/api';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const VOD_BASE = 'https://ys.learnus.org';
-const SCREEN_WIDTH = Dimensions.get('window').width;
-
-// JS injected into every VOD WebView:
-// 1. Mutes video (parallel play, no noise)
-// 2. Dismisses any popup button (not cancel)
-// 3. Auto-plays as soon as player is ready
-// 4. Posts 'ended' to RN when video ends (with currentTime fallback)
-const AUTO_PLAY_JS = `
-(function() {
-    var _listening = false;
-
-    function dismissPopup() {
-        var btns = document.querySelectorAll('button, .btn, input[type="button"], input[type="submit"]');
-        for (var i = 0; i < btns.length; i++) {
-            var el = btns[i];
-            if (el.offsetParent === null) continue;
-            var t = (el.textContent || el.value || '').trim();
-            if (t.length === 0 || t.length > 15) continue;
-            if (/취소|cancel/i.test(t)) continue;
-            el.click();
-            return;
-        }
-    }
-
-    function tryPlay() {
-        var vid = document.querySelector('video');
-        if (vid) {
-            vid.muted = true;
-            if (vid.paused) vid.play().catch(function(){});
-            return;
-        }
-        var btn = document.querySelector('.vjs-big-play-button');
-        if (btn && btn.offsetParent !== null) btn.click();
-    }
-
-    function attachEnded() {
-        if (_listening) return;
-        var vid = document.querySelector('video');
-        if (!vid) return;
-        _listening = true;
-        vid.muted = true;
-        vid.addEventListener('ended', function() {
-            window.ReactNativeWebView.postMessage('ended');
-        });
-        setInterval(function() {
-            if (vid.duration > 0 && vid.currentTime >= vid.duration - 1.5) {
-                window.ReactNativeWebView.postMessage('ended');
-            }
-        }, 2000);
-    }
-
-    var ticker = setInterval(function() {
-        dismissPopup();
-        tryPlay();
-        attachEnded();
-    }, 400);
-
-    setTimeout(function() { clearInterval(ticker); }, 30000);
-})();
-true;
-`;
-
-// ─── VodAutoWatcher ───────────────────────────────────────────────────────────
-// Renders all VODs as off-screen WebViews (invisible to user).
-// Positioned to the right of the screen so video elements initialize at full size.
-// Auto-plays all simultaneously (muted). Calls onDone when all finish.
-
-interface WatchVod { id: number; title: string; }
-
-const VodAutoWatcher = ({ vods, onDone }: { vods: WatchVod[]; onDone: () => void }) => {
-    const [cookie, setCookie] = useState('');
-    const doneRef = useRef<Set<number>>(new Set());
-    const notifiedRef = useRef(false);
-
-    useEffect(() => {
-        AsyncStorage.getItem('userToken').then(t => { if (t) setCookie(t); });
-    }, []);
-
-    const markDone = (id: number) => {
-        doneRef.current.add(id);
-        if (!notifiedRef.current && doneRef.current.size >= vods.length) {
-            notifiedRef.current = true;
-            setTimeout(onDone, 1000);
-        }
-    };
-
-    if (!cookie) return null;
-
-    return (
-        // Positioned off-screen to the right — full size so video elements initialize properly
-        <View
-            style={{
-                position: 'absolute',
-                left: SCREEN_WIDTH + 100,
-                top: 0,
-                width: SCREEN_WIDTH,
-            }}
-            pointerEvents="none"
-        >
-            {vods.map(vod => (
-                <WebView
-                    key={vod.id}
-                    style={{ width: SCREEN_WIDTH, height: 180 }}
-                    source={{
-                        uri: `${VOD_BASE}/mod/vod/viewer.php?id=${vod.id}`,
-                        headers: { Cookie: cookie },
-                    }}
-                    sharedCookiesEnabled
-                    thirdPartyCookiesEnabled
-                    javaScriptEnabled
-                    domStorageEnabled
-                    mediaPlaybackRequiresUserAction={false}
-                    allowsInlineMediaPlayback
-                    userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                    injectedJavaScriptBeforeContentLoaded="window.confirm = function(){ return true; }; true;"
-                    injectedJavaScript={AUTO_PLAY_JS}
-                    onMessage={e => {
-                        if (e.nativeEvent.data === 'ended') markDone(vod.id);
-                    }}
-                />
-            ))}
-        </View>
-    );
-};
 
 // ─── SectionHeader ────────────────────────────────────────────────────────────
 
@@ -172,9 +45,8 @@ const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollaps
 const VideoLecturesScreen = () => {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
-    const [watcherVods, setWatcherVods] = useState<WatchVod[] | null>(null);
+    const [watching, setWatching] = useState(false);
     const [collapsed, setCollapsed] = useState<{ [k: string]: boolean }>({ missed: false });
-    const autoWatchTriggered = useRef(false);
 
     useEffect(() => { loadData(); }, []);
 
@@ -184,28 +56,24 @@ const VideoLecturesScreen = () => {
     };
 
     const loadData = async () => {
+        try { setData(await getDashboardOverview()); }
+        catch (e) { console.error(e); }
+        finally { setLoading(false); }
+    };
+
+    const handleWatchAll = async () => {
+        setWatching(true);
         try {
-            const d = await getDashboardOverview();
-            setData(d);
-            // Auto-start background watcher once on initial load
-            if (!autoWatchTriggered.current) {
-                const unwatched = (d?.available_vods ?? []).filter((v: any) => !v.is_completed);
-                if (unwatched.length > 0) {
-                    autoWatchTriggered.current = true;
-                    setWatcherVods(unwatched.map((v: any) => ({ id: v.id, title: v.title })));
-                }
-            }
+            await watchAllVods();
+            Alert.alert('시청 시작', '백그라운드에서 강의를 시청하고 있습니다.\n앱을 닫아도 계속 진행됩니다.');
         } catch (e) {
-            console.error(e);
+            Alert.alert('오류', '시청을 시작할 수 없습니다. 다시 시도해주세요.');
         } finally {
-            setLoading(false);
+            setWatching(false);
         }
     };
 
-    const onWatcherDone = () => {
-        setWatcherVods(null);
-        loadData();
-    };
+    const unwatchedCount = (data?.available_vods ?? []).filter((v: any) => !v.is_completed).length;
 
     if (loading) {
         return <View style={styles.centered}><ActivityIndicator size="large" color={Colors.primary} /></View>;
@@ -213,11 +81,23 @@ const VideoLecturesScreen = () => {
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
-            {/* Invisible background watcher — no UI, auto-triggered */}
-            {watcherVods && <VodAutoWatcher vods={watcherVods} onDone={onWatcherDone} />}
-
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>동영상 강의</Text>
+                {unwatchedCount > 0 && (
+                    <TouchableOpacity
+                        style={[styles.watchAllBtn, watching && { opacity: 0.6 }]}
+                        onPress={handleWatchAll}
+                        disabled={watching}
+                    >
+                        {watching
+                            ? <ActivityIndicator size="small" color="#fff" />
+                            : <Ionicons name="play-circle" size={16} color="#fff" />
+                        }
+                        <Text style={styles.watchAllText}>
+                            {watching ? '시작 중...' : `모두 시청 (${unwatchedCount})`}
+                        </Text>
+                    </TouchableOpacity>
+                )}
             </View>
 
             <ScrollView
@@ -276,10 +156,7 @@ const VideoLecturesScreen = () => {
                                             : item.end_date ? `~ ${new Date(item.end_date).toLocaleDateString()}` : '기한 없음'}
                                     </Text>
                                 </View>
-                                {item.is_completed
-                                    ? <Ionicons name="checkmark" size={18} color={Colors.textTertiary} />
-                                    : <ActivityIndicator size="small" color={Colors.primary} style={{ opacity: watcherVods ? 1 : 0 }} />
-                                }
+                                {item.is_completed && <Ionicons name="checkmark" size={18} color={Colors.textTertiary} />}
                             </View>
                         ))}
                     </View>
@@ -336,8 +213,10 @@ const VideoLecturesScreen = () => {
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: Colors.background },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    header: { paddingHorizontal: Spacing.l, paddingVertical: Spacing.m, marginBottom: Spacing.s },
+    header: { paddingHorizontal: Spacing.l, paddingVertical: Spacing.m, marginBottom: Spacing.s, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     headerTitle: { ...Typography.header1, fontSize: 28 },
+    watchAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+    watchAllText: { color: '#fff', fontSize: 13, fontWeight: '600' },
     scrollContent: { padding: Spacing.l, paddingBottom: Spacing.xxl },
     section: { marginBottom: Spacing.xl },
     sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.m },

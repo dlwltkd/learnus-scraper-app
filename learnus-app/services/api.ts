@@ -123,6 +123,11 @@ export const syncAllActiveCourses = async () => {
     return response.data;
 };
 
+export const watchAllVods = async () => {
+    const response = await api.post('/vods/watch-all');
+    return response.data;
+};
+
 // Auth & Login
 
 
