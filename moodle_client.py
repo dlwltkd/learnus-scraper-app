@@ -477,8 +477,13 @@ class MoodleClient:
         except: return None
 
     def watch_vod(self, vod_id):
-        """Watch a VOD by sending all tracking signals with realistic fake timestamps.
-        No actual sleeping — completes in seconds regardless of video duration."""
+        """Watch a VOD by replicating the exact signals the browser sends.
+        - logtime = args[22] (page load time), constant throughout
+        - positionfrom == positionto == current video position
+        - state=3 play, state=8 periodic tick, state=10 ended
+        - vod_track_for_onwindow state=99 sent after every vod_log
+        No sleeping needed — position values determine learning time.
+        """
         viewer_url = f"{self.base_url}/mod/vod/viewer.php?id={vod_id}"
         self.logger.info(f"Fetching VOD viewer: {viewer_url}")
         try:
@@ -487,25 +492,25 @@ class MoodleClient:
             html = response.text
             args = self.parse_progress_args(html)
             if not args:
-                self.logger.error(f"Could not find amd.progress call. Status={response.status_code} URL={response.url} Snippet={html[:300]!r}")
+                self.logger.error(f"Could not find amd.progress call. URL={response.url} Snippet={html[:300]!r}")
                 return False
 
-            isProgress = args[1]
-            if not isProgress:
+            if not args[1]:
                 self.logger.info(f"VOD {vod_id} has no progress tracking, skipping.")
                 return False
 
-            courseid = args[6]
-            cmid = args[7]
-            trackid = args[8]
-            attempt = args[9]
+            courseid     = args[6]
+            cmid         = args[7]
+            trackid      = args[8]
+            attempt      = args[9]
             raw_duration = int(args[10])
             alt_duration = int(args[17]) if len(args) > 17 and args[17] else 0
-            duration = max(raw_duration, alt_duration) or 900
-            interval_ms = args[12]
+            duration     = max(raw_duration, alt_duration) or 900
+            interval_ms  = args[12]
             interval_sec = interval_ms / 1000.0
+            logtime      = args[22]  # page-load timestamp, stays constant
 
-            self.logger.info(f"VOD {vod_id}: duration={duration}s, interval={interval_sec}s, attempt={attempt}")
+            self.logger.info(f"VOD {vod_id}: duration={duration}s interval={interval_sec}s attempt={attempt}")
 
             action_url = f"{self.base_url}/mod/vod/action.php"
             ajax_headers = {
@@ -514,36 +519,39 @@ class MoodleClient:
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             }
             sesskey = self.sesskey or ""
-            def post(data):
-                r = self.session.post(action_url, headers=ajax_headers,
-                                      data={'sesskey': sesskey, **data})
-                self.logger.info(f"VOD {vod_id} [{data.get('type')} state={data.get('state')}]: {r.text[:120]}")
-                return r
 
-            # 1. Window focus (viewer opened)
-            post({'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 3,
-                  'position': 0, 'attempts': attempt, 'interval': interval_ms})
+            def vod_log(state, pos):
+                r = self.session.post(action_url, headers=ajax_headers, data={
+                    'sesskey': sesskey, 'courseid': courseid, 'cmid': cmid,
+                    'type': 'vod_log', 'track': trackid, 'attempt': attempt,
+                    'state': state, 'positionfrom': pos, 'positionto': pos,
+                    'logtime': logtime,
+                })
+                self.logger.info(f"VOD {vod_id} vod_log state={state} pos={pos:.1f}: {r.text[:80]}")
 
-            # 2. Start log
-            post({'type': 'vod_log', 'courseid': courseid, 'cmid': cmid, 'track': trackid,
-                  'attempt': attempt, 'state': 1, 'positionfrom': 0, 'positionto': 0,
-                  'logtime': int(time.time())})
+            def onwindow(pos):
+                self.session.post(action_url, headers=ajax_headers, data={
+                    'sesskey': sesskey, 'type': 'vod_track_for_onwindow',
+                    'track': trackid, 'state': 99,
+                    'position': pos, 'attempts': attempt, 'interval': interval_ms,
+                })
 
-            # 3. Periodic progress signals — sleep the real interval so server timestamps are accurate
-            position = 0
-            while position < duration:
-                time.sleep(interval_sec)
-                prev = position
-                position = min(position + interval_sec, duration)
-                post({'type': 'vod_log', 'courseid': courseid, 'cmid': cmid, 'track': trackid,
-                      'attempt': attempt, 'state': 8, 'positionfrom': prev, 'positionto': position,
-                      'logtime': int(time.time())})
+            # 1. Play from position 0
+            vod_log(3, 0)
+            onwindow(0)
 
-            # 4. Completion signal — logtime = now (session just ended)
-            res = post({'type': 'vod_track_for_onwindow', 'track': trackid, 'state': 5,
-                        'position': duration, 'attempts': attempt, 'interval': interval_ms})
+            # 2. Periodic ticks advancing position through full duration
+            pos = 0.0
+            while pos < duration:
+                pos = min(pos + interval_sec, duration)
+                vod_log(8, pos)
+                onwindow(pos)
 
-            self.logger.info(f"VOD {vod_id} watch complete. Final response: {res.text[:200]}")
+            # 3. Video ended
+            vod_log(10, duration)
+            onwindow(duration)
+
+            self.logger.info(f"VOD {vod_id} watch complete.")
             return True
         except Exception as e:
             self.logger.error(f"Watch failed: {e}")
