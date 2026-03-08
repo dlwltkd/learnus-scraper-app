@@ -71,6 +71,13 @@ class MoodleClient:
             self.logger.error(f"Failed to load session: {e}")
             return False
 
+    def is_session_valid(self):
+        try:
+            res = self.session.get(f"{self.base_url}/my/", timeout=10, allow_redirects=True)
+            return "login" not in res.url
+        except Exception:
+            return False
+
     def refresh_sesskey(self):
         try:
             response = self.session.get(self.base_url, timeout=10)
