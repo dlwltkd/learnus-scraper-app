@@ -308,8 +308,8 @@ class MoodleClient:
                         if date_match:
                             item_data['start_date'] = date_match.group(1)
                             item_data['end_date'] = date_match.group(2)
-                        # Parse video duration from course page (e.g. "30:00" or "1:00:00")
-                        dur_match = re.search(r'\b(\d+):(\d{2})(?::(\d{2}))?\b', inner_html)
+                        # Parse video duration — appears after the date range, e.g. "...), 01:00:22"
+                        dur_match = re.search(r',\s*(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s|$|<)', inner_html)
                         if dur_match:
                             if dur_match.group(3) is not None:
                                 item_data['duration'] = int(dur_match.group(1)) * 3600 + int(dur_match.group(2)) * 60 + int(dur_match.group(3))
