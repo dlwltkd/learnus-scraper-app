@@ -505,7 +505,7 @@ class MoodleClient:
             attempt      = args[9]
             raw_duration = int(args[10])
             alt_duration = int(args[17]) if len(args) > 17 and args[17] else 0
-            duration     = max(raw_duration, alt_duration) or 900
+            duration     = max(raw_duration, alt_duration) or 2000
             interval_ms  = args[12]
             interval_sec = interval_ms / 1000.0
             logtime      = args[22]  # page-load timestamp, stays constant
