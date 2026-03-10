@@ -511,6 +511,7 @@ class MoodleClient:
             logtime      = args[22]  # page-load timestamp, stays constant
 
             self.logger.info(f"VOD {vod_id}: duration={duration}s interval={interval_sec}s attempt={attempt}")
+            self.logger.info(f"VOD {vod_id} all args: {args}")
 
             action_url = f"{self.base_url}/mod/vod/action.php"
             ajax_headers = {
