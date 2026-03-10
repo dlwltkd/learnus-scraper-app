@@ -76,7 +76,8 @@ class VOD(Base):
     is_completed = Column(Boolean, default=False)
     has_tracking = Column(Boolean, default=True)
     url = Column(String)
-    
+    duration = Column(Integer, nullable=True)  # video duration in seconds, scraped from course page
+
     course = relationship("Course", back_populates="vods")
 
 class FileResource(Base):

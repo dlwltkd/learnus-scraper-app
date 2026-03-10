@@ -308,6 +308,13 @@ class MoodleClient:
                         if date_match:
                             item_data['start_date'] = date_match.group(1)
                             item_data['end_date'] = date_match.group(2)
+                        # Parse video duration from course page (e.g. "30:00" or "1:00:00")
+                        dur_match = re.search(r'\b(\d+):(\d{2})(?::(\d{2}))?\b', inner_html)
+                        if dur_match:
+                            if dur_match.group(3) is not None:
+                                item_data['duration'] = int(dur_match.group(1)) * 3600 + int(dur_match.group(2)) * 60 + int(dur_match.group(3))
+                            else:
+                                item_data['duration'] = int(dur_match.group(1)) * 60 + int(dur_match.group(2))
                     elif 'modtype_feedback' in activity_type_str:
                         # Parse deadline from availability info
                         deadline_str = None
@@ -436,6 +443,8 @@ class MoodleClient:
             vod.has_tracking = item['has_tracking']
             vod.start_date = item.get('start_date')
             vod.end_date = item.get('end_date')
+            if item.get('duration'):
+                vod.duration = item['duration']
 
         for item in contents['files']:
             fres = db_session.query(FileResource).filter_by(moodle_id=item['id'], course_id=course.id).first()
@@ -476,13 +485,13 @@ class MoodleClient:
             return ast.literal_eval(f"[{args_str}]")
         except: return None
 
-    def watch_vod(self, vod_id):
+    def watch_vod(self, vod_id, duration=None):
         """Watch a VOD by replicating the exact signals the browser sends.
         - logtime = args[22] (page load time), constant throughout
         - positionfrom == positionto == current video position
         - state=3 play, state=8 periodic tick, state=10 ended
         - vod_track_for_onwindow state=99 sent after every vod_log
-        No sleeping needed — position values determine learning time.
+        - duration: real video length in seconds (from DB); overrides args[10] if provided
         """
         viewer_url = f"{self.base_url}/mod/vod/viewer.php?id={vod_id}"
         self.logger.info(f"Fetching VOD viewer: {viewer_url}")
@@ -505,13 +514,14 @@ class MoodleClient:
             attempt      = args[9]
             raw_duration = int(args[10])
             alt_duration = int(args[17]) if len(args) > 17 and args[17] else 0
-            duration     = max(raw_duration, alt_duration) or 2000
+            args_duration = max(raw_duration, alt_duration) or 2000
+            if not duration:
+                duration = args_duration
             interval_ms  = args[12]
             interval_sec = interval_ms / 1000.0
             logtime      = args[22]  # page-load timestamp, stays constant
 
             self.logger.info(f"VOD {vod_id}: duration={duration}s interval={interval_sec}s attempt={attempt}")
-            self.logger.info(f"VOD {vod_id} all args: {args}")
 
             action_url = f"{self.base_url}/mod/vod/action.php"
             ajax_headers = {

@@ -288,10 +288,10 @@ def watch_vods_for_user(user_id, SessionLocal):
     logger.info(f"Watching {len(available)} VODs for {username}")
     _watch_running.add(user_id)
 
-    def watch_single_vod(vod_id, vod_db_id, vod_title, cookies):
+    def watch_single_vod(vod_id, vod_db_id, vod_title, cookies, vod_duration=None):
         # Each thread gets its own MoodleClient/session — requests.Session is not thread-safe
         c = MoodleClient("https://ys.learnus.org", cookies=cookies)
-        success = c.watch_vod(vod_id)
+        success = c.watch_vod(vod_id, duration=vod_duration)
         if success:
             inner_db = SessionLocal()
             try:
@@ -308,7 +308,7 @@ def watch_vods_for_user(user_id, SessionLocal):
         try:
             with ThreadPoolExecutor(max_workers=min(len(vod_list), 5)) as ex:
                 futures = {
-                    ex.submit(watch_single_vod, v.moodle_id, v.id, v.title, cookies): v
+                    ex.submit(watch_single_vod, v.moodle_id, v.id, v.title, cookies, v.duration): v
                     for v in vod_list
                 }
                 for future in as_completed(futures):
