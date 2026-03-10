@@ -65,6 +65,8 @@ def send_push_notification(user: User, course: Course, post: Post):
                     data={
                         "type": "announcement",
                         "postId": post.id,
+                        "postUrl": post.url,
+                        "postTitle": post.title,
                         "courseId": course.id,
                         "courseName": course.name,
                         "saveToHistory": True

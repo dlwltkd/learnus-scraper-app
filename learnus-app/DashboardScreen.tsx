@@ -28,6 +28,7 @@ import { getUnreadCount } from './services/NotificationHistoryService';
 import Card from './components/Card';
 import Badge, { StatusBadge } from './components/Badge';
 import Button, { IconButton } from './components/Button';
+import ItemRow from './components/ItemRow';
 
 if (Platform.OS === 'android') {
     if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -147,69 +148,35 @@ const AISummaryCard = ({ summary, onPress, index }: { summary: AISummary; onPres
 
     return (
         <Animated.View
-            style={{
-                transform: [{ translateX: slideAnim }, { scale: scaleAnim }],
-                opacity: opacityAnim,
-            }}
+            style={[
+                aiStyles.cardShadow,
+                {
+                    transform: [{ translateX: slideAnim }, { scale: scaleAnim }],
+                    opacity: opacityAnim,
+                },
+            ]}
         >
             <TouchableOpacity
-                style={[aiStyles.card, { borderColor: statusConfig.borderColor }]}
+                style={aiStyles.card}
                 onPress={onPress}
                 activeOpacity={0.92}
             >
-                {/* Status Indicator Bar */}
-                <View style={[aiStyles.statusBar, { backgroundColor: statusConfig.color }]} />
 
                 {/* Card Content */}
                 <View style={aiStyles.cardContent}>
                     {/* Header */}
                     <View style={aiStyles.cardHeader}>
                         <View style={aiStyles.courseInfo}>
-                            <View style={[aiStyles.statusBadge, { backgroundColor: statusConfig.bgColor }]}>
-                                <Ionicons name={statusConfig.icon} size={12} color={statusConfig.color} />
-                                <Text style={[aiStyles.statusLabel, { color: statusConfig.color }]}>
-                                    {statusConfig.label}
-                                </Text>
-                            </View>
                             <Text style={aiStyles.courseName} numberOfLines={1}>
                                 {summary.course_name}
                             </Text>
                         </View>
-                        <View style={aiStyles.aiTag}>
-                            <Ionicons name="sparkles" size={10} color={Colors.secondary} />
+                        <View style={[aiStyles.statusBadge, { backgroundColor: statusConfig.bgColor }]}>
+                            <Ionicons name={statusConfig.icon} size={11} color={statusConfig.color} />
+                            <Text style={[aiStyles.statusLabel, { color: statusConfig.color }]}>
+                                {statusConfig.label}
+                            </Text>
                         </View>
-                    </View>
-
-                    {/* Quick Stats */}
-                    <View style={aiStyles.statsRow}>
-                        {summary.urgent?.count > 0 && (
-                            <View style={[aiStyles.statChip, aiStyles.urgentChip]}>
-                                <Ionicons name="alert-circle" size={12} color="#EF4444" />
-                                <Text style={[aiStyles.statText, { color: '#EF4444' }]}>
-                                    긴급 {summary.urgent.count}
-                                </Text>
-                            </View>
-                        )}
-                        {summary.upcoming?.count > 0 && (
-                            <View style={[aiStyles.statChip, aiStyles.upcomingChip]}>
-                                <Ionicons name="time-outline" size={12} color="#F59E0B" />
-                                <Text style={[aiStyles.statText, { color: '#F59E0B' }]}>
-                                    예정 {summary.upcoming.count}
-                                </Text>
-                            </View>
-                        )}
-                        {summary.announcement?.has_new && (
-                            <View style={[aiStyles.statChip, aiStyles.announcementChip]}>
-                                <Ionicons name="megaphone-outline" size={12} color={Colors.primary} />
-                                <Text style={[aiStyles.statText, { color: Colors.primary }]}>새 공지</Text>
-                            </View>
-                        )}
-                        {(!summary.urgent?.count && !summary.upcoming?.count && !summary.announcement?.has_new) && (
-                            <View style={[aiStyles.statChip, aiStyles.calmChip]}>
-                                <Ionicons name="leaf-outline" size={12} color="#10B981" />
-                                <Text style={[aiStyles.statText, { color: '#10B981' }]}>할 일 없음</Text>
-                            </View>
-                        )}
                     </View>
 
                     {/* Status Message */}
@@ -218,20 +185,51 @@ const AISummaryCard = ({ summary, onPress, index }: { summary: AISummary; onPres
                     </Text>
 
                     {/* Top Priority Item Preview */}
-                    {summary.urgent?.items?.[0] && (
+                    {summary.urgent?.items?.[0] ? (
                         <View style={aiStyles.priorityPreview}>
-                            <View style={aiStyles.priorityDot} />
+                            <View style={[aiStyles.priorityDot, { backgroundColor: statusConfig.color }]} />
                             <Text style={aiStyles.priorityText} numberOfLines={1}>
                                 {summary.urgent.items[0].title}
                             </Text>
-                            <Text style={aiStyles.priorityDue}>{summary.urgent.items[0].due}</Text>
+                            <Text style={[aiStyles.priorityDue, { color: statusConfig.color }]}>
+                                {summary.urgent.items[0].due}
+                            </Text>
                         </View>
-                    )}
+                    ) : summary.upcoming?.items?.[0] ? (
+                        <View style={aiStyles.priorityPreview}>
+                            <View style={[aiStyles.priorityDot, { backgroundColor: '#F59E0B' }]} />
+                            <Text style={aiStyles.priorityText} numberOfLines={1}>
+                                {summary.upcoming.items[0].title}
+                            </Text>
+                            <Text style={[aiStyles.priorityDue, { color: '#F59E0B' }]}>
+                                {summary.upcoming.items[0].due}
+                            </Text>
+                        </View>
+                    ) : null}
 
-                    {/* Footer */}
+                    {/* Quick chips + footer row */}
                     <View style={aiStyles.cardFooter}>
-                        <Text style={aiStyles.viewMore}>자세히 보기</Text>
-                        <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />
+                        <View style={aiStyles.chipsRow}>
+                            {summary.urgent?.count > 0 && (
+                                <View style={[aiStyles.chip, { backgroundColor: 'rgba(239,68,68,0.08)' }]}>
+                                    <Text style={[aiStyles.chipText, { color: '#EF4444' }]}>긴급 {summary.urgent.count}</Text>
+                                </View>
+                            )}
+                            {summary.upcoming?.count > 0 && (
+                                <View style={[aiStyles.chip, { backgroundColor: 'rgba(245,158,11,0.08)' }]}>
+                                    <Text style={[aiStyles.chipText, { color: '#F59E0B' }]}>예정 {summary.upcoming.count}</Text>
+                                </View>
+                            )}
+                            {!summary.urgent?.count && !summary.upcoming?.count && (
+                                <View style={[aiStyles.chip, { backgroundColor: 'rgba(16,185,129,0.08)' }]}>
+                                    <Text style={[aiStyles.chipText, { color: '#10B981' }]}>여유</Text>
+                                </View>
+                            )}
+                        </View>
+                        <View style={aiStyles.viewMoreRow}>
+                            <Text style={aiStyles.viewMore}>자세히</Text>
+                            <Ionicons name="chevron-forward" size={12} color={Colors.textTertiary} />
+                        </View>
                     </View>
                 </View>
             </TouchableOpacity>
@@ -459,60 +457,7 @@ const SectionHeader = ({
     </View>
 );
 
-// ============================================
-// ASSIGNMENT ITEM
-// ============================================
-interface AssignmentItemProps {
-    item: any;
-    isMissed?: boolean;
-}
-
-const AssignmentItem = ({ item, isMissed = false }: AssignmentItemProps) => {
-    return (
-        <View style={[styles.assignmentCard, item.is_completed && styles.assignmentCardCompleted]}>
-            <View style={[styles.assignmentIcon, isMissed && styles.assignmentIconMissed]}>
-                <Ionicons
-                    name={isMissed ? 'alert-circle' : 'document-text-outline'}
-                    size={22}
-                    color={isMissed ? Colors.error : item.is_completed ? Colors.textTertiary : Colors.primary}
-                />
-            </View>
-
-            <View style={styles.assignmentContent}>
-                <Text style={styles.assignmentCourse} numberOfLines={1}>
-                    {item.course_name}
-                </Text>
-                <Text
-                    style={[
-                        styles.assignmentTitle,
-                        item.is_completed && styles.assignmentTitleCompleted,
-                    ]}
-                    numberOfLines={1}
-                >
-                    {item.title}
-                </Text>
-                <View style={styles.assignmentMeta}>
-                    <Ionicons
-                        name="time-outline"
-                        size={12}
-                        color={isMissed ? Colors.error : Colors.textTertiary}
-                    />
-                    <Text style={[styles.assignmentDate, isMissed && styles.assignmentDateMissed]}>
-                        {item.due_date} 마감
-                    </Text>
-                </View>
-            </View>
-
-            <View style={styles.checkButton}>
-                <Ionicons
-                    name={item.is_completed ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={26}
-                    color={item.is_completed ? Colors.success : Colors.border}
-                />
-            </View>
-        </View>
-    );
-};
+// AssignmentItem is now handled by the shared ItemRow component
 
 // ============================================
 // MAIN DASHBOARD SCREEN
@@ -787,7 +732,8 @@ const DashboardScreen = () => {
                         <ScrollView
                             horizontal
                             showsHorizontalScrollIndicator={false}
-                            contentContainerStyle={{ paddingRight: Spacing.l }}
+                            contentContainerStyle={{ paddingHorizontal: Spacing.l, paddingVertical: 8 }}
+                            style={{ marginHorizontal: -Spacing.l, marginVertical: -8 }}
                             decelerationRate="fast"
                             snapToInterval={CARD_WIDTH + Spacing.m}
                             snapToAlignment="start"
@@ -818,10 +764,13 @@ const DashboardScreen = () => {
                         />
                         {!collapsedSections.missedAssignments &&
                             data.missed_assignments.map((item: any) => (
-                                <AssignmentItem
+                                <ItemRow
                                     key={item.id}
-                                    item={item}
-                                    isMissed
+                                    title={item.title}
+                                    courseName={item.course_name}
+                                    meta={item.due_date ? `${item.due_date} 마감` : undefined}
+                                    state="missed"
+                                    type="assignment"
                                 />
                             ))}
                     </View>
@@ -836,9 +785,13 @@ const DashboardScreen = () => {
                             iconColor={Colors.primary}
                         />
                         {data.upcoming_assignments.map((item: any) => (
-                            <AssignmentItem
+                            <ItemRow
                                 key={item.id}
-                                item={item}
+                                title={item.title}
+                                courseName={item.course_name}
+                                meta={item.due_date ? `${item.due_date} 마감` : undefined}
+                                state={item.is_completed ? 'completed' : 'pending'}
+                                type="assignment"
                             />
                         ))}
                     </View>
@@ -872,30 +825,30 @@ const DashboardScreen = () => {
 // AI CARD STYLES
 // ============================================
 const aiStyles = StyleSheet.create({
-    card: {
+    // Outer wrapper: holds shadow, no overflow clip
+    cardShadow: {
         width: CARD_WIDTH,
-        height: CARD_HEIGHT,
         marginRight: Spacing.m,
-        borderRadius: 20,
+        borderRadius: 16,
         backgroundColor: Colors.surface,
-        borderWidth: 1.5,
-        overflow: 'hidden',
         ...Layout.shadow.default,
     },
-    statusBar: {
-        height: 3,
-        width: '100%',
+    card: {
+        borderRadius: 16,
+        backgroundColor: Colors.surface,
+        borderWidth: 1,
+        borderColor: Colors.border,
+        minHeight: CARD_HEIGHT,
     },
     cardContent: {
         flex: 1,
         padding: Spacing.m,
-        paddingTop: Spacing.sm,
     },
     cardHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: Spacing.sm,
+        alignItems: 'center',
+        marginBottom: 6,
     },
     courseInfo: {
         flex: 1,
@@ -904,82 +857,41 @@ const aiStyles = StyleSheet.create({
     statusBadge: {
         flexDirection: 'row',
         alignItems: 'center',
-        alignSelf: 'flex-start',
-        paddingHorizontal: 8,
+        paddingHorizontal: 7,
         paddingVertical: 3,
-        borderRadius: 10,
-        marginBottom: 6,
+        borderRadius: 8,
+        gap: 3,
     },
     statusLabel: {
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: '600',
-        marginLeft: 4,
     },
     courseName: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '700',
         color: Colors.textPrimary,
-        letterSpacing: -0.3,
-    },
-    aiTag: {
-        width: 22,
-        height: 22,
-        borderRadius: 11,
-        backgroundColor: 'rgba(139, 92, 246, 0.1)',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    statsRow: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 6,
-        marginBottom: Spacing.sm,
-    },
-    statChip: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-        gap: 4,
-    },
-    urgentChip: {
-        backgroundColor: 'rgba(239, 68, 68, 0.08)',
-    },
-    upcomingChip: {
-        backgroundColor: 'rgba(245, 158, 11, 0.08)',
-    },
-    announcementChip: {
-        backgroundColor: `${Colors.primary}10`,
-    },
-    calmChip: {
-        backgroundColor: 'rgba(16, 185, 129, 0.08)',
-    },
-    statText: {
-        fontSize: 11,
-        fontWeight: '600',
+        letterSpacing: -0.2,
     },
     statusMessage: {
         fontSize: 13,
         lineHeight: 19,
         color: Colors.textSecondary,
-        marginBottom: Spacing.sm,
+        marginBottom: 10,
     },
     priorityPreview: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(239, 68, 68, 0.05)',
+        backgroundColor: Colors.surfaceAlt,
         paddingHorizontal: 10,
-        paddingVertical: 8,
-        borderRadius: 10,
-        marginBottom: Spacing.sm,
+        paddingVertical: 7,
+        borderRadius: 8,
+        marginBottom: 10,
+        gap: 6,
     },
     priorityDot: {
         width: 6,
         height: 6,
         borderRadius: 3,
-        backgroundColor: '#EF4444',
-        marginRight: 8,
     },
     priorityText: {
         flex: 1,
@@ -990,18 +902,34 @@ const aiStyles = StyleSheet.create({
     priorityDue: {
         fontSize: 11,
         fontWeight: '700',
-        color: '#EF4444',
     },
     cardFooter: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'flex-end',
+        justifyContent: 'space-between',
         marginTop: 'auto',
     },
+    chipsRow: {
+        flexDirection: 'row',
+        gap: 5,
+    },
+    chip: {
+        paddingHorizontal: 7,
+        paddingVertical: 3,
+        borderRadius: 6,
+    },
+    chipText: {
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    viewMoreRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 1,
+    },
     viewMore: {
-        fontSize: 12,
+        fontSize: 11,
         color: Colors.textTertiary,
-        marginRight: 2,
     },
 });
 
@@ -1385,65 +1313,6 @@ const styles = StyleSheet.create({
     aiLoadingText: {
         ...Typography.body2,
         marginLeft: Spacing.s,
-    },
-    // Assignment Cards
-    assignmentCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: Colors.surface,
-        padding: Spacing.m,
-        marginBottom: Spacing.s,
-        borderRadius: Layout.borderRadius.l,
-        borderWidth: 1,
-        borderColor: Colors.border,
-        ...Layout.shadow.sm,
-    },
-    assignmentCardCompleted: {
-        opacity: 0.7,
-        backgroundColor: Colors.surfaceMuted,
-    },
-    assignmentIcon: {
-        width: 44,
-        height: 44,
-        borderRadius: 14,
-        backgroundColor: Colors.primaryLighter,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: Spacing.m,
-    },
-    assignmentIconMissed: {
-        backgroundColor: Colors.errorLight,
-    },
-    assignmentContent: {
-        flex: 1,
-        marginRight: Spacing.s,
-    },
-    assignmentCourse: {
-        ...Typography.caption,
-        marginBottom: 2,
-    },
-    assignmentTitle: {
-        ...Typography.subtitle1,
-        fontSize: 15,
-        marginBottom: 4,
-    },
-    assignmentTitleCompleted: {
-        color: Colors.textTertiary,
-        textDecorationLine: 'line-through',
-    },
-    assignmentMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    assignmentDate: {
-        ...Typography.caption,
-        marginLeft: 4,
-    },
-    assignmentDateMissed: {
-        color: Colors.error,
-    },
-    checkButton: {
-        padding: Spacing.xs,
     },
     swipeAction: {
         backgroundColor: Colors.success,

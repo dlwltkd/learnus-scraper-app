@@ -1,8 +1,9 @@
 import React from 'react';
 import { StyleSheet, View, ActivityIndicator, StatusBar } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import * as Notifications from 'expo-notifications';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -38,6 +39,19 @@ import {
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
+const navigationRef = createNavigationContainerRef<any>();
+
+function handleNotificationTap(data: any) {
+  if (!navigationRef.isReady() || !data) return;
+  if (data.type === 'announcement' && data.postUrl) {
+    navigationRef.navigate('PostDetail', {
+      post: {
+        url: data.postUrl,
+        title: data.postTitle || '공지사항',
+      },
+    });
+  }
+}
 
 // ============================================
 // TAB NAVIGATOR WITH CUSTOM TAB BAR
@@ -119,7 +133,7 @@ function AppContent() {
   }
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
       <Stack.Navigator
         screenOptions={{
@@ -250,11 +264,23 @@ export default function App() {
     setupNotifications();
     registerBackgroundFetchAsync();
 
-    // Set up listener to save received notifications to history
+    // Save received notifications to history
     const notificationListener = setupNotificationReceivedListener();
+
+    // Handle notification taps — navigate to the right screen
+    const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data;
+      handleNotificationTap(data);
+    });
+
+    // Handle tap when app was closed (cold start)
+    Notifications.getLastNotificationResponseAsync().then(response => {
+      if (response) handleNotificationTap(response.notification.request.content.data);
+    });
 
     return () => {
       notificationListener.remove();
+      responseListener.remove();
     };
   }, []);
 
