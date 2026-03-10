@@ -2,9 +2,31 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 import json
-from datetime import datetime
+from datetime import datetime, date
 
 load_dotenv()
+
+def _days_remaining(due_date_str):
+    """Returns days until due date (negative = past). None if no due date."""
+    if not due_date_str or due_date_str == 'None':
+        return None
+    try:
+        due = datetime.fromisoformat(str(due_date_str).strip()).date()
+        return (due - date.today()).days
+    except Exception:
+        return None
+
+def _due_label(days):
+    """Convert days remaining to a display label."""
+    if days is None:
+        return None
+    if days < 0:
+        return f"D+{abs(days)}"
+    if days == 0:
+        return "오늘"
+    if days == 1:
+        return "내일"
+    return f"D-{days}"
 
 class AIService:
     def __init__(self):
@@ -13,55 +35,73 @@ class AIService:
     def generate_course_summary(self, course_name, announcements, assignments, vods):
         """
         Generates a structured JSON summary for a course using OpenAI.
-        Returns structured data for better frontend rendering.
+        Date math is pre-computed in Python — AI only writes text, not dates.
         """
+        now = date.today()
 
-        # Pre-filter: only include INCOMPLETE assignments and VODs
-        incomplete_assignments = [a for a in assignments if not a.is_completed]
-        incomplete_vods = [v for v in vods if not v.is_completed]
+        # Pre-filter: only INCOMPLETE items with a future (or today) due date
+        def assignment_days(a):
+            d = _days_remaining(a.due_date)
+            return d
 
-        # Prepare data for the prompt
-        data_context = {
-            "course_name": course_name,
-            "current_date": datetime.now().strftime("%Y-%m-%d"),
-            "announcements": [
-                {"title": a.title, "content": (a.content[:500] if a.content else ""), "date": str(a.date)}
-                for a in announcements[:5]
-            ],
-            "assignments": [
-                {"title": a.title, "due_date": str(a.due_date) if a.due_date else None}
-                for a in incomplete_assignments
-            ],
-            "vods": [
-                {"title": v.title, "start_date": str(v.start_date), "end_date": str(v.end_date)}
-                for v in incomplete_vods
-            ]
-        }
+        urgent_items = []   # due today or tomorrow (days 0 or 1)
+        upcoming_items = [] # due in 2–7 days
 
-        prompt = f"""You are an AI academic assistant. Analyze the course data and return a JSON response.
+        for a in assignments:
+            if a.is_completed:
+                continue
+            days = assignment_days(a)
+            if days is None or days < 0:
+                continue  # no due date or already past — skip
+            label = _due_label(days)
+            entry = {"title": a.title, "due": label, "type": "assignment"}
+            if days <= 1:
+                urgent_items.append(entry)
+            elif days <= 7:
+                upcoming_items.append(entry)
+
+        for v in vods:
+            if v.is_completed:
+                continue
+            days = _days_remaining(v.end_date)
+            if days is None or days < 0:
+                continue
+            label = _due_label(days)
+            entry = {"title": v.title, "due": label, "type": "vod"}
+            if days <= 1:
+                urgent_items.append(entry)
+            elif days <= 7:
+                upcoming_items.append(entry)
+
+        # Sort by urgency (lowest days first) and cap at 3
+        urgent_items = urgent_items[:3]
+        upcoming_items = upcoming_items[:3]
+
+        # Determine status
+        if urgent_items:
+            status = "urgent"
+        elif upcoming_items:
+            status = "busy"
+        else:
+            status = "calm"
+
+        # Only ask the AI for text content
+        recent_announcements = [
+            {"title": a.title, "content": (a.content[:300] if a.content else ""), "date": str(a.date)}
+            for a in announcements[:3]
+        ]
+
+        prompt = f"""You are a Korean academic assistant. Based on this course data, write the text fields only.
 
 Course: "{course_name}"
-Current Date: {data_context['current_date']}
+Status: "{status}"
+Urgent items (due today/tomorrow): {json.dumps(urgent_items, ensure_ascii=False)}
+Upcoming items (due in 2-7 days): {json.dumps(upcoming_items, ensure_ascii=False)}
+Recent announcements: {json.dumps(recent_announcements, ensure_ascii=False)}
 
-Data:
-{json.dumps(data_context, ensure_ascii=False, default=str)}
-
-Return ONLY valid JSON in this exact structure (no markdown, no code blocks):
+Return ONLY valid JSON (no markdown):
 {{
-    "status": "calm" | "busy" | "urgent",
-    "status_message": "한줄 상태 메시지 (예: 여유로운 한 주예요!)",
-    "urgent": {{
-        "count": number,
-        "items": [
-            {{"title": "항목명", "due": "D-1", "type": "assignment" | "vod"}}
-        ]
-    }},
-    "upcoming": {{
-        "count": number,
-        "items": [
-            {{"title": "항목명", "due": "D-5", "type": "assignment" | "vod"}}
-        ]
-    }},
+    "status_message": "한줄 상태 메시지",
     "announcement": {{
         "has_new": boolean,
         "summary": "최근 공지 요약 (1-2문장)" | null
@@ -70,15 +110,9 @@ Return ONLY valid JSON in this exact structure (no markdown, no code blocks):
 }}
 
 Rules:
-- All items provided are INCOMPLETE (not yet submitted/watched) - analyze them all
-- "status": "urgent" if any item is due within 2 days, "busy" if within 5 days, "calm" if no pending items or all due later
-- "urgent.items": items due within 2 days
-- "upcoming.items": items due within 3-7 days
-- "due" format: "D-N" for N days remaining, "오늘" for today, "내일" for tomorrow
-- Maximum 3 items in urgent.items and upcoming.items
-- All text in Korean (해요체)
-- Keep summaries concise (under 50 chars each)
-- Be encouraging but realistic"""
+- status_message examples: urgent→"마감이 코앞이에요!", busy→"이번 주 할 일이 있어요.", calm→"여유로운 한 주예요!"
+- announcement.has_new: true only if announcements list is non-empty
+- All text in Korean (해요체), under 50 chars each"""
 
         try:
             response = self.client.chat.completions.create(
@@ -87,36 +121,44 @@ Rules:
                     {"role": "system", "content": "You are a JSON-only response bot. Return only valid JSON, no explanations."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=800,
+                max_tokens=400,
                 temperature=0.3
             )
 
             result = response.choices[0].message.content.strip()
-            # Clean potential markdown code blocks
             if result.startswith("```"):
                 result = result.split("```")[1]
                 if result.startswith("json"):
                     result = result[4:]
             result = result.strip()
 
-            # Validate JSON
-            parsed = json.loads(result)
-            return parsed
+            ai_parts = json.loads(result)
+
+            return {
+                "status": status,
+                "status_message": ai_parts.get("status_message", ""),
+                "urgent": {"count": len(urgent_items), "items": urgent_items},
+                "upcoming": {"count": len(upcoming_items), "items": upcoming_items},
+                "announcement": ai_parts.get("announcement", {"has_new": False, "summary": None}),
+                "insight": ai_parts.get("insight", "")
+            }
 
         except json.JSONDecodeError as e:
             print(f"JSON Parse Error for {course_name}: {e}")
-            return self._fallback_summary(course_name)
+            return self._fallback_summary(course_name, status, urgent_items, upcoming_items)
         except Exception as e:
             print(f"Error generating summary for {course_name}: {e}")
-            return self._fallback_summary(course_name)
+            return self._fallback_summary(course_name, status, urgent_items, upcoming_items)
 
-    def _fallback_summary(self, course_name):
-        """Return a safe fallback structure if AI fails"""
+    def _fallback_summary(self, course_name, status="calm", urgent_items=None, upcoming_items=None):
+        """Return a safe fallback structure if AI fails — still uses pre-computed items"""
+        urgent_items = urgent_items or []
+        upcoming_items = upcoming_items or []
         return {
-            "status": "calm",
+            "status": status,
             "status_message": "요약을 불러올 수 없어요",
-            "urgent": {"count": 0, "items": []},
-            "upcoming": {"count": 0, "items": []},
+            "urgent": {"count": len(urgent_items), "items": urgent_items},
+            "upcoming": {"count": len(upcoming_items), "items": upcoming_items},
             "announcement": {"has_new": False, "summary": None},
             "insight": "데이터를 새로고침해 주세요."
         }
