@@ -488,7 +488,7 @@ class MoodleClient:
     def watch_vod(self, vod_id, duration=None):
         """Watch a VOD by replicating the exact signals the browser sends.
         - logtime = args[22] (page load time), constant throughout
-        - positionfrom == positionto == current video position
+        - positionfrom == positionto == current video position  
         - state=3 play, state=8 periodic tick, state=10 ended
         - vod_track_for_onwindow state=99 sent after every vod_log
         - duration: real video length in seconds (from DB); overrides args[10] if provided
