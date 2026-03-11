@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Spacing, Layout } from './constants/theme';
+import { APP_VERSION } from './constants/version';
 import { Ionicons } from '@expo/vector-icons';
 
 const SectionHeader = ({ title }: { title: string }) => (
@@ -63,7 +64,7 @@ export default function HelpScreen() {
                         <Ionicons name="school" size={40} color="white" />
                     </View>
                     <Text style={styles.appName}>LearnUs Connect</Text>
-                    <Text style={styles.version}>Version 1.0.0 (Beta)</Text>
+                    <Text style={styles.version}>Version {APP_VERSION} (Beta)</Text>
                 </View>
 
                 {/* Service Info */}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, ActivityIndicator, StatusBar } from 'react-native';
+import { StyleSheet, View, ActivityIndicator, StatusBar, Alert } from 'react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -30,7 +30,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserProvider } from './context/UserContext';
 import { ToastProvider } from './context/ToastContext';
 
-import { getDashboardOverview, registerPushToken } from './services/api';
+import { getDashboardOverview, registerPushToken, checkAppVersion } from './services/api';
+import { APP_VERSION } from './constants/version';
 import {
   registerForPushNotificationsAsync,
   registerBackgroundFetchAsync,
@@ -112,6 +113,18 @@ function AppContent() {
       });
     }
   }, [isLoggedIn]);
+
+  React.useEffect(() => {
+    checkAppVersion().then(latestVersion => {
+      if (latestVersion && latestVersion !== APP_VERSION) {
+        Alert.alert(
+          '업데이트 안내',
+          `새로운 버전(${latestVersion})이 있습니다.\n현재 버전(${APP_VERSION})은 최신 버전이 아닙니다.\n앱을 업데이트해 주세요.`,
+          [{ text: '확인' }]
+        );
+      }
+    });
+  }, []);
 
   const handleLoginSuccess = async (cookie: string): Promise<boolean> => {
     try {

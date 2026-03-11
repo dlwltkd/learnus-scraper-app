@@ -9,6 +9,7 @@ import {
     Linking,
 } from 'react-native';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
+import { APP_VERSION } from './constants/version';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -252,7 +253,7 @@ export default function SettingsScreen() {
                 {/* App Version */}
                 <View style={styles.versionContainer}>
                     <Text style={styles.versionText}>LearnUs Connect</Text>
-                    <Text style={styles.versionNumber}>버전 0.1.2</Text>
+                    <Text style={styles.versionNumber}>버전 {APP_VERSION}</Text>
                 </View>
 
                 <View style={{ height: 40 }} />

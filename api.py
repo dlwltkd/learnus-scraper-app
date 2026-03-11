@@ -20,6 +20,20 @@ logger = logging.getLogger(__name__)
 SessionLocal = init_db()
 sched = BackgroundScheduler()
 
+# ============================================================
+# APP VERSION — Reads from learnus-app/app.json automatically.
+# To release a new version: update "version" in app.json only.
+# ============================================================
+def _read_app_version() -> str:
+    try:
+        with open('./learnus-app/app.json', 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return data['expo']['version']
+    except Exception:
+        return '0.0.0'
+
+LATEST_VERSION = _read_app_version()
+
 app = FastAPI(title="LearnUs Connect API (Beta)")
 
 @app.on_event("startup")
@@ -33,6 +47,11 @@ def startup_event():
 @app.on_event("shutdown")
 def shutdown_event():
     sched.shutdown()
+
+
+@app.get("/version")
+def get_version():
+    return {"version": LATEST_VERSION}
 
 
 def get_db():

@@ -199,4 +199,13 @@ export const updateNotificationPreferences = async (prefs: PreferencesRequest) =
     return response.data;
 };
 
+export const checkAppVersion = async (): Promise<string | null> => {
+    try {
+        const response = await axios.get(`${API_URL}/version`);
+        return response.data?.version ?? null;
+    } catch {
+        return null;
+    }
+};
+
 export default api;
