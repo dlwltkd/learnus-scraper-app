@@ -1,4 +1,5 @@
 learnus-app/
+!learnus-app/app.json
 .git/
 .env
 __pycache__/
