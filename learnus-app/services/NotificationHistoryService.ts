@@ -33,13 +33,18 @@ export async function addNotification(
     title: string,
     body: string,
     type: NotificationHistoryItem['type'] = 'general',
-    data?: NotificationHistoryItem['data']
+    data?: NotificationHistoryItem['data'],
+    notificationId?: string
 ): Promise<void> {
     try {
         const history = await getNotificationHistory();
 
+        // Deduplicate: if we already have this notification (e.g. received while foreground,
+        // then user taps it), don't add it again.
+        if (notificationId && history.some(item => item.id === notificationId)) return;
+
         const newNotification: NotificationHistoryItem = {
-            id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            id: notificationId ?? `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
             title,
             body,
             timestamp: Date.now(),

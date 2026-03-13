@@ -36,6 +36,7 @@ import {
   registerForPushNotificationsAsync,
   registerBackgroundFetchAsync,
   setupNotificationReceivedListener,
+  saveNotificationResponseToHistory,
 } from './services/NotificationService';
 
 const Stack = createStackNavigator();
@@ -280,15 +281,20 @@ export default function App() {
     // Save received notifications to history
     const notificationListener = setupNotificationReceivedListener();
 
-    // Handle notification taps — navigate to the right screen
+    // Handle notification taps — navigate to the right screen and save to history
+    // (covers background/killed state where addNotificationReceivedListener doesn't fire)
     const responseListener = Notifications.addNotificationResponseReceivedListener(response => {
+      saveNotificationResponseToHistory(response.notification);
       const data = response.notification.request.content.data;
       handleNotificationTap(data);
     });
 
     // Handle tap when app was closed (cold start)
     Notifications.getLastNotificationResponseAsync().then(response => {
-      if (response) handleNotificationTap(response.notification.request.content.data);
+      if (response) {
+        saveNotificationResponseToHistory(response.notification);
+        handleNotificationTap(response.notification.request.content.data);
+      }
     });
 
     return () => {

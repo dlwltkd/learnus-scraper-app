@@ -109,9 +109,21 @@ export function setupNotificationReceivedListener() {
             await addNotification(title, body, type, {
                 courseId: data.courseId as number | undefined,
                 courseName: data.courseName as string | undefined,
-            });
+            }, notification.request.identifier);
         }
     });
+}
+
+// Save a notification from a response (tap) to history, deduplicating against foreground saves
+export async function saveNotificationResponseToHistory(notification: Notifications.Notification) {
+    const { title, body, data } = notification.request.content;
+    if (data?.saveToHistory && title && body) {
+        const type = (data.type as NotificationHistoryItem['type']) || 'general';
+        await addNotification(title, body, type, {
+            courseId: data.courseId as number | undefined,
+            courseName: data.courseName as string | undefined,
+        }, notification.request.identifier);
+    }
 }
 
 export async function checkAndScheduleNotifications() {
