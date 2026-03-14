@@ -214,6 +214,31 @@ class MoodleClient:
         else:
             raise Exception("No authentication method available.")
 
+    def scrape_active_courses(self):
+        """
+        Scrapes the ubion user page to find currently active (enrolled this semester) course IDs.
+        Returns a set of moodle course IDs (ints).
+        """
+        url = f"{self.base_url}/local/ubion/user/index.php"
+        self.logger.info(f"Scraping active courses from: {url}")
+        try:
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            html = response.text
+
+            # Extract course IDs from the active course table.
+            # The page lists current-semester courses as links with class="coursefullname".
+            # Past courses load dynamically (via JS) so they won't appear in the static HTML.
+            ids = set()
+            for m in re.findall(r'course/view\.php\?id=(\d+)"[^>]*class="coursefullname"', html):
+                ids.add(int(m))
+
+            self.logger.info(f"Found {len(ids)} active course IDs from ubion page.")
+            return ids
+        except Exception as e:
+            self.logger.error(f"scrape_active_courses failed: {e}")
+            return set()
+
     def scrape_courses(self):
         """
         Scrapes the Grade Report page to find enrolled courses.

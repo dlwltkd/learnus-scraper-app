@@ -290,12 +290,26 @@ def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
     try:
         logger.info(f"Auto-syncing courses list for user {user.username} (ID: {user.id})...")
         courses_data = client.get_courses()
+
+        # Check if this is a brand-new user (no courses in DB yet)
+        existing_count = db.query(Course).filter(Course.owner_id == user.id).count()
+        is_new_user = existing_count == 0
+
+        # For new users, fetch the active courses page to determine which courses are currently active
+        active_ids = set()
+        if is_new_user:
+            active_ids = client.scrape_active_courses()
+            logger.info(f"New user: fetched {len(active_ids)} active course IDs from ubion page.")
+
         synced_cnt = 0
         for c_data in courses_data:
             course = db.query(Course).filter(Course.moodle_id == c_data['id'], Course.owner_id == user.id).first()
             if not course:
-                # Default new courses to ACTIVE so sync works immediately
-                course = Course(moodle_id=c_data['id'], owner_id=user.id, name=c_data['fullname'], is_active=True)
+                if is_new_user:
+                    is_active = c_data['id'] in active_ids
+                else:
+                    is_active = True  # Existing users: new courses default to active
+                course = Course(moodle_id=c_data['id'], owner_id=user.id, name=c_data['fullname'], is_active=is_active)
                 db.add(course)
                 synced_cnt += 1
             else:
