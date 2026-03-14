@@ -370,7 +370,7 @@ def sync_dashboard_job(SessionLocal):
     logger.info("Running Hourly Full Sync Job...")
     db = SessionLocal()
     try:
-        users = db.query(User).filter(User.is_active == True).all()
+        users = db.query(User).all()
         for user in users:
             try:
                 client = get_client(user)
