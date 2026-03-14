@@ -714,6 +714,32 @@ def delete_test_vods(user: User = Depends(get_current_user), db: Session = Depen
 
     return {"status": "success", "message": f"Deleted {deleted_count} test VODs."}
 
+@app.post("/debug/send-push")
+def send_push_direct(
+    payload: dict,
+    user: User = Depends(get_current_user),
+):
+    """Send a push notification directly to the authenticated user's device."""
+    from exponent_server_sdk import PushClient, PushMessage
+
+    if not user.push_token:
+        return {"status": "error", "message": "No push token registered for this user."}
+
+    msg = PushMessage(
+        to=user.push_token,
+        sound="default",
+        title=payload.get("title", "알림"),
+        body=payload.get("body", ""),
+        data={**payload.get("data", {}), "saveToHistory": True},
+    )
+
+    try:
+        res = PushClient().publish(msg)
+        return {"status": "success", "expo_response": str(res)}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
