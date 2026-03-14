@@ -720,22 +720,27 @@ def send_push_direct(
     user: User = Depends(get_current_user),
 ):
     """Send a push notification directly to the authenticated user's device."""
-    from exponent_server_sdk import PushClient, PushMessage
+    import requests as req_lib
+    import json as json_lib
 
     if not user.push_token:
         return {"status": "error", "message": "No push token registered for this user."}
 
-    msg = PushMessage(
-        to=user.push_token,
-        sound="default",
-        title=payload.get("title", "알림"),
-        body=payload.get("body", ""),
-        data={**payload.get("data", {}), "saveToHistory": True},
-    )
+    message = {
+        "to": user.push_token,
+        "sound": "default",
+        "title": payload.get("title", "알림"),
+        "body": payload.get("body", ""),
+        "data": {**payload.get("data", {}), "saveToHistory": True},
+    }
 
     try:
-        res = PushClient().publish(msg)
-        return {"status": "success", "expo_response": str(res)}
+        res = req_lib.post(
+            "https://exp.host/--/api/v2/push/send",
+            data=json_lib.dumps(message, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json; charset=utf-8", "Accept": "application/json"},
+        )
+        return {"status": "success", "expo_response": res.json()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
