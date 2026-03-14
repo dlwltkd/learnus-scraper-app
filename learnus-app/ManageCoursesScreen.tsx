@@ -16,7 +16,7 @@ export default function ManageCoursesScreen() {
     const loadCourses = async () => {
         try {
             const data = await getCourses();
-            setCourses(data);
+            setCourses([...data].sort((a, b) => b.id - a.id));
         } catch (e) {
             console.error(e);
         } finally {
