@@ -167,16 +167,22 @@ const CourseCard = ({ item, index, onPress, onSync, syncing }: CourseCardProps) 
 export default function CoursesScreen() {
     const navigation = useNavigation();
     const { showSuccess, showError } = useToast();
-    const [courses, setCourses] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [courses, setCourses] = useState<any[]>([
+        { id: 301, name: '공업수학1', is_active: true },
+        { id: 302, name: '선형대수학', is_active: true },
+        { id: 303, name: '소프트웨어공학', is_active: true },
+        { id: 304, name: '데이터베이스시스템', is_active: true },
+        { id: 305, name: '운영체제', is_active: true },
+        { id: 306, name: '컴퓨터네트워크', is_active: true },
+    ]);
+    const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [syncingId, setSyncingId] = useState<number | null>(null);
 
-    useEffect(() => {
-        loadCourses();
-    }, []);
+    useEffect(() => { loadCourses(); }, []);
 
     const loadCourses = async () => {
+        return; // TEMP: using mock data for screenshot
         try {
             const data = await getCourses();
             setCourses(data);

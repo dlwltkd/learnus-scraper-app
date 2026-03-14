@@ -44,9 +44,11 @@ yarn-error.log
 
 
 # LearnUs Specific
-# google-services.json
+google-services.json
 credentials.json
 session.json
+tmpclaude-*
+learnus-app/file
 cookies.pkl
 *.log
 vod_tracking_status.txt
