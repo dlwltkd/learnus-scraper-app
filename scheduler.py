@@ -89,25 +89,29 @@ def process_user_updates(user: User, db: Session):
         if not client:
             return  # No valid session - skip this user
 
-        # If this is the user's first scheduler run, populate the DB silently
-        # (all existing Moodle content is treated as already-known, no notifications sent).
-        # On all subsequent runs, notifications fire normally for genuinely new items.
-        is_first_sync = not user.notifications_initialized
-
         # Load Prefs
         prefs = user.notification_preferences or {}
         if isinstance(prefs, str):
             try: prefs = json.loads(prefs)
             except: prefs = {}
 
-        # Default True if not set
-        notify_assignment = prefs.get('new_assignment', True) and not is_first_sync
-        notify_vod = prefs.get('new_vod', True) and not is_first_sync
-        notify_notice = prefs.get('notice', True) and not is_first_sync
+        notify_assignment_pref = prefs.get('new_assignment', True)
+        notify_vod_pref = prefs.get('new_vod', True)
+        notify_notice_pref = prefs.get('notice', True)
 
         courses = db.query(Course).filter(Course.owner_id == user.id, Course.is_active == True).all()
 
         for course in courses:
+            # Per-course initialization: if this course has never been synced before,
+            # insert all its content silently (no notifications) and mark it initialized.
+            # This prevents historical data from firing notifications even if the user-level
+            # flag was set prematurely (e.g. when other courses failed in a previous run).
+            course_is_first = not course.is_initialized
+
+            notify_assignment = notify_assignment_pref and not course_is_first
+            notify_vod = notify_vod_pref and not course_is_first
+            notify_notice = notify_notice_pref and not course_is_first
+
             try:
                 # 1. Fetch ALL content for the course (Assignments, VODs, Boards logic)
                 contents = client.get_course_contents(course.moodle_id)
@@ -171,8 +175,6 @@ def process_user_updates(user: User, db: Session):
                 db.commit()
 
                 # --- Notices (Board) ---
-                # Always sync boards/posts to DB so we know the baseline.
-                # Only send push if the user has notices enabled AND this isn't the first sync.
                 notice_board_info = next((b for b in contents.get('boards', []) if '공지' in b['name'] or 'Notice' in b['name']), None)
                 if notice_board_info:
                     board = db.query(Board).filter(Board.moodle_id == notice_board_info['id'], Board.course_id == course.id).first()
@@ -204,15 +206,20 @@ def process_user_updates(user: User, db: Session):
                             if notify_notice:
                                 send_push_notification(user, course, new_post)
 
+                # Mark this course as initialized after its first successful sync
+                if course_is_first:
+                    course.is_initialized = True
+                    db.commit()
+                    logger.info(f"Course '{course.name}' initialized for {user.username}.")
+
             except Exception as e:
                 logger.error(f"Error processing course {course.name} for user {user.username}: {e}")
                 continue
 
-        # After first silent sync, mark user as initialized so future runs send notifications
-        if is_first_sync:
+        # Keep user-level flag in sync for backwards compatibility
+        if not user.notifications_initialized:
             user.notifications_initialized = True
             db.commit()
-            logger.info(f"First sync complete for {user.username}. Notifications enabled going forward.")
 
     except Exception as e:
         logger.error(f"Error updating user {user.username}: {e}")

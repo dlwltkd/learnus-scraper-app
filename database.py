@@ -39,7 +39,8 @@ class Course(Base):
     name = Column(String)
     last_updated = Column(DateTime, default=datetime.now)
     is_active = Column(Boolean, default=True)
-    
+    is_initialized = Column(Boolean, default=False)  # True = first sync done, notifications enabled for this course
+
     owner = relationship("User", back_populates="courses")
     
     assignments = relationship("Assignment", back_populates="course", cascade="all, delete-orphan")
@@ -138,6 +139,19 @@ def init_db(db_url=None):
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN notifications_initialized BOOLEAN"))
             conn.execute(text("UPDATE users SET notifications_initialized = TRUE"))
+            conn.commit()
+
+    # Migration: add is_initialized to courses.
+    # Existing courses belonging to initialized users are marked True.
+    # New courses default to False so their first sync is silent.
+    course_cols = [col['name'] for col in inspector.get_columns('courses')]
+    if 'is_initialized' not in course_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE courses ADD COLUMN is_initialized BOOLEAN DEFAULT FALSE"))
+            conn.execute(text("""
+                UPDATE courses SET is_initialized = TRUE
+                WHERE owner_id IN (SELECT id FROM users WHERE notifications_initialized = TRUE)
+            """))
             conn.commit()
 
     return sessionmaker(bind=engine)
