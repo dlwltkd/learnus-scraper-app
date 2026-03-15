@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, ActivityIndicator, StatusBar, Alert } from 'react-native';
+import { StyleSheet, View, ActivityIndicator, StatusBar, Alert, AppState } from 'react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -290,6 +290,30 @@ export default function App() {
     setupNotifications();
     registerBackgroundFetchAsync();
 
+    // Save any delivered notifications that arrived while app was in background
+    const saveDeliveredNotifications = async () => {
+      const delivered = await Notifications.getPresentedNotificationsAsync();
+      for (const n of delivered) {
+        const { title, body, data } = n.request.content;
+        if (data?.saveToHistory && title && body) {
+          await saveNotificationResponseToHistory({
+            request: n.request,
+          } as any);
+        }
+      }
+      if (delivered.length > 0) {
+        await Notifications.dismissAllNotificationsAsync();
+      }
+    };
+    saveDeliveredNotifications();
+
+    // Also save when app comes back from background
+    const appStateListener = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        saveDeliveredNotifications();
+      }
+    });
+
     // Save received notifications to history
     const notificationListener = setupNotificationReceivedListener();
 
@@ -312,6 +336,7 @@ export default function App() {
     return () => {
       notificationListener.remove();
       responseListener.remove();
+      appStateListener.remove();
     };
   }, []);
 

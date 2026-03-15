@@ -9,7 +9,7 @@ export interface NotificationHistoryItem {
     body: string;
     timestamp: number;
     read: boolean;
-    type: 'assignment' | 'vod' | 'announcement' | 'ai_summary' | 'general';
+    type: 'assignment' | 'vod' | 'announcement' | 'ai_summary' | 'transcription_complete' | 'general';
     data?: {
         courseId?: number;
         courseName?: string;

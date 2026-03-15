@@ -495,6 +495,7 @@ def _run_transcription(vod_moodle_id: int, m3u8_url: str, cookies, user_id: int 
                             "vodMoodleId": vod_moodle_id,
                             "vodTitle": vod_title,
                             "courseName": course_name,
+                            "saveToHistory": True,
                         }
                     ))
                     logger.info(f"Sent transcription push to user {user_id}")
