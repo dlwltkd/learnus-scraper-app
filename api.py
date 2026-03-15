@@ -617,6 +617,15 @@ def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
     except Exception as e:
         return {"error": str(e)}
 
+@app.post("/vods/{vod_moodle_id}/watch")
+def watch_single_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
+    if not vod:
+        raise HTTPException(404, "VOD not found")
+    client = get_moodle_client(user)
+    background_tasks.add_task(client.watch_vod, vod_moodle_id, vod.duration)
+    return {"status": "started"}
+
 @app.post("/vods/watch-all")
 def trigger_watch_all(background_tasks: BackgroundTasks, user: User = Depends(get_current_user)):
     """Manually trigger background VOD watching for the current user only."""

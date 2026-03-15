@@ -10,7 +10,7 @@ import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useNavigation } from '@react-navigation/native';
-import { getDashboardOverview, watchAllVods } from './services/api';
+import { getDashboardOverview, watchAllVods, watchSingleVod } from './services/api';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { useToast } from './context/ToastContext';
 import ItemRow from './components/ItemRow';
@@ -47,10 +47,11 @@ const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollaps
 
 // ─── VOD Action Sheet ─────────────────────────────────────────────────────────
 
-const VodActionSheet = ({ item, onWatch, onTranscribe, onClose }: {
+const VodActionSheet = ({ item, onWatch, onTranscribe, onAutoWatch, onClose }: {
     item: any;
     onWatch: () => void;
     onTranscribe: () => void;
+    onAutoWatch: () => void;
     onClose: () => void;
 }) => {
     const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -99,6 +100,16 @@ const VodActionSheet = ({ item, onWatch, onTranscribe, onClose }: {
                         <Text style={sheetStyles.actionSub}>AI로 강의 내용 변환</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={[sheetStyles.action, item.is_completed && sheetStyles.actionDisabled]} onPress={onAutoWatch} activeOpacity={0.7}>
+                    <View style={[sheetStyles.actionIcon, { backgroundColor: item.is_completed ? Colors.surfaceAlt : Colors.successLight }]}>
+                        <Ionicons name="checkmark-circle-outline" size={22} color={item.is_completed ? Colors.textTertiary : Colors.success} />
+                    </View>
+                    <View style={sheetStyles.actionText}>
+                        <Text style={[sheetStyles.actionLabel, item.is_completed && { color: Colors.textTertiary }]}>자동 시청</Text>
+                        <Text style={sheetStyles.actionSub}>{item.is_completed ? '이미 시청 완료된 강의예요' : '백그라운드에서 자동으로 시청'}</Text>
+                    </View>
+                    {!item.is_completed && <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />}
                 </TouchableOpacity>
                 <TouchableOpacity style={sheetStyles.cancelBtn} onPress={dismiss} activeOpacity={0.7}>
                     <Text style={sheetStyles.cancelText}>취소</Text>
@@ -153,6 +164,7 @@ const sheetStyles = StyleSheet.create({
         paddingVertical: Spacing.m,
         gap: Spacing.m,
     },
+    actionDisabled: { opacity: 0.6 },
     actionIcon: {
         width: 44,
         height: 44,
@@ -259,6 +271,21 @@ const VideoLecturesScreen = () => {
         const item = actionSheet;
         setActionSheet(null);
         await openWebViewer(item);
+    };
+
+    const handleAutoWatch = async () => {
+        const item = actionSheet;
+        setActionSheet(null);
+        if (item.is_completed) {
+            showSuccess('이미 완료', '이미 시청 완료된 강의예요.');
+            return;
+        }
+        try {
+            await watchSingleVod(item.id);
+            showSuccess('시청 시작', '백그라운드에서 강의를 시청하고 있어요.');
+        } catch (e) {
+            showError('오류', '자동 시청을 시작할 수 없어요.');
+        }
     };
 
     const handleTranscribe = () => {
@@ -418,6 +445,7 @@ const VideoLecturesScreen = () => {
                     item={actionSheet}
                     onWatch={handleWatch}
                     onTranscribe={handleTranscribe}
+                    onAutoWatch={handleAutoWatch}
                     onClose={() => setActionSheet(null)}
                 />
             )}
