@@ -133,6 +133,11 @@ export const transcribeVod = async (vodMoodleId: number) => {
     return response.data;
 };
 
+export const getVodTranscript = async (vodMoodleId: number) => {
+    const response = await api.get(`/vods/${vodMoodleId}/transcript`);
+    return response.data;
+};
+
 export const summarizeVod = async (vodMoodleId: number) => {
     const response = await api.post(`/vods/${vodMoodleId}/summarize`);
     return response.data;

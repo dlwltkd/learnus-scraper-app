@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     ActivityIndicator, Clipboard, Animated,
@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { useToast } from './context/ToastContext';
-import { transcribeVod, summarizeVod } from './services/api';
+import { transcribeVod, getVodTranscript, summarizeVod } from './services/api';
 
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
@@ -83,9 +83,36 @@ export default function VodTranscriptScreen() {
     const [loading, setLoading] = useState(true);
     const [transcript, setTranscript] = useState<string | null>(null);
     const [error, setError] = useState(false);
+    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const stopPolling = useCallback(() => {
+        if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+        }
+    }, []);
+
+    const startPolling = useCallback(() => {
+        stopPolling();
+        pollRef.current = setInterval(async () => {
+            try {
+                const data = await getVodTranscript(vodMoodleId);
+                if (data.status === 'ok') {
+                    stopPolling();
+                    setTranscript(data.transcript);
+                    setLoading(false);
+                }
+            } catch (e) {
+                stopPolling();
+                setError(true);
+                setLoading(false);
+            }
+        }, 5000);
+    }, [vodMoodleId, stopPolling]);
 
     useEffect(() => {
         load();
+        return () => stopPolling();
     }, []);
 
     const load = async () => {
@@ -93,12 +120,16 @@ export default function VodTranscriptScreen() {
         setError(false);
         try {
             const data = await transcribeVod(vodMoodleId);
-            setTranscript(data.transcript);
+            if (data.status === 'ok' || data.status === 'cached') {
+                setTranscript(data.transcript);
+                setLoading(false);
+            } else if (data.status === 'processing') {
+                startPolling();
+            }
         } catch (e) {
             setError(true);
-            showError('오류', '텍스트를 불러올 수 없어요. 다시 시도해주세요.');
-        } finally {
             setLoading(false);
+            showError('오류', '텍스트를 불러올 수 없어요. 다시 시도해주세요.');
         }
     };
 

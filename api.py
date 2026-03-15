@@ -399,33 +399,69 @@ def get_vods(course_id: int, user: User = Depends(get_current_user), db: Session
     # Use moodle_id as the exposed id
     return [{"id": v.moodle_id, "title": v.title, "start_date": v.start_date, "end_date": v.end_date, "is_completed": v.is_completed, "url": v.url} for v in vods]
 
+def _run_transcription(vod_moodle_id: int, m3u8_url: str, cookies: dict):
+    """Background thread: transcribes and updates VodTranscript row."""
+    db = SessionLocal()
+    try:
+        from ai_service import AIService
+        client = MoodleClient("https://ys.learnus.org", cookies=cookies)
+        transcript = AIService().transcribe_vod(m3u8_url)
+        row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
+        if row:
+            row.transcript = transcript
+            row.is_processing = False
+            db.commit()
+        logger.info(f"Transcription complete for VOD {vod_moodle_id}")
+    except Exception as e:
+        logger.error(f"Background transcription failed for VOD {vod_moodle_id}: {e}")
+        row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
+        if row:
+            db.delete(row)
+            db.commit()
+    finally:
+        db.close()
+
+@app.get("/vods/{vod_moodle_id}/transcript")
+def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
+    if not vod:
+        raise HTTPException(404, "VOD not found")
+    row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
+    if not row:
+        return {"status": "not_found"}
+    if row.is_processing:
+        return {"status": "processing"}
+    return {"status": "ok", "transcript": row.transcript}
+
 @app.post("/vods/{vod_moodle_id}/transcribe")
-def transcribe_vod(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Verify this VOD belongs to the requesting user
+def transcribe_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    import threading
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
         raise HTTPException(404, "VOD not found")
 
-    # Check shared transcript cache — any user's prior transcription works
-    cached = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
-    if cached:
-        return {"status": "cached", "transcript": cached.transcript}
+    row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
 
+    # Already done
+    if row and not row.is_processing:
+        return {"status": "cached", "transcript": row.transcript}
+
+    # Already in progress — just tell client to poll
+    if row and row.is_processing:
+        return {"status": "processing"}
+
+    # Start transcription: get stream URL, insert placeholder row, fire background thread
     client = get_moodle_client(user)
     m3u8_url = client.get_vod_stream_url(vod_moodle_id)
     if not m3u8_url:
         raise HTTPException(502, "Could not find stream URL for this VOD")
 
-    try:
-        from ai_service import AIService
-        transcript = AIService().transcribe_vod(m3u8_url)
-    except Exception as e:
-        logger.error(f"Transcription failed for VOD {vod_moodle_id}: {e}")
-        raise HTTPException(500, f"Transcription failed: {str(e)}")
-
-    db.add(VodTranscript(moodle_id=vod_moodle_id, transcript=transcript))
+    cookies = json.loads(user.moodle_cookies) if user.moodle_cookies else {}
+    db.add(VodTranscript(moodle_id=vod_moodle_id, is_processing=True))
     db.commit()
-    return {"status": "ok", "transcript": transcript}
+
+    threading.Thread(target=_run_transcription, args=(vod_moodle_id, m3u8_url, cookies), daemon=True).start()
+    return {"status": "processing"}
 
 @app.post("/vods/{vod_moodle_id}/summarize")
 def summarize_vod(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
