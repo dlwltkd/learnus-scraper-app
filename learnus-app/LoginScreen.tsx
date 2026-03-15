@@ -159,8 +159,6 @@ export default function LoginScreen({
             wasOnLoginPage.current = false;
             return;
         }
-        const checkCookieScript = `(function(){var uid=null;try{var m=(document.body.innerHTML||'').match(/"userid":(\d+)/);if(m)uid=parseInt(m[1]);}catch(e){}if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie,userId:uid}));})();`;
-        webViewRef.current?.injectJavaScript(checkCookieScript);
 
         const isDashboard =
             url === 'https://ys.learnus.org/' ||
@@ -169,7 +167,24 @@ export default function LoginScreen({
         if (!isDashboard) hasLoggedOut.current = true;
     };
 
-    const injectedJavaScript = `(function(){var uid=null;try{var m=(document.body.innerHTML||'').match(/"userid":(\d+)/);if(m)uid=parseInt(m[1]);}catch(e){}if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie,userId:uid}));})(); true;`;
+    // Cookie capture script — runs after full page load so all page JS (including
+    // Learnus's device-token script) has had a chance to run first.
+    const cookieCaptureScript = `(function(){var uid=null;try{var m=(document.body.innerHTML||'').match(/"userid":(\d+)/);if(m)uid=parseInt(m[1]);}catch(e){}if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie,userId:uid}));})();`;
+
+    const handleLoadEnd = (event: any) => {
+        if (isLoggingOutRef.current) return;
+        const url = event.nativeEvent.url || currentUrlRef.current;
+        const isAuthenticatedPage =
+            url === 'https://ys.learnus.org/' ||
+            url === 'https://ys.learnus.org' ||
+            url.includes('/my/') ||
+            url.includes('/course/') ||
+            url.includes('/mod/');
+        if (isAuthenticatedPage) {
+            webViewRef.current?.injectJavaScript(cookieCaptureScript);
+        }
+    };
+
 
     const onMessage = async (event: any) => {
         const raw = event.nativeEvent.data;
@@ -321,7 +336,7 @@ export default function LoginScreen({
                         source={{ uri: url }}
                         cacheEnabled={false}
                         onNavigationStateChange={handleNavigationStateChange}
-                        injectedJavaScript={injectedJavaScript}
+                        onLoadEnd={handleLoadEnd}
                         onMessage={onMessage}
                         style={styles.webView}
                     />
