@@ -256,14 +256,16 @@ def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
         logger.error("No cookies provided in request")
         raise HTTPException(status_code=400, detail="No cookies provided")
 
-    logger.info(f"Raw cookies received: {req.cookies[:50]}...") # Log start of cookies
-    
+    logger.info(f"Raw cookies received: {req.cookies[:80]}...")
+
     for item in req.cookies.split(';'):
         if '=' in item:
-            k,v = item.strip().split('=', 1)
-            cookies[k] = v
-    
-    logger.info(f"Parsed cookies keys: {list(cookies.keys())}")
+            k, v = item.strip().split('=', 1)
+            cookies[k.strip()] = v.strip()
+
+    logger.info(f"Parsed cookie keys: {list(cookies.keys())}")
+    moodle_session = cookies.get('MoodleSession', '')
+    logger.info(f"MoodleSession value (first 20 chars): {moodle_session[:20]!r}")
 
     client = MoodleClient("https://ys.learnus.org", cookies=cookies)
     

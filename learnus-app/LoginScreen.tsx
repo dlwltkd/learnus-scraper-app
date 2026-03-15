@@ -159,7 +159,7 @@ export default function LoginScreen({
             wasOnLoginPage.current = false;
             return;
         }
-        const checkCookieScript = `if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(document.cookie);`;
+        const checkCookieScript = `if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie}));`;
         webViewRef.current?.injectJavaScript(checkCookieScript);
 
         const isDashboard =
@@ -169,22 +169,37 @@ export default function LoginScreen({
         if (!isDashboard) hasLoggedOut.current = true;
     };
 
-    const injectedJavaScript = `(function () { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(document.cookie); })(); true;`;
+    const injectedJavaScript = `(function () { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie})); })(); true;`;
 
     const onMessage = async (event: any) => {
-        const data = event.nativeEvent.data;
-        if (data.startsWith('DEBUG') || isLoggingOutRef.current) return;
-        if (data === 'COOKIES_CLEARED') return;
+        const raw = event.nativeEvent.data;
+        if (isLoggingOutRef.current) return;
+        if (raw === 'COOKIES_CLEARED') return;
 
-        const isLoginPage = currentUrlRef.current.includes('/login/');
+        // Parse structured message {type, url, cookies}
+        let pageUrl: string = currentUrlRef.current;
+        let data: string = raw;
+        try {
+            const msg = JSON.parse(raw);
+            if (msg.type === 'cookies') {
+                pageUrl = msg.url || pageUrl;
+                data = msg.cookies || '';
+            }
+        } catch (_) {
+            // legacy plain-text message — use currentUrlRef as before
+        }
+
+        if (raw.startsWith('DEBUG')) return;
+
+        const isLoginPage = pageUrl.includes('/login/');
         if (isLoginPage) return;
 
         const isAuthenticatedPage =
-            currentUrlRef.current === 'https://ys.learnus.org/' ||
-            currentUrlRef.current === 'https://ys.learnus.org' ||
-            currentUrlRef.current.includes('/my/') ||
-            currentUrlRef.current.includes('/course/') ||
-            currentUrlRef.current.includes('/mod/');
+            pageUrl === 'https://ys.learnus.org/' ||
+            pageUrl === 'https://ys.learnus.org' ||
+            pageUrl.includes('/my/') ||
+            pageUrl.includes('/course/') ||
+            pageUrl.includes('/mod/');
 
         if (!isAuthenticatedPage) return;
 
