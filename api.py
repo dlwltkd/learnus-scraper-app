@@ -81,6 +81,21 @@ def get_current_user(token: str = Depends(api_key_header), db: Session = Depends
         raise HTTPException(status_code=401, detail="Invalid Authentication Token")
     return user
 
+def _parse_cookie_string(raw: str) -> dict:
+    """Parse a raw cookie string into a dict, preserving keyless tokens as empty-value entries."""
+    cookies = {}
+    for item in raw.split(';'):
+        item = item.strip()
+        if not item:
+            continue
+        if '=' in item:
+            k, v = item.split('=', 1)
+            cookies[k.strip()] = v.strip()
+        else:
+            # Keyless token (e.g. device UUID) — store with empty value so it's included in requests
+            cookies[item] = ''
+    return cookies
+
 def get_moodle_client(user: User):
     client = MoodleClient("https://ys.learnus.org")
     if user.moodle_cookies:
@@ -93,9 +108,8 @@ def get_moodle_client(user: User):
             except Exception:
                 pass
         else:
-            # New format: raw cookie string — set as Cookie header directly
-            # This preserves all cookies including keyless tokens
-            client.session.headers['Cookie'] = raw
+            # New format: raw cookie string
+            client.set_cookies(_parse_cookie_string(raw))
     return client
 
 class CourseResponse(BaseModel):
@@ -450,7 +464,7 @@ def _run_transcription(vod_moodle_id: int, m3u8_url: str, cookies):
         from ai_service import AIService
         client = MoodleClient("https://ys.learnus.org")
         if isinstance(cookies, str):
-            client.session.headers['Cookie'] = cookies
+            client.set_cookies(_parse_cookie_string(cookies))
         elif cookies:
             client.set_cookies(cookies)
         transcript = AIService().transcribe_vod(m3u8_url)
@@ -516,7 +530,7 @@ def transcribe_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user: 
         except Exception:
             cookies = {}
     else:
-        cookies = raw_cookies  # raw string — _run_transcription will set Cookie header directly
+        cookies = raw_cookies  # _run_transcription will call _parse_cookie_string on this
     db.add(VodTranscript(moodle_id=vod_moodle_id, is_processing=True))
     db.commit()
 
