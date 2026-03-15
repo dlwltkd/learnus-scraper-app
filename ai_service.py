@@ -181,7 +181,8 @@ Rules:
                     "-i", m3u8_url,
                     "-vn",                  # no video
                     "-acodec", "libmp3lame",
-                    "-q:a", "4",
+                    "-ac", "1",             # mono
+                    "-ab", "32k",           # 32kbps — ~14MB/hr, well under Whisper's 25MB limit
                     tmp_path
                 ],
                 capture_output=True,

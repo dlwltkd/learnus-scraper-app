@@ -151,18 +151,15 @@ export default function VodTranscriptScreen() {
                     <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
-                    <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
                     <Text style={styles.headerSub} numberOfLines={1}>{courseName}</Text>
+                    <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
                 </View>
-                <TouchableOpacity onPress={handleCopy} style={styles.copyBtn} activeOpacity={0.7} disabled={!transcript}>
-                    <Ionicons name="copy-outline" size={20} color={transcript ? Colors.primary : Colors.textTertiary} />
-                </TouchableOpacity>
             </View>
 
             {loading ? (
                 <View style={styles.centered}>
                     <ActivityIndicator size="large" color={Colors.primary} />
-                    <Text style={styles.loadingText}>텍스트 추출 중...</Text>
+                    <Text style={styles.loadingText} numberOfLines={1}>텍스트 추출 중...</Text>
                     <Text style={styles.loadingSubText}>강의 길이에 따라 수 분이 걸릴 수 있어요</Text>
                 </View>
             ) : error ? (
@@ -212,24 +209,22 @@ export default function VodTranscriptScreen() {
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: Colors.background },
-    centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl, gap: Spacing.m },
+    centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
 
     // Header
     header: {
         flexDirection: 'row', alignItems: 'center',
-        paddingHorizontal: Spacing.m, paddingVertical: Spacing.s,
-        backgroundColor: Colors.surface,
-        borderBottomWidth: 1, borderBottomColor: Colors.border,
+        paddingHorizontal: Spacing.l, paddingVertical: Spacing.m,
+        backgroundColor: Colors.background,
     },
-    backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-    headerCenter: { flex: 1, paddingHorizontal: Spacing.s },
-    headerTitle: { ...Typography.subtitle1, fontSize: 15 },
-    headerSub: { ...Typography.caption, marginTop: 1 },
-    copyBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+    backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: Spacing.s },
+    headerCenter: { flex: 1 },
+    headerTitle: { ...Typography.header3, fontSize: 18 },
+    headerSub: { ...Typography.caption, marginBottom: 2 },
 
     // Loading / Error
-    loadingText: { ...Typography.subtitle2, marginTop: Spacing.m },
-    loadingSubText: { ...Typography.caption, textAlign: 'center' },
+    loadingText: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginTop: Spacing.m, marginBottom: Spacing.s, textAlign: 'center' },
+    loadingSubText: { ...Typography.caption, textAlign: 'center', maxWidth: 240 },
     errorText: { ...Typography.subtitle2, color: Colors.error },
     retryBtn: {
         paddingHorizontal: Spacing.l, paddingVertical: Spacing.s,
