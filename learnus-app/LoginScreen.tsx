@@ -209,6 +209,11 @@ export default function LoginScreen({
             try {
                 const result = await loginWithCookies(data, userId);
                 if (result.status === 'success' && result.api_token) {
+                    if (result.session_usable === false) {
+                        // Session is SSO-bound and not yet usable server-side.
+                        // Log in anyway — data will sync on next re-login once the device token is set.
+                        console.log('Session not yet usable server-side — user should re-login after first use.');
+                    }
                     const success = await onLoginSuccess(result.api_token);
                     if (!success) {
                         console.log('Login failed in App (invalid token?), clearing cookies to retry...');

@@ -82,11 +82,21 @@ def get_current_user(token: str = Depends(api_key_header), db: Session = Depends
     return user
 
 def get_moodle_client(user: User):
-    cookies = None
+    client = MoodleClient("https://ys.learnus.org")
     if user.moodle_cookies:
-        try: cookies = json.loads(user.moodle_cookies)
-        except: pass
-    return MoodleClient("https://ys.learnus.org", cookies=cookies)
+        raw = user.moodle_cookies
+        if raw.startswith('{'):
+            # Legacy format: JSON dict
+            try:
+                cookies = json.loads(raw)
+                client.set_cookies(cookies)
+            except Exception:
+                pass
+        else:
+            # New format: raw cookie string — set as Cookie header directly
+            # This preserves all cookies including keyless tokens
+            client.session.headers['Cookie'] = raw
+    return client
 
 class CourseResponse(BaseModel):
     id: int
@@ -299,45 +309,62 @@ def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
     else:
         if not user.api_token: user.api_token = str(uuid.uuid4())
     
-    user.moodle_cookies = json.dumps(cookies)
+    # Store raw cookie string to preserve all cookies including keyless tokens (e.g. device UUID)
+    user.moodle_cookies = req.cookies
     db.commit()
     db.refresh(user)
 
     # Auto-sync courses list immediately to ensure DB is populated
+    # This may fail on first login if the session is SSO-bound and not yet usable server-side.
+    # In that case we return success anyway — the user will need to re-login once their
+    # device session matures (Moodle sets the device token on first dashboard load).
+    session_usable = True
     try:
         logger.info(f"Auto-syncing courses list for user {user.username} (ID: {user.id})...")
-        courses_data = client.get_courses()
+        # Use a fresh client built from the stored raw cookies
+        sync_client = get_moodle_client(user)
+        courses_data = sync_client.get_courses()
 
-        # Check if this is a brand-new user (no courses in DB yet)
-        existing_count = db.query(Course).filter(Course.owner_id == user.id).count()
-        is_new_user = existing_count == 0
+        if not courses_data:
+            # Empty list may mean session was rejected — verify
+            check = sync_client.session.get("https://ys.learnus.org/my/", timeout=10, allow_redirects=True)
+            if "login" in check.url:
+                session_usable = False
+                logger.warning(f"Session not usable server-side for {user.username} — skipping auto-sync. User should re-login.")
+                courses_data = []
 
-        # For new users, fetch the active courses page to determine which courses are currently active
-        active_ids = set()
-        if is_new_user:
-            active_ids = client.scrape_active_courses()
-            logger.info(f"New user: fetched {len(active_ids)} active course IDs from ubion page.")
+        if session_usable:
+            existing_count = db.query(Course).filter(Course.owner_id == user.id).count()
+            is_new_user = existing_count == 0
 
-        synced_cnt = 0
-        for c_data in courses_data:
-            course = db.query(Course).filter(Course.moodle_id == c_data['id'], Course.owner_id == user.id).first()
-            if not course:
-                if is_new_user:
-                    is_active = c_data['id'] in active_ids
+            active_ids = set()
+            if is_new_user:
+                active_ids = sync_client.scrape_active_courses()
+                logger.info(f"New user: fetched {len(active_ids)} active course IDs from ubion page.")
+
+            synced_cnt = 0
+            for c_data in courses_data:
+                course = db.query(Course).filter(Course.moodle_id == c_data['id'], Course.owner_id == user.id).first()
+                if not course:
+                    is_active = (c_data['id'] in active_ids) if is_new_user else True
+                    course = Course(moodle_id=c_data['id'], owner_id=user.id, name=c_data['fullname'], is_active=is_active)
+                    db.add(course)
+                    synced_cnt += 1
                 else:
-                    is_active = True  # Existing users: new courses default to active
-                course = Course(moodle_id=c_data['id'], owner_id=user.id, name=c_data['fullname'], is_active=is_active)
-                db.add(course)
-                synced_cnt += 1
-            else:
-                if course.name != c_data['fullname']:
-                    course.name = c_data['fullname']
-        db.commit()
-        logger.info(f"Auto-sync complete. Found {len(courses_data)} courses, {synced_cnt} new.")
+                    if course.name != c_data['fullname']:
+                        course.name = c_data['fullname']
+            db.commit()
+            logger.info(f"Auto-sync complete. Found {len(courses_data)} courses, {synced_cnt} new.")
     except Exception as e:
+        session_usable = False
         logger.error(f"Auto-sync courses failed during session sync: {e}")
 
-    return {"status": "success", "api_token": user.api_token, "username": user.username}
+    return {
+        "status": "success",
+        "api_token": user.api_token,
+        "username": user.username,
+        "session_usable": session_usable,
+    }
 
 @app.get("/courses", response_model=List[CourseResponse])
 def get_courses(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -416,12 +443,16 @@ def get_vods(course_id: int, user: User = Depends(get_current_user), db: Session
     # Use moodle_id as the exposed id
     return [{"id": v.moodle_id, "title": v.title, "start_date": v.start_date, "end_date": v.end_date, "is_completed": v.is_completed, "url": v.url} for v in vods]
 
-def _run_transcription(vod_moodle_id: int, m3u8_url: str, cookies: dict):
+def _run_transcription(vod_moodle_id: int, m3u8_url: str, cookies):
     """Background thread: transcribes and updates VodTranscript row."""
     db = SessionLocal()
     try:
         from ai_service import AIService
-        client = MoodleClient("https://ys.learnus.org", cookies=cookies)
+        client = MoodleClient("https://ys.learnus.org")
+        if isinstance(cookies, str):
+            client.session.headers['Cookie'] = cookies
+        elif cookies:
+            client.set_cookies(cookies)
         transcript = AIService().transcribe_vod(m3u8_url)
         row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
         if row:
@@ -478,7 +509,14 @@ def transcribe_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user: 
     if not m3u8_url:
         raise HTTPException(502, "Could not find stream URL for this VOD")
 
-    cookies = json.loads(user.moodle_cookies) if user.moodle_cookies else {}
+    raw_cookies = user.moodle_cookies or ''
+    if raw_cookies.startswith('{'):
+        try:
+            cookies = json.loads(raw_cookies)
+        except Exception:
+            cookies = {}
+    else:
+        cookies = raw_cookies  # raw string — _run_transcription will set Cookie header directly
     db.add(VodTranscript(moodle_id=vod_moodle_id, is_processing=True))
     db.commit()
 
