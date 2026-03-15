@@ -42,6 +42,11 @@ const TYPE_CONFIG = {
         color: Colors.secondary,
         label: '공지 요약',
     },
+    transcription_complete: {
+        icon: 'document-text' as const,
+        color: '#10B981',
+        label: '텍스트 추출',
+    },
     general: {
         icon: 'notifications-outline' as const,
         color: Colors.textSecondary,
@@ -129,7 +134,7 @@ const NotificationItem = ({ item, onPress, onDelete }: NotificationItemProps) =>
                 </View>
 
                 {/* Arrow for clickable items */}
-                {(item.type === 'announcement' || item.type === 'ai_summary') && (
+                {(item.type === 'announcement' || item.type === 'ai_summary' || item.type === 'transcription_complete') && (
                     <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
                 )}
             </TouchableOpacity>
@@ -171,14 +176,28 @@ export default function NotificationHistoryScreen() {
 
         // Navigate based on type
         if (item.type === 'announcement' || item.type === 'ai_summary') {
-            if (item.data?.courseId) {
-                // Navigate to course detail with board info
+            if (item.data?.postUrl) {
+                (navigation as any).navigate('PostDetail', {
+                    post: {
+                        url: item.data.postUrl,
+                        title: item.data.postTitle || '공지사항',
+                    },
+                });
+            } else if (item.data?.courseId) {
                 (navigation as any).navigate('CourseDetail', {
                     course: {
                         id: item.data.courseId,
                         name: item.data.courseName || 'Course',
                     },
                     initialTab: 'boards',
+                });
+            }
+        } else if (item.type === 'transcription_complete') {
+            if (item.data?.vodMoodleId) {
+                (navigation as any).navigate('VodTranscript', {
+                    vodMoodleId: item.data.vodMoodleId,
+                    title: item.data.vodTitle || '강의 텍스트',
+                    courseName: item.data.courseName || '',
                 });
             }
         }

@@ -15,6 +15,10 @@ export interface NotificationHistoryItem {
         courseName?: string;
         boardId?: number;
         postId?: number;
+        postUrl?: string;
+        postTitle?: string;
+        vodMoodleId?: number;
+        vodTitle?: string;
     };
 }
 
