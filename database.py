@@ -87,6 +87,7 @@ class VodTranscript(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     moodle_id = Column(Integer, unique=True, index=True, nullable=False)
     transcript = Column(Text, nullable=False)
+    summary = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class FileResource(Base):

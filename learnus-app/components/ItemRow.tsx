@@ -13,6 +13,7 @@ interface ItemRowProps {
     state: ItemState;
     type: ItemType;
     onWebPress?: () => void;
+    onMenuPress?: () => void;
 }
 
 const STATE_CONFIG: Record<ItemState, {
@@ -75,7 +76,7 @@ const COMPLETED_ICON: Record<ItemType, keyof typeof Ionicons.glyphMap> = {
     vod: 'checkmark-circle',
 };
 
-export default function ItemRow({ title, courseName, meta, state, type, onWebPress }: ItemRowProps) {
+export default function ItemRow({ title, courseName, meta, state, type, onWebPress, onMenuPress }: ItemRowProps) {
     const cfg = STATE_CONFIG[state];
     const isCompleted = state === 'completed';
     const icon = isCompleted ? COMPLETED_ICON[type] : TYPE_ICON[type];
@@ -107,7 +108,16 @@ export default function ItemRow({ title, courseName, meta, state, type, onWebPre
                         <Text style={[styles.badgeText, { color: cfg.badgeColor }]}>{cfg.badge}</Text>
                     </View>
                 )}
-                {onWebPress && (
+                {onMenuPress ? (
+                    <TouchableOpacity
+                        style={styles.webBtn}
+                        onPress={onMenuPress}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                        <Ionicons name="ellipsis-vertical" size={18} color={Colors.textTertiary} />
+                    </TouchableOpacity>
+                ) : onWebPress ? (
                     <TouchableOpacity
                         style={styles.webBtn}
                         onPress={onWebPress}
@@ -116,7 +126,7 @@ export default function ItemRow({ title, courseName, meta, state, type, onWebPre
                     >
                         <Ionicons name="open-outline" size={18} color={Colors.textTertiary} />
                     </TouchableOpacity>
-                )}
+                ) : null}
             </View>
         </View>
     );

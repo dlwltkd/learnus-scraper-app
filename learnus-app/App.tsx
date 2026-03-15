@@ -22,6 +22,7 @@ import PrivacyPolicyScreen from './PrivacyPolicyScreen';
 import MyInfoScreen from './MyInfoScreen';
 import TermsOfServiceScreen from './TermsOfServiceScreen';
 import NotificationHistoryScreen from './NotificationHistoryScreen';
+import VodTranscriptScreen from './VodTranscriptScreen';
 
 import CustomTabBar from './components/TabBar';
 import { Colors, Layout, Typography } from './constants/theme';
@@ -255,6 +256,11 @@ function AppContent() {
               options={{
                 title: '알림 기록',
               }}
+            />
+            <Stack.Screen
+              name="VodTranscript"
+              component={VodTranscriptScreen}
+              options={{ headerShown: false }}
             />
           </>
         )}

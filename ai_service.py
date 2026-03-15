@@ -201,6 +201,43 @@ Rules:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
+    def summarize_transcript(self, transcript: str, course_name: str) -> str:
+        """
+        Summarizes a lecture transcript into structured key points.
+        Returns a JSON string with tldr and points fields.
+        """
+        prompt = f"""You are a Korean academic assistant. Summarize this lecture transcript from "{course_name}".
+
+Return ONLY valid JSON (no markdown):
+{{
+    "tldr": "한 줄 핵심 요약 (30자 이내)",
+    "points": [
+        "핵심 포인트 1",
+        "핵심 포인트 2",
+        "핵심 포인트 3"
+    ]
+}}
+
+Rules:
+- 3 to 5 bullet points
+- Each point under 60 chars
+- Korean only (해요체)
+- Focus on what was actually taught, not meta-commentary
+
+Transcript:
+{transcript[:12000]}"""
+
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a JSON-only response bot. Return only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
+            temperature=0.3
+        )
+        return response.choices[0].message.content.strip()
+
     def summarize_text(self, text: str, max_length: int = 150) -> str:
         """
         Summarizes a long text into a concise notification body (approx max_length chars).

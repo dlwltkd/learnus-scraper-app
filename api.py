@@ -427,6 +427,31 @@ def transcribe_vod(vod_moodle_id: int, user: User = Depends(get_current_user), d
     db.commit()
     return {"status": "ok", "transcript": transcript}
 
+@app.post("/vods/{vod_moodle_id}/summarize")
+def summarize_vod(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
+    if not vod:
+        raise HTTPException(404, "VOD not found")
+
+    cached = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
+    if not cached or not cached.transcript:
+        raise HTTPException(400, "Transcript not available — transcribe first")
+
+    if cached.summary:
+        return {"status": "cached", "summary": cached.summary}
+
+    try:
+        from ai_service import AIService
+        course = db.query(Course).filter(Course.id == vod.course_id).first()
+        summary = AIService().summarize_transcript(cached.transcript, course.name if course else "")
+    except Exception as e:
+        logger.error(f"Summarization failed for VOD {vod_moodle_id}: {e}")
+        raise HTTPException(500, f"Summarization failed: {str(e)}")
+
+    cached.summary = summary
+    db.commit()
+    return {"status": "ok", "summary": summary}
+
 @app.get("/courses/{course_id}/boards", response_model=List[BoardResponse])
 def get_boards(course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()

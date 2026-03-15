@@ -128,6 +128,16 @@ export const watchAllVods = async () => {
     return response.data;
 };
 
+export const transcribeVod = async (vodMoodleId: number) => {
+    const response = await api.post(`/vods/${vodMoodleId}/transcribe`);
+    return response.data;
+};
+
+export const summarizeVod = async (vodMoodleId: number) => {
+    const response = await api.post(`/vods/${vodMoodleId}/summarize`);
+    return response.data;
+};
+
 // Auth & Login
 
 

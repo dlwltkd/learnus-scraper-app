@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, RefreshControl,
     TouchableOpacity, ActivityIndicator, Modal, StatusBar,
-    LayoutAnimation, Platform, UIManager,
+    LayoutAnimation, Platform, UIManager, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { useNavigation } from '@react-navigation/native';
 import { getDashboardOverview, watchAllVods } from './services/api';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { useToast } from './context/ToastContext';
@@ -43,6 +44,147 @@ const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollaps
         </View>
     );
 };
+
+// ─── VOD Action Sheet ─────────────────────────────────────────────────────────
+
+const VodActionSheet = ({ item, onWatch, onTranscribe, onClose }: {
+    item: any;
+    onWatch: () => void;
+    onTranscribe: () => void;
+    onClose: () => void;
+}) => {
+    const backdropOpacity = useRef(new Animated.Value(0)).current;
+    const slideY = useRef(new Animated.Value(300)).current;
+
+    useEffect(() => {
+        Animated.parallel([
+            Animated.timing(backdropOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+            Animated.spring(slideY, { toValue: 0, damping: 22, stiffness: 220, useNativeDriver: true }),
+        ]).start();
+    }, []);
+
+    const dismiss = useCallback(() => {
+        Animated.parallel([
+            Animated.timing(backdropOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+            Animated.timing(slideY, { toValue: 300, duration: 200, useNativeDriver: true }),
+        ]).start(() => onClose());
+    }, [onClose]);
+
+    return (
+        <Modal animationType="none" transparent statusBarTranslucent onRequestClose={dismiss}>
+            <Animated.View style={[sheetStyles.backdrop, { opacity: backdropOpacity }]}>
+                <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
+            </Animated.View>
+            <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: slideY }] }]}>
+                <View style={sheetStyles.handle} />
+                <Text style={sheetStyles.vodTitle} numberOfLines={2}>{item.title}</Text>
+                <Text style={sheetStyles.vodCourse} numberOfLines={1}>{item.course_name}</Text>
+                <View style={sheetStyles.divider} />
+                <TouchableOpacity style={sheetStyles.action} onPress={onWatch} activeOpacity={0.7}>
+                    <View style={[sheetStyles.actionIcon, { backgroundColor: Colors.primaryLighter }]}>
+                        <Ionicons name="play-circle" size={22} color={Colors.primary} />
+                    </View>
+                    <View style={sheetStyles.actionText}>
+                        <Text style={sheetStyles.actionLabel}>강의 시청</Text>
+                        <Text style={sheetStyles.actionSub}>브라우저에서 열기</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={sheetStyles.action} onPress={onTranscribe} activeOpacity={0.7}>
+                    <View style={[sheetStyles.actionIcon, { backgroundColor: Colors.tertiaryLight }]}>
+                        <Ionicons name="text" size={22} color={Colors.tertiary} />
+                    </View>
+                    <View style={sheetStyles.actionText}>
+                        <Text style={sheetStyles.actionLabel}>텍스트 추출</Text>
+                        <Text style={sheetStyles.actionSub}>AI로 강의 내용 변환</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={sheetStyles.cancelBtn} onPress={dismiss} activeOpacity={0.7}>
+                    <Text style={sheetStyles.cancelText}>취소</Text>
+                </TouchableOpacity>
+            </Animated.View>
+        </Modal>
+    );
+};
+
+const sheetStyles = StyleSheet.create({
+    backdrop: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: Colors.overlay,
+    },
+    sheet: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: Colors.surface,
+        borderTopLeftRadius: Layout.borderRadius.xl,
+        borderTopRightRadius: Layout.borderRadius.xl,
+        paddingBottom: Spacing.xxl,
+        paddingHorizontal: Spacing.l,
+        paddingTop: Spacing.m,
+        ...Layout.shadow.lg,
+    },
+    handle: {
+        width: 40,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: Colors.border,
+        alignSelf: 'center',
+        marginBottom: Spacing.m,
+    },
+    vodTitle: {
+        ...Typography.subtitle1,
+        marginBottom: 4,
+    },
+    vodCourse: {
+        ...Typography.caption,
+        marginBottom: Spacing.m,
+    },
+    divider: {
+        height: 1,
+        backgroundColor: Colors.divider,
+        marginBottom: Spacing.m,
+    },
+    action: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: Spacing.m,
+        gap: Spacing.m,
+    },
+    actionIcon: {
+        width: 44,
+        height: 44,
+        borderRadius: Layout.borderRadius.m,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    actionText: {
+        flex: 1,
+    },
+    actionLabel: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: Colors.textPrimary,
+        marginBottom: 2,
+    },
+    actionSub: {
+        ...Typography.caption,
+    },
+    cancelBtn: {
+        marginTop: Spacing.s,
+        paddingVertical: Spacing.m,
+        alignItems: 'center',
+        backgroundColor: Colors.surfaceAlt,
+        borderRadius: Layout.borderRadius.l,
+    },
+    cancelText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: Colors.textSecondary,
+    },
+});
 
 // ─── VOD WebViewer Modal ───────────────────────────────────────────────────────
 
@@ -95,11 +237,13 @@ const VodWebViewer = ({ url, title, cookies, onClose }: { url: string; title: st
 
 const VideoLecturesScreen = () => {
     const { showSuccess, showError } = useToast();
+    const navigation = useNavigation<any>();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
     const [watching, setWatching] = useState(false);
     const [collapsed, setCollapsed] = useState<{ [k: string]: boolean }>({ missed: false });
     const [webViewer, setWebViewer] = useState<{ url: string; title: string; cookies: string } | null>(null);
+    const [actionSheet, setActionSheet] = useState<any | null>(null);
 
     useEffect(() => { loadData(); }, []);
 
@@ -107,6 +251,24 @@ const VideoLecturesScreen = () => {
         const cookies = await AsyncStorage.getItem('userToken') || '';
         const viewerUrl = `https://ys.learnus.org/mod/vod/viewer.php?id=${item.id}`;
         setWebViewer({ url: viewerUrl, title: item.title, cookies });
+    };
+
+    const openActionSheet = (item: any) => setActionSheet(item);
+
+    const handleWatch = async () => {
+        const item = actionSheet;
+        setActionSheet(null);
+        await openWebViewer(item);
+    };
+
+    const handleTranscribe = () => {
+        const item = actionSheet;
+        setActionSheet(null);
+        navigation.navigate('VodTranscript', {
+            vodMoodleId: item.id,
+            title: item.title,
+            courseName: item.course_name,
+        });
     };
 
     const toggleSection = (k: string) => {
@@ -180,7 +342,7 @@ const VideoLecturesScreen = () => {
                                 courseName={item.course_name}
                                 state="missed"
                                 type="vod"
-                                onWebPress={() => openWebViewer(item)}
+                                onMenuPress={() => openActionSheet(item)}
                             />
                         ))}
                     </View>
@@ -200,7 +362,7 @@ const VideoLecturesScreen = () => {
                                 meta={item.end_date ? `~ ${new Date(item.end_date).toLocaleDateString()} 마감` : undefined}
                                 state={item.is_completed ? 'completed' : 'pending'}
                                 type="vod"
-                                onWebPress={() => openWebViewer(item)}
+                                onMenuPress={() => openActionSheet(item)}
                             />
                         ))}
                     </View>
@@ -235,7 +397,7 @@ const VideoLecturesScreen = () => {
                                 meta={item.end_date ? `~ ${new Date(item.end_date).toLocaleDateString()} 마감` : undefined}
                                 state="unchecked"
                                 type="vod"
-                                onWebPress={() => openWebViewer(item)}
+                                onMenuPress={() => openActionSheet(item)}
                             />
                         ))}
                     </View>
@@ -248,6 +410,15 @@ const VideoLecturesScreen = () => {
                     title={webViewer.title}
                     cookies={webViewer.cookies}
                     onClose={() => setWebViewer(null)}
+                />
+            )}
+
+            {actionSheet && (
+                <VodActionSheet
+                    item={actionSheet}
+                    onWatch={handleWatch}
+                    onTranscribe={handleTranscribe}
+                    onClose={() => setActionSheet(null)}
                 />
             )}
         </SafeAreaView>
