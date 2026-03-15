@@ -10,6 +10,7 @@ import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useNavigation } from '@react-navigation/native';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { getDashboardOverview, watchAllVods, watchSingleVod } from './services/api';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { useToast } from './context/ToastContext';
@@ -262,7 +263,13 @@ const VideoLecturesScreen = () => {
     const openWebViewer = async (item: any) => {
         const cookies = await AsyncStorage.getItem('userToken') || '';
         const viewerUrl = `https://ys.learnus.org/mod/vod/viewer.php?id=${item.id}`;
+        await ScreenOrientation.unlockAsync();
         setWebViewer({ url: viewerUrl, title: item.title, cookies });
+    };
+
+    const closeWebViewer = async () => {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        setWebViewer(null);
     };
 
     const openActionSheet = (item: any) => setActionSheet(item);
@@ -440,7 +447,7 @@ const VideoLecturesScreen = () => {
                     url={webViewer.url}
                     title={webViewer.title}
                     cookies={webViewer.cookies}
-                    onClose={() => setWebViewer(null)}
+                    onClose={closeWebViewer}
                 />
             )}
 
