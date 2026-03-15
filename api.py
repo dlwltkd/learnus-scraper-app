@@ -11,7 +11,7 @@ import uuid
 import json
 from datetime import datetime, timedelta
 import re
-from scheduler import check_notices_job, sync_dashboard_job, watch_vods_for_user
+from scheduler import check_notices_job, sync_dashboard_job, watch_vods_for_user, _watch_running
 from apscheduler.schedulers.background import BackgroundScheduler
 
 logging.basicConfig(level=logging.DEBUG)
@@ -622,6 +622,8 @@ def watch_single_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
         raise HTTPException(404, "VOD not found")
+    if user.id in _watch_running:
+        raise HTTPException(409, "Watch all is already running — wait for it to finish")
     client = get_moodle_client(user)
     background_tasks.add_task(client.watch_vod, vod_moodle_id, vod.duration)
     return {"status": "started"}
