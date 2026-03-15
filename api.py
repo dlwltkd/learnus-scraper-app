@@ -937,6 +937,19 @@ def send_push_direct(
         return {"status": "error", "message": str(e)}
 
 
+@app.get("/debug/login-reports")
+def get_login_debug_reports(db: Session = Depends(get_db)):
+    reports = db.query(LoginDebugReport).order_by(LoginDebugReport.created_at.desc()).all()
+    return [
+        {
+            "id": r.id,
+            "device_info": r.device_info,
+            "created_at": r.created_at,
+            "logs": json.loads(r.log_json),
+        }
+        for r in reports
+    ]
+
 @app.post("/debug/login-report")
 def submit_login_debug_report(req: LoginDebugReportRequest, db: Session = Depends(get_db)):
     """Accept login debug logs from unauthenticated users stuck on login."""
