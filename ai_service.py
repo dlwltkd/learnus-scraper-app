@@ -210,7 +210,7 @@ Rules:
         prompt = f"""You are a Korean academic assistant. Based on this lecture transcript from the course "{course_name}", write a short summary in Korean (해요체).
 
 Format (plain text, no markdown, no JSON):
-Line 1: One title sentence about the lecture.
+Line 1: One title about the lecture. (A few words)
 Line 2: (blank line)
 Line 3+: 2-3 sentences describing what was specifically covered in this lecture.
 
