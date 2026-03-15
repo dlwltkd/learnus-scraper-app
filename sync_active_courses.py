@@ -27,8 +27,21 @@ def run():
             # Build Moodle client from stored cookies
             cookies = None
             if user.moodle_cookies:
+                raw = user.moodle_cookies
                 try:
-                    cookies = json.loads(user.moodle_cookies)
+                    if raw.startswith('{'):
+                        cookies = json.loads(raw)
+                    else:
+                        cookies = {}
+                        for item in raw.split(';'):
+                            item = item.strip()
+                            if not item:
+                                continue
+                            if '=' in item:
+                                k, v = item.split('=', 1)
+                                cookies[k.strip()] = v.strip()
+                            else:
+                                cookies[item] = ''
                 except Exception:
                     pass
 

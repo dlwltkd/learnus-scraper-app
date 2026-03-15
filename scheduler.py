@@ -18,6 +18,24 @@ SessionLocal = init_db()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Watcher")
 
+def _load_cookies(raw: str) -> dict:
+    """Parse moodle_cookies field — supports both legacy JSON dict and new raw cookie string."""
+    if not raw:
+        return {}
+    if raw.startswith('{'):
+        return json.loads(raw)
+    cookies = {}
+    for item in raw.split(';'):
+        item = item.strip()
+        if not item:
+            continue
+        if '=' in item:
+            k, v = item.split('=', 1)
+            cookies[k.strip()] = v.strip()
+        else:
+            cookies[item] = ''  # keyless token (e.g. device UUID)
+    return cookies
+
 # Helper to get client for user (SSO cookies-only auth)
 def get_client(user: User):
     """
@@ -28,14 +46,13 @@ def get_client(user: User):
         logger.warning(f"No cookies stored for user {user.username}")
         return None
 
-    # Parse cookies from JSON string
+    raw = user.moodle_cookies
     try:
-        cookies = json.loads(user.moodle_cookies)
-    except (json.JSONDecodeError, TypeError) as e:
+        cookies = _load_cookies(raw)
+    except Exception as e:
         logger.error(f"Failed to parse cookies for user {user.username}: {e}")
         return None
 
-    # Create client with base_url and cookies
     client = MoodleClient("https://ys.learnus.org", cookies=cookies)
 
     # Validate session is still active
@@ -285,7 +302,7 @@ def watch_vods_for_user(user_id, SessionLocal):
             except Exception:
                 available.append(v)
 
-        cookies = json.loads(user.moodle_cookies)
+        cookies = _load_cookies(user.moodle_cookies or '')
         username = user.username
     finally:
         db.close()
