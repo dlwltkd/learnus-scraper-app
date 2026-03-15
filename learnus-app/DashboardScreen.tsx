@@ -18,7 +18,7 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getDashboardOverview, syncAllActiveCourses, fetchAISummary } from './services/api';
 import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
@@ -251,6 +251,7 @@ const AISummaryModal = ({
 }) => {
     const slideAnim = useRef(new Animated.Value(300)).current;
     const backdropAnim = useRef(new Animated.Value(0)).current;
+    const insets = useSafeAreaInsets();
 
     useEffect(() => {
         if (visible) {
@@ -330,7 +331,7 @@ const AISummaryModal = ({
                 <TouchableOpacity style={{ flex: 1 }} onPress={onClose} activeOpacity={1} />
             </Animated.View>
 
-            <Animated.View style={[modalStyles.container, { transform: [{ translateY: slideAnim }] }]}>
+            <Animated.View style={[modalStyles.container, { transform: [{ translateY: slideAnim }], paddingBottom: insets.bottom }]}>
                 {/* Handle */}
                 <View style={modalStyles.handleContainer}>
                     <View style={modalStyles.handle} />
@@ -738,7 +739,10 @@ const DashboardScreen = () => {
                             snapToInterval={CARD_WIDTH + Spacing.m}
                             snapToAlignment="start"
                         >
-                            {aiSummaries.map((item, index) => (
+                            {[...aiSummaries].sort((a, b) => {
+                                const order = { urgent: 0, busy: 1, calm: 2 };
+                                return (order[a.status] ?? 2) - (order[b.status] ?? 2);
+                            }).map((item, index) => (
                                 <AISummaryCard
                                     key={item.course_id}
                                     summary={item}

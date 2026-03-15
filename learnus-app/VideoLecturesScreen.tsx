@@ -5,7 +5,7 @@ import {
     LayoutAnimation, Platform, UIManager, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -57,6 +57,7 @@ const VodActionSheet = ({ item, onWatch, onTranscribe, onAutoWatch, onClose }: {
 }) => {
     const backdropOpacity = useRef(new Animated.Value(0)).current;
     const slideY = useRef(new Animated.Value(300)).current;
+    const insets = useSafeAreaInsets();
 
     useEffect(() => {
         Animated.parallel([
@@ -77,7 +78,7 @@ const VodActionSheet = ({ item, onWatch, onTranscribe, onAutoWatch, onClose }: {
             <Animated.View style={[sheetStyles.backdrop, { opacity: backdropOpacity }]}>
                 <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
             </Animated.View>
-            <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: slideY }] }]}>
+            <Animated.View style={[sheetStyles.sheet, { transform: [{ translateY: slideY }], paddingBottom: insets.bottom + Spacing.m }]}>
                 <View style={sheetStyles.handle} />
                 <Text style={sheetStyles.vodTitle} numberOfLines={2}>{item.title}</Text>
                 <Text style={sheetStyles.vodCourse} numberOfLines={1}>{item.course_name}</Text>
@@ -133,7 +134,6 @@ const sheetStyles = StyleSheet.create({
         backgroundColor: Colors.surface,
         borderTopLeftRadius: Layout.borderRadius.xl,
         borderTopRightRadius: Layout.borderRadius.xl,
-        paddingBottom: Spacing.xxl,
         paddingHorizontal: Spacing.l,
         paddingTop: Spacing.m,
         ...Layout.shadow.lg,

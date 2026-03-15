@@ -204,26 +204,17 @@ Rules:
 
     def summarize_transcript(self, transcript: str, course_name: str) -> str:
         """
-        Summarizes a lecture transcript into structured key points.
-        Returns a JSON string with tldr and points fields.
+        Summarizes a lecture transcript as natural text.
+        Returns a plain string: one sentence about the course, then a short paragraph about this lecture.
         """
-        prompt = f"""You are a Korean academic assistant. Summarize this lecture transcript from "{course_name}".
+        prompt = f"""You are a Korean academic assistant. Based on this lecture transcript from the course "{course_name}", write a short summary in Korean (해요체).
 
-Return ONLY valid JSON (no markdown):
-{{
-    "tldr": "한 줄 핵심 요약 (30자 이내)",
-    "points": [
-        "핵심 포인트 1",
-        "핵심 포인트 2",
-        "핵심 포인트 3"
-    ]
-}}
+Format (plain text, no markdown, no JSON):
+Line 1: One sentence describing what this course is generally about.
+Line 2: (blank line)
+Line 3+: 2-3 sentences describing what was specifically covered in this lecture.
 
-Rules:
-- 3 to 5 bullet points
-- Each point under 60 chars
-- Korean only (해요체)
-- Focus on what was actually taught, not meta-commentary
+Keep it concise and natural. Focus on content, not on the fact that it's a lecture.
 
 Transcript:
 {transcript[:12000]}"""
@@ -231,11 +222,11 @@ Transcript:
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a JSON-only response bot. Return only valid JSON."},
+                {"role": "system", "content": "You are a concise academic summarizer. Write in Korean (해요체). Plain text only, no markdown."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=500,
-            temperature=0.3
+            max_tokens=300,
+            temperature=0.4
         )
         return response.choices[0].message.content.strip()
 

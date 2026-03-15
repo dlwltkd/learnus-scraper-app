@@ -4,7 +4,7 @@ import {
     ActivityIndicator, Clipboard, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { useToast } from './context/ToastContext';
@@ -22,8 +22,7 @@ const SummaryCard = ({ vodMoodleId }: { vodMoodleId: number }) => {
         setLoading(true);
         try {
             const data = await summarizeVod(vodMoodleId);
-            const parsed = typeof data.summary === 'string' ? JSON.parse(data.summary) : data.summary;
-            setSummary(parsed);
+            setSummary(data.summary);
             Animated.timing(fadeIn, { toValue: 1, duration: 300, useNativeDriver: true }).start();
         } catch (e) {
             showError('오류', 'AI 요약을 불러올 수 없어요.');
@@ -33,6 +32,8 @@ const SummaryCard = ({ vodMoodleId }: { vodMoodleId: number }) => {
     };
 
     if (summary) {
+        const [courseLine, ...rest] = summary.split('\n').filter((l: string) => l.trim());
+        const lectureText = rest.join(' ').trim();
         return (
             <Animated.View style={[styles.summaryCard, { opacity: fadeIn }]}>
                 <View style={styles.summaryHeader}>
@@ -41,14 +42,9 @@ const SummaryCard = ({ vodMoodleId }: { vodMoodleId: number }) => {
                     </View>
                     <Text style={styles.summaryTitle}>AI 요약</Text>
                 </View>
-                <Text style={styles.tldr}>{summary.tldr}</Text>
+                <Text style={styles.courseDesc}>{courseLine}</Text>
                 <View style={styles.divider} />
-                {summary.points.map((point, i) => (
-                    <View key={i} style={styles.pointRow}>
-                        <View style={styles.pointDot} />
-                        <Text style={styles.pointText}>{point}</Text>
-                    </View>
-                ))}
+                <Text style={styles.lectureDesc}>{lectureText}</Text>
             </Animated.View>
         );
     }
@@ -77,6 +73,7 @@ const SummaryCard = ({ vodMoodleId }: { vodMoodleId: number }) => {
 export default function VodTranscriptScreen() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
+    const insets = useSafeAreaInsets();
     const { vodMoodleId, title, courseName } = route.params;
     const { showSuccess, showInfo, showError } = useToast();
 
@@ -191,7 +188,7 @@ export default function VodTranscriptScreen() {
 
             {/* Bottom bar */}
             {!loading && !error && (
-                <View style={styles.bottomBar}>
+                <View style={[styles.bottomBar, { paddingBottom: insets.bottom || Spacing.m }]}>
                     <TouchableOpacity style={styles.bottomBtn} onPress={handleCopy} activeOpacity={0.8}>
                         <Ionicons name="copy-outline" size={18} color={Colors.primary} />
                         <Text style={styles.bottomBtnText}>전체 복사</Text>
@@ -233,7 +230,7 @@ const styles = StyleSheet.create({
     retryText: { color: '#fff', fontWeight: '600', fontSize: 14 },
 
     // Scroll
-    scrollContent: { padding: Spacing.l, gap: Spacing.m, paddingBottom: 100 },
+    scrollContent: { padding: Spacing.l, gap: Spacing.m, paddingBottom: 120 },
 
     // Summary button
     summaryBtn: {
@@ -260,14 +257,9 @@ const styles = StyleSheet.create({
         alignItems: 'center', justifyContent: 'center',
     },
     summaryTitle: { ...Typography.subtitle2, color: Colors.tertiary, fontWeight: '700' },
-    tldr: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, lineHeight: 22, marginBottom: Spacing.m },
+    courseDesc: { ...Typography.caption, color: Colors.textSecondary, lineHeight: 18, marginBottom: Spacing.m, fontStyle: 'italic' },
     divider: { height: 1, backgroundColor: Colors.divider, marginBottom: Spacing.m },
-    pointRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.s, marginBottom: Spacing.s },
-    pointDot: {
-        width: 6, height: 6, borderRadius: 3,
-        backgroundColor: Colors.tertiary, marginTop: 7,
-    },
-    pointText: { flex: 1, ...Typography.body2, lineHeight: 20 },
+    lectureDesc: { ...Typography.body2, lineHeight: 22, color: Colors.textPrimary },
 
     // Transcript
     transcriptCard: {
@@ -287,7 +279,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         backgroundColor: Colors.surface,
         borderTopWidth: 1, borderTopColor: Colors.border,
-        paddingBottom: Spacing.l,
         ...Layout.shadow.md,
     },
     bottomBtn: {
