@@ -98,6 +98,7 @@ export default function VodTranscriptScreen() {
                     stopPolling();
                     setTranscript(data.transcript);
                     setLoading(false);
+                    showSuccess('추출 완료', '강의 텍스트가 준비되었어요!');
                 }
             } catch (e) {
                 stopPolling();
@@ -155,9 +156,20 @@ export default function VodTranscriptScreen() {
 
             {loading ? (
                 <View style={styles.centered}>
-                    <ActivityIndicator size="large" color={Colors.primary} />
-                    <Text style={styles.loadingText} numberOfLines={1}>텍스트 추출 중...</Text>
-                    <Text style={styles.loadingSubText}>강의 길이에 따라 수 분이 걸릴 수 있어요</Text>
+                    <View style={styles.loadingIconWrap}>
+                        <ActivityIndicator size="large" color={Colors.primary} />
+                    </View>
+                    <Text style={styles.loadingText}>텍스트 추출 중...</Text>
+                    <Text style={styles.loadingSubText}>
+                        AI가 강의 음성을 텍스트로 변환하고 있어요.{'\n'}
+                        강의 길이에 따라 수 분이 걸릴 수 있어요.
+                    </Text>
+                    <View style={styles.loadingHint}>
+                        <Ionicons name="exit-outline" size={16} color={Colors.textTertiary} />
+                        <Text style={styles.loadingHintText}>
+                            이 페이지를 나가도 괜찮아요.{'\n'}완료되면 알림으로 알려드릴게요!
+                        </Text>
+                    </View>
                 </View>
             ) : error ? (
                 <View style={styles.centered}>
@@ -220,8 +232,23 @@ const styles = StyleSheet.create({
     headerSub: { ...Typography.caption, marginBottom: 2 },
 
     // Loading / Error
-    loadingText: { fontSize: 15, fontWeight: '600', color: Colors.textPrimary, marginTop: Spacing.m, marginBottom: Spacing.s, textAlign: 'center' },
-    loadingSubText: { ...Typography.caption, textAlign: 'center', maxWidth: 240 },
+    loadingIconWrap: {
+        width: 72, height: 72, borderRadius: 36,
+        backgroundColor: Colors.primaryLighter,
+        alignItems: 'center', justifyContent: 'center',
+        marginBottom: Spacing.s,
+    },
+    loadingText: { fontSize: 17, fontWeight: '700', color: Colors.textPrimary, marginTop: Spacing.m, marginBottom: Spacing.s, textAlign: 'center' },
+    loadingSubText: { ...Typography.body2, color: Colors.textSecondary, textAlign: 'center', maxWidth: 280, lineHeight: 20 },
+    loadingHint: {
+        flexDirection: 'row', alignItems: 'center', gap: Spacing.s,
+        marginTop: Spacing.xl,
+        backgroundColor: Colors.surfaceHighlight,
+        paddingHorizontal: Spacing.l, paddingVertical: Spacing.m,
+        borderRadius: Layout.borderRadius.l,
+        maxWidth: 300,
+    },
+    loadingHintText: { ...Typography.caption, color: Colors.textTertiary, lineHeight: 18, flex: 1 },
     errorText: { ...Typography.subtitle2, color: Colors.error },
     retryBtn: {
         paddingHorizontal: Spacing.l, paddingVertical: Spacing.s,

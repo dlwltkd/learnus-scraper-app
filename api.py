@@ -461,8 +461,9 @@ def get_vods(course_id: int, user: User = Depends(get_current_user), db: Session
     # Use moodle_id as the exposed id
     return [{"id": v.moodle_id, "title": v.title, "start_date": v.start_date, "end_date": v.end_date, "is_completed": v.is_completed, "url": v.url} for v in vods]
 
-def _run_transcription(vod_moodle_id: int, m3u8_url: str, cookies):
+def _run_transcription(vod_moodle_id: int, m3u8_url: str, cookies, user_id: int = None, vod_title: str = None, course_name: str = None):
     """Background thread: transcribes and updates VodTranscript row."""
+    from exponent_server_sdk import PushClient, PushMessage
     db = SessionLocal()
     try:
         from ai_service import AIService
@@ -478,6 +479,27 @@ def _run_transcription(vod_moodle_id: int, m3u8_url: str, cookies):
             row.is_processing = False
             db.commit()
         logger.info(f"Transcription complete for VOD {vod_moodle_id}")
+
+        # Send push notification to user
+        if user_id:
+            user = db.query(User).filter(User.id == user_id).first()
+            if user and user.push_token:
+                try:
+                    PushClient().publish(PushMessage(
+                        to=user.push_token,
+                        sound="default",
+                        title=f"텍스트 추출 완료",
+                        body=vod_title or "강의 텍스트가 준비되었습니다",
+                        data={
+                            "type": "transcription_complete",
+                            "vodMoodleId": vod_moodle_id,
+                            "vodTitle": vod_title,
+                            "courseName": course_name,
+                        }
+                    ))
+                    logger.info(f"Sent transcription push to user {user_id}")
+                except Exception as exc:
+                    logger.error(f"Push notification failed: {exc}")
     except Exception as e:
         logger.error(f"Background transcription failed for VOD {vod_moodle_id}: {e}")
         row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
@@ -538,7 +560,10 @@ def transcribe_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user: 
     db.add(VodTranscript(moodle_id=vod_moodle_id, is_processing=True))
     db.commit()
 
-    threading.Thread(target=_run_transcription, args=(vod_moodle_id, m3u8_url, cookies), daemon=True).start()
+    vod_title = vod.title if vod else None
+    course_obj = db.query(Course).filter(Course.id == vod.course_id).first() if vod else None
+    course_name = course_obj.name if course_obj else None
+    threading.Thread(target=_run_transcription, args=(vod_moodle_id, m3u8_url, cookies, user.id, vod_title, course_name), daemon=True).start()
     return {"status": "processing"}
 
 @app.post("/vods/{vod_moodle_id}/summarize")

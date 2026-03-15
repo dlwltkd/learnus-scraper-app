@@ -53,6 +53,12 @@ function handleNotificationTap(data: any) {
         title: data.postTitle || '공지사항',
       },
     });
+  } else if (data.type === 'transcription_complete' && data.vodMoodleId) {
+    navigationRef.navigate('VodTranscript', {
+      vodMoodleId: data.vodMoodleId,
+      title: data.vodTitle || '강의 텍스트',
+      courseName: data.courseName || '',
+    });
   }
 }
 
