@@ -159,7 +159,7 @@ export default function LoginScreen({
             wasOnLoginPage.current = false;
             return;
         }
-        const checkCookieScript = `if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie}));`;
+        const checkCookieScript = `(function(){var uid=null;try{var m=(document.body.innerHTML||'').match(/"userid":(\d+)/);if(m)uid=parseInt(m[1]);}catch(e){}if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie,userId:uid}));})();`;
         webViewRef.current?.injectJavaScript(checkCookieScript);
 
         const isDashboard =
@@ -169,21 +169,23 @@ export default function LoginScreen({
         if (!isDashboard) hasLoggedOut.current = true;
     };
 
-    const injectedJavaScript = `(function () { if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie})); })(); true;`;
+    const injectedJavaScript = `(function(){var uid=null;try{var m=(document.body.innerHTML||'').match(/"userid":(\d+)/);if(m)uid=parseInt(m[1]);}catch(e){}if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie,userId:uid}));})(); true;`;
 
     const onMessage = async (event: any) => {
         const raw = event.nativeEvent.data;
         if (isLoggingOutRef.current) return;
         if (raw === 'COOKIES_CLEARED') return;
 
-        // Parse structured message {type, url, cookies}
+        // Parse structured message {type, url, cookies, userId}
         let pageUrl: string = currentUrlRef.current;
         let data: string = raw;
+        let userId: number | null = null;
         try {
             const msg = JSON.parse(raw);
             if (msg.type === 'cookies') {
                 pageUrl = msg.url || pageUrl;
                 data = msg.cookies || '';
+                userId = msg.userId || null;
             }
         } catch (_) {
             // legacy plain-text message — use currentUrlRef as before
@@ -205,7 +207,7 @@ export default function LoginScreen({
 
         if (data && data.includes('MoodleSession') && !data.includes('MoodleSession=deleted')) {
             try {
-                const result = await loginWithCookies(data);
+                const result = await loginWithCookies(data, userId);
                 if (result.status === 'success' && result.api_token) {
                     const success = await onLoginSuccess(result.api_token);
                     if (!success) {

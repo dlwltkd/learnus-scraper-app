@@ -132,6 +132,7 @@ class LoginRequest(BaseModel):
 
 class SessionSyncRequest(BaseModel):
     cookies: str
+    user_id: Optional[int] = None
 
 class PushTokenRequest(BaseModel):
     token: str
@@ -256,7 +257,7 @@ def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
         logger.error("No cookies provided in request")
         raise HTTPException(status_code=400, detail="No cookies provided")
 
-    logger.info(f"Raw cookies received: {req.cookies[:80]}...")
+    logger.info(f"Raw cookies received (full): {req.cookies}")
 
     for item in req.cookies.split(';'):
         if '=' in item:
@@ -268,21 +269,25 @@ def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
     logger.info(f"MoodleSession value (first 20 chars): {moodle_session[:20]!r}")
 
     client = MoodleClient("https://ys.learnus.org", cookies=cookies)
-    
-    # DEBUG: Check connectivity and auth status
-    try:
-        res = client.session.get("https://ys.learnus.org/my/", timeout=15)
-        logger.info(f"Auth check status: {res.status_code}")
-        logger.info(f"Auth check URL: {res.url}") # Did we redirect to login?
-        if "login" in res.url:
-            logger.warning("Redirected to login page - Cookies invalid!")
-    except Exception as e:
-        logger.error(f"Network error during auth check: {e}")
 
-    uid = client.get_user_id()
-    if not uid:
-        logger.error("get_user_id returned None")
-        raise HTTPException(status_code=401, detail="Invalid Session or Could not verify user")
+    if req.user_id:
+        # User ID provided by the WebView — trust it and skip server-side session validation
+        uid = req.user_id
+        logger.info(f"Using client-provided user_id: {uid}")
+    else:
+        # Fall back to server-side session validation
+        try:
+            res = client.session.get("https://ys.learnus.org/my/", timeout=15)
+            logger.info(f"Auth check status: {res.status_code}, URL: {res.url}")
+            if "login" in res.url:
+                logger.warning("Redirected to login page - Cookies invalid!")
+        except Exception as e:
+            logger.error(f"Network error during auth check: {e}")
+
+        uid = client.get_user_id()
+        if not uid:
+            logger.error("get_user_id returned None")
+            raise HTTPException(status_code=401, detail="Invalid Session or Could not verify user")
     
     # Use moodle_uid as username: "moodle_12345"
     username = f"moodle_{uid}"

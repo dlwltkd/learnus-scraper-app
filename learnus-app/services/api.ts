@@ -151,9 +151,9 @@ export const summarizeVod = async (vodMoodleId: number) => {
 // Auth & Login
 
 
-export const loginWithCookies = async (cookieString: string) => {
+export const loginWithCookies = async (cookieString: string, userId?: number | null) => {
     // Exchange cookies for API Token
-    const response = await api.post('/auth/sync-session', { cookies: cookieString });
+    const response = await api.post('/auth/sync-session', { cookies: cookieString, user_id: userId ?? null });
     if (response.data.status === 'success' && response.data.api_token) {
         setAuthToken(response.data.api_token);
     }
