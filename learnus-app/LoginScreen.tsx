@@ -12,6 +12,7 @@ import {
 import { WebView } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import CookieManager from '@react-native-cookies/cookies';
 
 import { loginWithCookies } from './services/api';
 import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
@@ -38,6 +39,7 @@ export default function LoginScreen({
     const hasLoggedOut = useRef(false);
     const currentUrlRef = useRef('https://ys.learnus.org/login/index.php');
     const wasOnLoginPage = useRef(false);
+    const pendingCookieString = useRef<string | null>(null);
 
     // Animations
     const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -100,7 +102,13 @@ export default function LoginScreen({
             console.log('Auto-logout triggered. Clearing cookies.');
             setIsLoggingOut(true);
             isLoggingOutRef.current = true;
-            setTimeout(() => {
+            setTimeout(async () => {
+                // Clear ALL cookies (including HttpOnly) via CookieManager
+                try {
+                    await CookieManager.clearAll();
+                } catch (e) {
+                    console.log('CookieManager clearAll error:', e);
+                }
                 const clearCookieScript = `
                     (function() {
                         var cookies = document.cookie.split(";");
@@ -167,11 +175,10 @@ export default function LoginScreen({
         if (!isDashboard) hasLoggedOut.current = true;
     };
 
-    // Cookie capture script — runs after full page load so all page JS (including
-    // Learnus's device-token script) has had a chance to run first.
-    const cookieCaptureScript = `(function(){var uid=null;try{var m=(document.body.innerHTML||'').match(/"userid":(\d+)/);if(m)uid=parseInt(m[1]);}catch(e){}if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie,userId:uid}));})();`;
+    // Script to extract userId from the authenticated page (Moodle exposes it in window.M.cfg)
+    const userIdCaptureScript = `(function(){var uid=null;try{if(window.M&&window.M.cfg&&window.M.cfg.userid){uid=parseInt(window.M.cfg.userid)||null;}if(!uid){var m=(document.body.innerHTML||'').match(/"userid"\\s*:\\s*(\\d+)/);if(m)uid=parseInt(m[1]);}}catch(e){}if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'userId',userId:uid}));})();`;
 
-    const handleLoadEnd = (event: any) => {
+    const handleLoadEnd = async (event: any) => {
         if (isLoggingOutRef.current) return;
         const url = event.nativeEvent.url || currentUrlRef.current;
         const isAuthenticatedPage =
@@ -181,7 +188,26 @@ export default function LoginScreen({
             url.includes('/course/') ||
             url.includes('/mod/');
         if (isAuthenticatedPage) {
-            webViewRef.current?.injectJavaScript(cookieCaptureScript);
+            // Use CookieManager to get ALL cookies (including HttpOnly) for the domain
+            try {
+                const allCookies = await CookieManager.get('https://ys.learnus.org');
+                // Build a raw cookie string from ALL cookies (including HttpOnly ones)
+                const cookieString = Object.entries(allCookies)
+                    .map(([name, cookie]: [string, any]) => `${name}=${cookie.value}`)
+                    .join('; ');
+                console.log('CookieManager captured cookies:', Object.keys(allCookies).join(', '));
+                if (cookieString.includes('MoodleSession')) {
+                    // Inject script to get userId, then send cookies via onMessage
+                    // Store cookie string for use in onMessage handler
+                    pendingCookieString.current = cookieString;
+                    webViewRef.current?.injectJavaScript(userIdCaptureScript);
+                }
+            } catch (e) {
+                console.log('CookieManager error, falling back to document.cookie:', e);
+                // Fallback: use document.cookie via injection
+                const fallbackScript = `(function(){var uid=null;try{if(window.M&&window.M.cfg&&window.M.cfg.userid){uid=parseInt(window.M.cfg.userid)||null;}if(!uid){var m=(document.body.innerHTML||'').match(/"userid"\\s*:\\s*(\\d+)/);if(m)uid=parseInt(m[1]);}}catch(e){}if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie,userId:uid}));})();`;
+                webViewRef.current?.injectJavaScript(fallbackScript);
+            }
         }
     };
 
@@ -190,35 +216,27 @@ export default function LoginScreen({
         const raw = event.nativeEvent.data;
         if (isLoggingOutRef.current) return;
         if (raw === 'COOKIES_CLEARED') return;
+        if (raw.startsWith('DEBUG')) return;
 
-        // Parse structured message {type, url, cookies, userId}
-        let pageUrl: string = currentUrlRef.current;
-        let data: string = raw;
+        // Parse structured message
+        let data: string = '';
         let userId: number | null = null;
         try {
             const msg = JSON.parse(raw);
-            if (msg.type === 'cookies') {
-                pageUrl = msg.url || pageUrl;
+            if (msg.type === 'userId') {
+                // CookieManager flow: cookies already captured, just need userId
+                userId = msg.userId || null;
+                data = pendingCookieString.current || '';
+                pendingCookieString.current = null;
+            } else if (msg.type === 'cookies') {
+                // Fallback flow: cookies from document.cookie
                 data = msg.cookies || '';
                 userId = msg.userId || null;
             }
         } catch (_) {
-            // legacy plain-text message — use currentUrlRef as before
+            // legacy plain-text message
+            data = raw;
         }
-
-        if (raw.startsWith('DEBUG')) return;
-
-        const isLoginPage = pageUrl.includes('/login/');
-        if (isLoginPage) return;
-
-        const isAuthenticatedPage =
-            pageUrl === 'https://ys.learnus.org/' ||
-            pageUrl === 'https://ys.learnus.org' ||
-            pageUrl.includes('/my/') ||
-            pageUrl.includes('/course/') ||
-            pageUrl.includes('/mod/');
-
-        if (!isAuthenticatedPage) return;
 
         if (data && data.includes('MoodleSession') && !data.includes('MoodleSession=deleted')) {
             try {
