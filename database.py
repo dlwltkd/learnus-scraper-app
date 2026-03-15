@@ -132,6 +132,14 @@ class Post(Base):
     
     board = relationship("Board", back_populates="posts")
 
+class LoginDebugReport(Base):
+    __tablename__ = 'login_debug_reports'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_info = Column(String, nullable=True)
+    log_json = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
 def init_db(db_url=None):
     if not db_url:
         db_url = os.getenv('DATABASE_URL', 'sqlite:///learnus.db')

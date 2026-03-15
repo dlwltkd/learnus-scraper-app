@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript
+from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport
 from moodle_client import MoodleClient
 import logging
 import uuid
@@ -165,6 +165,10 @@ class PreferencesRequest(BaseModel):
     new_assignment: bool = True
     new_vod: bool = True
     notice: bool = True
+
+class LoginDebugReportRequest(BaseModel):
+    device_info: Optional[str] = None
+    logs: list
 
 # Date Parser helper...
 class StatsResponse(BaseModel):
@@ -931,6 +935,19 @@ def send_push_direct(
         return {"status": "success", "expo_response": res.json()}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.post("/debug/login-report")
+def submit_login_debug_report(req: LoginDebugReportRequest, db: Session = Depends(get_db)):
+    """Accept login debug logs from unauthenticated users stuck on login."""
+    report = LoginDebugReport(
+        device_info=req.device_info,
+        log_json=json.dumps(req.logs, ensure_ascii=False),
+    )
+    db.add(report)
+    db.commit()
+    logger.info(f"Saved login debug report #{report.id} ({len(req.logs)} events, device: {req.device_info})")
+    return {"status": "success", "report_id": report.id}
 
 
 if __name__ == "__main__":

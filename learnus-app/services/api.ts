@@ -228,4 +228,12 @@ export const checkAppVersion = async (): Promise<string | null> => {
     }
 };
 
+export const submitLoginDebugReport = async (deviceInfo: string, logs: any[]) => {
+    const response = await api.post('/debug/login-report', {
+        device_info: deviceInfo,
+        logs,
+    });
+    return response.data;
+};
+
 export default api;

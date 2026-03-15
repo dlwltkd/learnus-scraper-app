@@ -8,13 +8,15 @@ import {
     Animated,
     TouchableOpacity,
     ActivityIndicator,
+    Modal,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import CookieManager from '@react-native-cookies/cookies';
+import * as Device from 'expo-device';
 
-import { loginWithCookies } from './services/api';
+import { loginWithCookies, submitLoginDebugReport } from './services/api';
 import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
 import Button from './components/Button';
 
@@ -40,6 +42,21 @@ export default function LoginScreen({
     const currentUrlRef = useRef('https://ys.learnus.org/login/index.php');
     const wasOnLoginPage = useRef(false);
     const pendingCookieString = useRef<string | null>(null);
+
+    // Debug logging
+    const debugLogsRef = useRef<Array<{timestamp: string; event: string; url?: string; cookies?: string; data?: any}>>([]);
+    const [showDebugLink, setShowDebugLink] = useState(false);
+    const [showDebugModal, setShowDebugModal] = useState(false);
+    const [debugSending, setDebugSending] = useState(false);
+    const [debugSent, setDebugSent] = useState(false);
+
+    const addDebugLog = (event: string, extra?: {url?: string; cookies?: string; data?: any}) => {
+        debugLogsRef.current.push({
+            timestamp: new Date().toISOString(),
+            event,
+            ...extra,
+        });
+    };
 
     // Animations
     const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -97,6 +114,18 @@ export default function LoginScreen({
         }
     }, [isAuthenticating]);
 
+    // Show debug link after 15 seconds stuck on loading
+    useEffect(() => {
+        if (isAuthenticating) {
+            setShowDebugLink(false);
+            setDebugSent(false);
+            const timer = setTimeout(() => setShowDebugLink(true), 15000);
+            return () => clearTimeout(timer);
+        } else {
+            setShowDebugLink(false);
+        }
+    }, [isAuthenticating]);
+
     useEffect(() => {
         if (autoLogout) {
             console.log('Auto-logout triggered. Clearing cookies.');
@@ -140,6 +169,7 @@ export default function LoginScreen({
     const handleNavigationStateChange = (navState: any) => {
         const { url } = navState;
         currentUrlRef.current = url;
+        addDebugLog('nav', { url });
 
         const isLoginPage = url.includes('/login/index.php') || url.includes('/login/');
         const isSSOCredentialsPage = url.includes('infra.yonsei.ac.kr/sso');
@@ -181,6 +211,7 @@ export default function LoginScreen({
     const handleLoadEnd = async (event: any) => {
         if (isLoggingOutRef.current) return;
         const url = event.nativeEvent.url || currentUrlRef.current;
+        addDebugLog('loadEnd', { url });
         const isAuthenticatedPage =
             url === 'https://ys.learnus.org/' ||
             url === 'https://ys.learnus.org' ||
@@ -195,7 +226,9 @@ export default function LoginScreen({
                 const cookieString = Object.entries(allCookies)
                     .map(([name, cookie]: [string, any]) => `${name}=${cookie.value}`)
                     .join('; ');
-                console.log('CookieManager captured cookies:', Object.keys(allCookies).join(', '));
+                const cookieKeys = Object.keys(allCookies).join(', ');
+                console.log('CookieManager captured cookies:', cookieKeys);
+                addDebugLog('cookieManager', { url, cookies: cookieString });
                 if (cookieString.includes('MoodleSession')) {
                     // Inject script to get userId, then send cookies via onMessage
                     // Store cookie string for use in onMessage handler
@@ -204,6 +237,7 @@ export default function LoginScreen({
                 }
             } catch (e) {
                 console.log('CookieManager error, falling back to document.cookie:', e);
+                addDebugLog('cookieManager_error', { data: String(e) });
                 // Fallback: use document.cookie via injection
                 const fallbackScript = `(function(){var uid=null;try{if(window.M&&window.M.cfg&&window.M.cfg.userid){uid=parseInt(window.M.cfg.userid)||null;}if(!uid){var m=(document.body.innerHTML||'').match(/"userid"\\s*:\\s*(\\d+)/);if(m)uid=parseInt(m[1]);}}catch(e){}if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'cookies',url:window.location.href,cookies:document.cookie,userId:uid}));})();`;
                 webViewRef.current?.injectJavaScript(fallbackScript);
@@ -218,6 +252,8 @@ export default function LoginScreen({
         if (raw === 'COOKIES_CLEARED') return;
         if (raw.startsWith('DEBUG')) return;
 
+        addDebugLog('onMessage', { data: raw.substring(0, 500) });
+
         // Parse structured message
         let data: string = '';
         let userId: number | null = null;
@@ -228,6 +264,7 @@ export default function LoginScreen({
                 userId = msg.userId || null;
                 data = pendingCookieString.current || '';
                 pendingCookieString.current = null;
+                addDebugLog('parsedUserId', { data: { userId, hasCookies: !!data } });
             } else if (msg.type === 'cookies') {
                 // Fallback flow: cookies from document.cookie
                 data = msg.cookies || '';
@@ -239,8 +276,10 @@ export default function LoginScreen({
         }
 
         if (data && data.includes('MoodleSession') && !data.includes('MoodleSession=deleted')) {
+            addDebugLog('api_call', { url: '/auth/sync-session', cookies: data });
             try {
                 const result = await loginWithCookies(data, userId);
+                addDebugLog('api_response', { data: { status: result.status, session_usable: result.session_usable, has_token: !!result.api_token } });
                 if (result.status === 'success' && result.api_token) {
                     if (result.session_usable === false) {
                         // Session is SSO-bound and not yet usable server-side.
@@ -271,11 +310,30 @@ export default function LoginScreen({
                     }
                     // Success case: loading will be hidden when screen unmounts
                 }
-            } catch (e) {
+            } catch (e: any) {
                 console.log('Session Sync Failed', e);
+                addDebugLog('api_error', { data: e?.message || String(e) });
                 setIsAuthenticating(false);
                 wasOnLoginPage.current = true;
             }
+        }
+    };
+
+    const handleSendDebugReport = async () => {
+        setDebugSending(true);
+        try {
+            const deviceInfo = [
+                Device.modelName,
+                Device.osName,
+                Device.osVersion,
+                Platform.OS,
+            ].filter(Boolean).join(' / ');
+            await submitLoginDebugReport(deviceInfo, debugLogsRef.current);
+            setDebugSent(true);
+        } catch (e) {
+            console.log('Failed to send debug report:', e);
+        } finally {
+            setDebugSending(false);
         }
     };
 
@@ -384,6 +442,14 @@ export default function LoginScreen({
                                     color={Colors.primary}
                                     style={styles.loadingSpinner}
                                 />
+                                {showDebugLink && (
+                                    <TouchableOpacity
+                                        onPress={() => setShowDebugModal(true)}
+                                        style={styles.debugLink}
+                                    >
+                                        <Text style={styles.debugLinkText}>로그인이 안 되나요?</Text>
+                                    </TouchableOpacity>
+                                )}
                             </Animated.View>
                         </Animated.View>
                     )}
@@ -397,6 +463,49 @@ export default function LoginScreen({
                     연세포털 계정으로 로그인하세요
                 </Text>
             </View>
+
+            {/* Debug Report Modal */}
+            <Modal
+                visible={showDebugModal}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowDebugModal(false)}
+            >
+                <View style={styles.debugModalBackdrop}>
+                    <View style={styles.debugModalContent}>
+                        <Text style={styles.debugModalTitle}>로그인 문제 진단</Text>
+                        <Text style={styles.debugModalText}>
+                            이 앱은 SSO 로그인 후 발급된 쿠키를 사용하여 러너스 데이터를 스크래핑합니다.{'\n\n'}
+                            러너스에 로그인이 됐는데도 앱에 들어가지지 않는다면, 인증 처리에 문제가 발생한 것입니다.{'\n\n'}
+                            아래 버튼을 누르면 디버그 정보가 개발자에게 전송됩니다.
+                        </Text>
+                        {debugSent ? (
+                            <View style={styles.debugSentContainer}>
+                                <Ionicons name="checkmark-circle" size={24} color={Colors.success} />
+                                <Text style={styles.debugSentText}>전송 완료! 감사합니다.</Text>
+                            </View>
+                        ) : (
+                            <TouchableOpacity
+                                style={styles.debugSendButton}
+                                onPress={handleSendDebugReport}
+                                disabled={debugSending}
+                            >
+                                {debugSending ? (
+                                    <ActivityIndicator size="small" color={Colors.textInverse} />
+                                ) : (
+                                    <Text style={styles.debugSendButtonText}>디버그 정보 전송</Text>
+                                )}
+                            </TouchableOpacity>
+                        )}
+                        <TouchableOpacity
+                            style={styles.debugCloseButton}
+                            onPress={() => setShowDebugModal(false)}
+                        >
+                            <Text style={styles.debugCloseButtonText}>닫기</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -553,6 +662,74 @@ const styles = StyleSheet.create({
     },
     footerText: {
         ...Typography.caption,
+        color: Colors.textTertiary,
+    },
+
+    // Debug
+    debugLink: {
+        marginTop: Spacing.m,
+    },
+    debugLinkText: {
+        ...Typography.caption,
+        color: Colors.textTertiary,
+        textDecorationLine: 'underline',
+    },
+    debugModalBackdrop: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(26, 29, 38, 0.6)',
+    },
+    debugModalContent: {
+        backgroundColor: Colors.surface,
+        borderRadius: Layout.borderRadius.xl,
+        padding: Spacing.xl,
+        marginHorizontal: Spacing.l,
+        maxWidth: 340,
+        width: '100%',
+        ...Layout.shadow.lg,
+    },
+    debugModalTitle: {
+        ...Typography.header3,
+        textAlign: 'center',
+        marginBottom: Spacing.m,
+    },
+    debugModalText: {
+        ...Typography.body2,
+        color: Colors.textSecondary,
+        textAlign: 'center',
+        marginBottom: Spacing.l,
+        lineHeight: 22,
+    },
+    debugSendButton: {
+        backgroundColor: Colors.primary,
+        paddingVertical: Spacing.m,
+        borderRadius: Layout.borderRadius.m,
+        alignItems: 'center',
+        marginBottom: Spacing.s,
+    },
+    debugSendButtonText: {
+        ...Typography.button,
+        color: Colors.textInverse,
+    },
+    debugSentContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginBottom: Spacing.s,
+        paddingVertical: Spacing.m,
+    },
+    debugSentText: {
+        ...Typography.subtitle2,
+        color: Colors.success,
+    },
+    debugCloseButton: {
+        paddingVertical: Spacing.s,
+        alignItems: 'center',
+    },
+    debugCloseButtonText: {
+        ...Typography.buttonSmall,
         color: Colors.textTertiary,
     },
 });
