@@ -510,6 +510,27 @@ class MoodleClient:
             return ast.literal_eval(f"[{args_str}]")
         except: return None
 
+    def get_vod_stream_url(self, vod_moodle_id):
+        """
+        Fetches the VOD viewer page and extracts the HLS .m3u8 stream URL.
+        Returns the URL string or None if not found.
+        """
+        viewer_url = f"{self.base_url}/mod/vod/viewer.php?id={vod_moodle_id}"
+        self.logger.info(f"Fetching VOD viewer for stream URL: {viewer_url}")
+        try:
+            response = self.session.get(viewer_url, timeout=15)
+            response.raise_for_status()
+            match = re.search(r'<source[^>]+src="([^"]+\.m3u8)"', response.text)
+            if match:
+                url = match.group(1)
+                self.logger.info(f"Found .m3u8 URL: {url}")
+                return url
+            self.logger.warning(f"No .m3u8 found in viewer page for VOD {vod_moodle_id}")
+            return None
+        except Exception as e:
+            self.logger.error(f"get_vod_stream_url failed for VOD {vod_moodle_id}: {e}")
+            return None
+
     def watch_vod(self, vod_id, duration=None):
         """Watch a VOD by replicating the exact signals the browser sends.
         - logtime = args[22] (page load time), constant throughout

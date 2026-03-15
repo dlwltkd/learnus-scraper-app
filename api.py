@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from database import init_db, User, Course, Assignment, VOD, Board, Post
+from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript
 from moodle_client import MoodleClient
 import logging
 import uuid
@@ -398,6 +398,34 @@ def get_vods(course_id: int, user: User = Depends(get_current_user), db: Session
     vods = db.query(VOD).filter(VOD.course_id == course_id).all()
     # Use moodle_id as the exposed id
     return [{"id": v.moodle_id, "title": v.title, "start_date": v.start_date, "end_date": v.end_date, "is_completed": v.is_completed, "url": v.url} for v in vods]
+
+@app.post("/vods/{vod_moodle_id}/transcribe")
+def transcribe_vod(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Verify this VOD belongs to the requesting user
+    vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
+    if not vod:
+        raise HTTPException(404, "VOD not found")
+
+    # Check shared transcript cache — any user's prior transcription works
+    cached = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
+    if cached:
+        return {"status": "cached", "transcript": cached.transcript}
+
+    client = get_moodle_client(user)
+    m3u8_url = client.get_vod_stream_url(vod_moodle_id)
+    if not m3u8_url:
+        raise HTTPException(502, "Could not find stream URL for this VOD")
+
+    try:
+        from ai_service import AIService
+        transcript = AIService().transcribe_vod(m3u8_url)
+    except Exception as e:
+        logger.error(f"Transcription failed for VOD {vod_moodle_id}: {e}")
+        raise HTTPException(500, f"Transcription failed: {str(e)}")
+
+    db.add(VodTranscript(moodle_id=vod_moodle_id, transcript=transcript))
+    db.commit()
+    return {"status": "ok", "transcript": transcript}
 
 @app.get("/courses/{course_id}/boards", response_model=List[BoardResponse])
 def get_boards(course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):

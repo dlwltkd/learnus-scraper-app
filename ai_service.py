@@ -1,4 +1,6 @@
 import os
+import subprocess
+import tempfile
 from openai import OpenAI
 from dotenv import load_dotenv
 import json
@@ -162,6 +164,42 @@ Rules:
             "announcement": {"has_new": False, "summary": None},
             "insight": "데이터를 새로고침해 주세요."
         }
+
+    def transcribe_vod(self, m3u8_url: str) -> str:
+        """
+        Downloads audio from an HLS stream via ffmpeg and transcribes it with Whisper.
+        Returns the transcript text, or raises on failure.
+        """
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            # Extract audio only — much faster and cheaper than full video
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-i", m3u8_url,
+                    "-vn",                  # no video
+                    "-acodec", "libmp3lame",
+                    "-q:a", "4",
+                    tmp_path
+                ],
+                capture_output=True,
+                timeout=600  # 10 min max
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"ffmpeg failed: {result.stderr.decode()[:500]}")
+
+            with open(tmp_path, "rb") as audio_file:
+                response = self.client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="text"
+                )
+            return response
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
 
     def summarize_text(self, text: str, max_length: int = 150) -> str:
         """

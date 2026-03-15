@@ -81,6 +81,14 @@ class VOD(Base):
 
     course = relationship("Course", back_populates="vods")
 
+class VodTranscript(Base):
+    __tablename__ = 'vod_transcripts'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    moodle_id = Column(Integer, unique=True, index=True, nullable=False)
+    transcript = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
 class FileResource(Base):
     __tablename__ = 'files'
     id = Column(Integer, primary_key=True, autoincrement=True)
