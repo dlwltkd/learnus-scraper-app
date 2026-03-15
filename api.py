@@ -39,10 +39,20 @@ app = FastAPI(title="LearnUs Connect API (Beta)")
 @app.on_event("startup")
 def startup_event():
     logger.info("Starting Background Scheduler...")
-    # Add jobs - passed 'SessionLocal' to allow jobs to create their own sessions
     sched.add_job(check_notices_job, 'interval', minutes=5, args=[SessionLocal])
     sched.add_job(sync_dashboard_job, 'interval', minutes=60, args=[SessionLocal])
     sched.start()
+
+    # Clear any stuck transcription rows left over from a previous container crash/restart
+    db = SessionLocal()
+    try:
+        stuck = db.query(VodTranscript).filter(VodTranscript.is_processing == True).count()
+        if stuck:
+            db.query(VodTranscript).filter(VodTranscript.is_processing == True).delete()
+            db.commit()
+            logger.info(f"Cleared {stuck} stuck transcription row(s) from previous run.")
+    finally:
+        db.close()
 
 @app.on_event("shutdown")
 def shutdown_event():
@@ -447,8 +457,13 @@ def transcribe_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user: 
         return {"status": "cached", "transcript": row.transcript}
 
     # Already in progress — just tell client to poll
+    # But if stuck for >30 min, assume it failed and allow retry
     if row and row.is_processing:
-        return {"status": "processing"}
+        if row.created_at and (datetime.now() - row.created_at).total_seconds() > 1800:
+            db.delete(row)
+            db.commit()
+        else:
+            return {"status": "processing"}
 
     # Start transcription: get stream URL, insert placeholder row, fire background thread
     client = get_moodle_client(user)

@@ -231,6 +231,7 @@ const VodWebViewer = ({ url, title, cookies, onClose }: { url: string; title: st
                     onLoadStart={() => setLoading(true)}
                     onLoadEnd={() => setLoading(false)}
                     allowsInlineMediaPlayback
+                    allowsFullscreenVideo
                     mediaPlaybackRequiresUserAction={false}
                     javaScriptEnabled
                     sharedCookiesEnabled
