@@ -1,25 +1,22 @@
 import os
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Header
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport
+from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport, Job
 from moodle_client import MoodleClient
 import logging
 import uuid
 import json
 from datetime import datetime, timedelta
 import re
-from scheduler import check_notices_job, sync_dashboard_job, watch_vods_for_user, _watch_running
-from apscheduler.schedulers.background import BackgroundScheduler
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 SessionLocal = init_db()
-sched = BackgroundScheduler()
 
 # ============================================================
 # APP VERSION — Reads from learnus-app/app.json automatically.
@@ -36,28 +33,6 @@ def _read_app_version() -> str:
 LATEST_VERSION = _read_app_version()
 
 app = FastAPI(title="LearnUs Connect API (Beta)")
-
-@app.on_event("startup")
-def startup_event():
-    logger.info("Starting Background Scheduler...")
-    sched.add_job(check_notices_job, 'interval', minutes=5, args=[SessionLocal])
-    sched.add_job(sync_dashboard_job, 'interval', minutes=60, args=[SessionLocal])
-    sched.start()
-
-    # Clear any stuck transcription rows left over from a previous container crash/restart
-    db = SessionLocal()
-    try:
-        stuck = db.query(VodTranscript).filter(VodTranscript.is_processing == True).count()
-        if stuck:
-            db.query(VodTranscript).filter(VodTranscript.is_processing == True).delete()
-            db.commit()
-            logger.info(f"Cleared {stuck} stuck transcription row(s) from previous run.")
-    finally:
-        db.close()
-
-@app.on_event("shutdown")
-def shutdown_event():
-    sched.shutdown()
 
 
 @app.get("/version")
@@ -465,54 +440,6 @@ def get_vods(course_id: int, user: User = Depends(get_current_user), db: Session
     # Use moodle_id as the exposed id
     return [{"id": v.moodle_id, "title": v.title, "start_date": v.start_date, "end_date": v.end_date, "is_completed": v.is_completed, "url": v.url} for v in vods]
 
-def _run_transcription(vod_moodle_id: int, m3u8_url: str, cookies, user_id: int = None, vod_title: str = None, course_name: str = None):
-    """Background thread: transcribes and updates VodTranscript row."""
-    from exponent_server_sdk import PushClient, PushMessage
-    db = SessionLocal()
-    try:
-        from ai_service import AIService
-        client = MoodleClient("https://ys.learnus.org")
-        if isinstance(cookies, str):
-            client.set_cookies(_parse_cookie_string(cookies))
-        elif cookies:
-            client.set_cookies(cookies)
-        transcript = AIService().transcribe_vod(m3u8_url)
-        row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
-        if row:
-            row.transcript = transcript
-            row.is_processing = False
-            db.commit()
-        logger.info(f"Transcription complete for VOD {vod_moodle_id}")
-
-        # Send push notification to user
-        if user_id:
-            user = db.query(User).filter(User.id == user_id).first()
-            if user and user.push_token:
-                try:
-                    PushClient().publish(PushMessage(
-                        to=user.push_token,
-                        sound="default",
-                        title=f"텍스트 추출 완료",
-                        body=vod_title or "강의 텍스트가 준비되었습니다",
-                        data={
-                            "type": "transcription_complete",
-                            "vodMoodleId": vod_moodle_id,
-                            "vodTitle": vod_title,
-                            "courseName": course_name,
-                            "saveToHistory": True,
-                        }
-                    ))
-                    logger.info(f"Sent transcription push to user {user_id}")
-                except Exception as exc:
-                    logger.error(f"Push notification failed: {exc}")
-    except Exception as e:
-        logger.error(f"Background transcription failed for VOD {vod_moodle_id}: {e}")
-        row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
-        if row:
-            db.delete(row)
-            db.commit()
-    finally:
-        db.close()
 
 @app.get("/vods/{vod_moodle_id}/transcript")
 def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -527,8 +454,7 @@ def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user
     return {"status": "ok", "transcript": row.transcript}
 
 @app.post("/vods/{vod_moodle_id}/transcribe")
-def transcribe_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    import threading
+def transcribe_vod(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
         raise HTTPException(404, "VOD not found")
@@ -540,7 +466,7 @@ def transcribe_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user: 
         return {"status": "cached", "transcript": row.transcript}
 
     # Already in progress — just tell client to poll
-    # But if stuck for >30 min, assume it failed and allow retry
+    # But if stuck for >30 min (worker crashed mid-job), allow retry
     if row and row.is_processing:
         if row.created_at and (datetime.now() - row.created_at).total_seconds() > 1800:
             db.delete(row)
@@ -548,27 +474,29 @@ def transcribe_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user: 
         else:
             return {"status": "processing"}
 
-    # Start transcription: get stream URL, insert placeholder row, fire background thread
+    # Get stream URL now (requires active Moodle session)
     client = get_moodle_client(user)
     m3u8_url = client.get_vod_stream_url(vod_moodle_id)
     if not m3u8_url:
         raise HTTPException(502, "Could not find stream URL for this VOD")
 
-    raw_cookies = user.moodle_cookies or ''
-    if raw_cookies.startswith('{'):
-        try:
-            cookies = json.loads(raw_cookies)
-        except Exception:
-            cookies = {}
-    else:
-        cookies = raw_cookies  # _run_transcription will call _parse_cookie_string on this
-    db.add(VodTranscript(moodle_id=vod_moodle_id, is_processing=True))
-    db.commit()
-
-    vod_title = vod.title if vod else None
-    course_obj = db.query(Course).filter(Course.id == vod.course_id).first() if vod else None
+    vod_title = vod.title
+    course_obj = db.query(Course).filter(Course.id == vod.course_id).first()
     course_name = course_obj.name if course_obj else None
-    threading.Thread(target=_run_transcription, args=(vod_moodle_id, m3u8_url, cookies, user.id, vod_title, course_name), daemon=True).start()
+
+    # Insert processing placeholder so the polling endpoint returns "processing"
+    db.add(VodTranscript(moodle_id=vod_moodle_id, is_processing=True))
+
+    # Enqueue job for the worker
+    db.add(Job(type='transcribe', payload={
+        'vod_moodle_id': vod_moodle_id,
+        'm3u8_url': m3u8_url,
+        'cookies': user.moodle_cookies or '',
+        'user_id': user.id,
+        'vod_title': vod_title,
+        'course_name': course_name,
+    }))
+    db.commit()
     return {"status": "processing"}
 
 @app.post("/vods/{vod_moodle_id}/summarize")
@@ -774,20 +702,26 @@ def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
         return {"error": str(e)}
 
 @app.post("/vods/{vod_moodle_id}/watch")
-def watch_single_vod(vod_moodle_id: int, background_tasks: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def watch_single_vod(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
         raise HTTPException(404, "VOD not found")
-    if user.id in _watch_running:
-        raise HTTPException(409, "Watch all is already running — wait for it to finish")
-    client = get_moodle_client(user)
-    background_tasks.add_task(client.watch_vod, vod_moodle_id, vod.duration)
+    db.add(Job(type='watch_one', payload={'user_id': user.id, 'vod_moodle_id': vod_moodle_id}))
+    db.commit()
     return {"status": "started"}
 
 @app.post("/vods/watch-all")
-def trigger_watch_all(background_tasks: BackgroundTasks, user: User = Depends(get_current_user)):
+def trigger_watch_all(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Manually trigger background VOD watching for the current user only."""
-    background_tasks.add_task(watch_vods_for_user, user.id, SessionLocal)
+    # Avoid duplicate: if a watch_all job is already pending/processing for this user, skip
+    existing = db.query(Job).filter(
+        Job.type == 'watch_all',
+        Job.status.in_(['pending', 'processing']),
+    ).filter(Job.payload['user_id'].as_integer() == user.id).first()
+    if existing:
+        return {"status": "already_running", "message": "VOD watching is already queued"}
+    db.add(Job(type='watch_all', payload={'user_id': user.id}))
+    db.commit()
     return {"status": "started", "message": "VOD watching started in background"}
 
 @app.post("/debug/vod-watch-fast/{vod_id}")

@@ -1,5 +1,8 @@
 import os
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, JSON
+import logging
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, JSON, Enum as SAEnum
+
+logger = logging.getLogger(__name__)
 
 
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
@@ -136,6 +139,20 @@ class Post(Base):
     
     board = relationship("Board", back_populates="posts")
 
+class Job(Base):
+    """Persistent job queue — processed by the worker container."""
+    __tablename__ = 'jobs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    type = Column(String, nullable=False)           # 'transcribe' | 'watch_all' | 'watch_one'
+    payload = Column(JSON, nullable=False)          # job-specific data
+    status = Column(String, default='pending')      # pending | processing | done | failed
+    created_at = Column(DateTime, default=datetime.now)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    error = Column(Text, nullable=True)
+
+
 class LoginDebugReport(Base):
     __tablename__ = 'login_debug_reports'
 
@@ -182,5 +199,11 @@ def init_db(db_url=None):
             conn.execute(text("ALTER TABLE users ADD COLUMN chat_count_today INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE users ADD COLUMN chat_count_date TEXT"))
             conn.commit()
+
+    # Migration: create jobs table if it doesn't exist yet
+    # (Base.metadata.create_all handles new tables automatically, but explicit check for clarity)
+    if 'jobs' not in inspector.get_table_names():
+        Job.__table__.create(engine)
+        logger.info("Created jobs table")
 
     return sessionmaker(bind=engine)
