@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
     View, Text, StyleSheet, Modal, TouchableOpacity,
-    TextInput, FlatList, KeyboardAvoidingView, Platform,
-    ActivityIndicator,
+    TextInput, ScrollView, KeyboardAvoidingView, Platform,
+    ActivityIndicator, Clipboard,
 } from 'react-native';
+import Markdown from 'react-native-markdown-display';
+import { SelectableText } from '@rob117/react-native-selectable-text';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
@@ -29,6 +31,76 @@ const QUICK_ACTIONS = [
     { label: '플래시카드 만들기', prompt: '이 강의 내용으로 플래시카드(질문-답변 형식)를 만들어줘.' },
 ];
 
+
+const markdownStyles = {
+    body: { fontSize: 14, lineHeight: 22, color: Colors.textPrimary },
+    heading1: { fontSize: 20, fontWeight: '700' as const, color: Colors.textPrimary, marginTop: 12, marginBottom: 4 },
+    heading2: { fontSize: 17, fontWeight: '700' as const, color: Colors.textPrimary, marginTop: 10, marginBottom: 4 },
+    heading3: { fontSize: 15, fontWeight: '600' as const, color: Colors.textPrimary, marginTop: 8, marginBottom: 2 },
+    paragraph: { fontSize: 14, lineHeight: 22, color: Colors.textPrimary, marginBottom: 8 },
+    strong: { fontWeight: '700' as const, color: Colors.textPrimary },
+    em: { fontStyle: 'italic' as const },
+    code_inline: {
+        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+        fontSize: 13, color: Colors.tertiary,
+        backgroundColor: Colors.surfaceMuted,
+    },
+    fence: { backgroundColor: Colors.surfaceMuted, borderRadius: 8, padding: 12, marginVertical: 8 },
+    bullet_list: { marginBottom: 8 },
+    ordered_list: { marginBottom: 8 },
+    list_item: { marginBottom: 4 },
+    bullet_list_icon: { color: Colors.tertiary, marginRight: 6 },
+    blockquote: { borderLeftWidth: 3, borderLeftColor: Colors.tertiary, paddingLeft: 12, marginLeft: 0, opacity: 0.8 },
+    hr: { backgroundColor: Colors.border, height: 1, marginVertical: 12 },
+};
+
+function SelectableMarkdown({ content }: { content: string }) {
+    const selectableRules = {
+        textgroup: (node: any, children: any) => (
+            <SelectableText
+                key={node.key}
+                menuItems={['복사']}
+                onSelection={({ eventType, content: sel }: { eventType: string; content: string }) => {
+                    if (eventType === '복사') Clipboard.setString(sel);
+                }}
+                textComponentProps={{
+                    children: (
+                        <Text key={node.key} selectable style={{ fontSize: 14, lineHeight: 22, color: Colors.textPrimary }}>
+                            {children}
+                        </Text>
+                    ),
+                }}
+                value=""
+            />
+        ),
+    };
+
+    return <Markdown style={markdownStyles} rules={selectableRules}>{content}</Markdown>;
+}
+
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopy = () => {
+        Clipboard.setString(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    return (
+        <TouchableOpacity style={styles.copyBtn} onPress={handleCopy} activeOpacity={0.7}>
+            <Ionicons
+                name={copied ? 'checkmark' : 'copy-outline'}
+                size={14}
+                color={copied ? Colors.success : Colors.textTertiary}
+            />
+            <Text style={[styles.copyBtnText, copied && styles.copyBtnTextDone]}>
+                {copied ? '복사됨' : '복사'}
+            </Text>
+        </TouchableOpacity>
+    );
+}
+
 export default function AIChatModal({ visible, onClose, vodMoodleId, title, courseName }: AIChatModalProps) {
     const insets = useSafeAreaInsets();
     const [messages, setMessages] = useState<DisplayMessage[]>([]);
@@ -36,9 +108,8 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
     const [loading, setLoading] = useState(false);
     const [remaining, setRemaining] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const flatListRef = useRef<FlatList>(null);
+    const scrollRef = useRef<ScrollView>(null);
 
-    // Reset state when modal closes
     useEffect(() => {
         if (!visible) {
             setMessages([]);
@@ -51,7 +122,7 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
 
     const scrollToBottom = () => {
         setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: true });
+            scrollRef.current?.scrollToEnd({ animated: true });
         }, 100);
     };
 
@@ -71,7 +142,6 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
         setLoading(true);
         scrollToBottom();
 
-        // Build API messages (without IDs)
         const apiMessages: ChatMessage[] = newMessages.map(m => ({
             role: m.role,
             content: m.content,
@@ -99,42 +169,7 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
         }
     };
 
-    const renderMessage = ({ item }: { item: DisplayMessage }) => {
-        const isUser = item.role === 'user';
-        return (
-            <View style={[styles.messageBubbleRow, isUser && styles.messageBubbleRowUser]}>
-                {!isUser && (
-                    <View style={styles.avatarWrap}>
-                        <Ionicons name="sparkles" size={14} color={Colors.tertiary} />
-                    </View>
-                )}
-                <View style={[
-                    styles.messageBubble,
-                    isUser ? styles.userBubble : styles.assistantBubble,
-                ]}>
-                    <Text style={[
-                        styles.messageText,
-                        isUser && styles.userMessageText,
-                    ]}>{item.content}</Text>
-                </View>
-            </View>
-        );
-    };
-
-    const renderTypingIndicator = () => {
-        if (!loading) return null;
-        return (
-            <View style={[styles.messageBubbleRow]}>
-                <View style={styles.avatarWrap}>
-                    <Ionicons name="sparkles" size={14} color={Colors.tertiary} />
-                </View>
-                <View style={[styles.messageBubble, styles.assistantBubble, styles.typingBubble]}>
-                    <ActivityIndicator size="small" color={Colors.tertiary} />
-                    <Text style={styles.typingText}>생각하는 중...</Text>
-                </View>
-            </View>
-        );
-    };
+    const isEmpty = messages.length === 0;
 
     return (
         <Modal
@@ -151,9 +186,9 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                 <View style={styles.header}>
                     <View style={styles.headerLeft}>
                         <View style={styles.headerIconWrap}>
-                            <Ionicons name="chatbubble-ellipses" size={18} color={Colors.tertiary} />
+                            <Ionicons name="sparkles" size={18} color={Colors.tertiary} />
                         </View>
-                        <View>
+                        <View style={styles.headerTextWrap}>
                             <Text style={styles.headerTitle}>AI 질문</Text>
                             <Text style={styles.headerSub} numberOfLines={1}>{title}</Text>
                         </View>
@@ -170,19 +205,17 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                     </View>
                 </View>
 
-                {/* Messages */}
-                <FlatList
-                    ref={flatListRef}
-                    style={styles.flatList}
-                    data={messages}
-                    keyExtractor={item => item.id}
-                    renderItem={renderMessage}
-                    contentContainerStyle={[
-                        styles.messageList,
-                        messages.length === 0 && styles.emptyList,
-                    ]}
-                    contentInsetAdjustmentBehavior="automatic"
-                    ListEmptyComponent={
+                {/* Content */}
+                <ScrollView
+                    ref={scrollRef}
+                    style={styles.scroll}
+                    contentContainerStyle={[styles.scrollContent, isEmpty && styles.scrollContentEmpty]}
+                    keyboardDismissMode="interactive"
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                >
+                    {isEmpty ? (
+                        /* Empty state */
                         <View style={styles.emptyContainer}>
                             <View style={styles.emptyIconWrap}>
                                 <Ionicons name="chatbubble-ellipses-outline" size={36} color={Colors.tertiary} />
@@ -191,7 +224,6 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                             <Text style={styles.emptySubtitle}>
                                 AI가 강의 텍스트를 바탕으로 답변해드려요
                             </Text>
-
                             <View style={styles.quickActions}>
                                 {QUICK_ACTIONS.map((action, i) => (
                                     <TouchableOpacity
@@ -206,13 +238,48 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                                 ))}
                             </View>
                         </View>
-                    }
-                    ListFooterComponent={renderTypingIndicator}
-                    onContentSizeChange={scrollToBottom}
-                    showsVerticalScrollIndicator={false}
-                    keyboardDismissMode="interactive"
-                    keyboardShouldPersistTaps="handled"
-                />
+                    ) : (
+                        /* Conversation */
+                        messages.map((item) => {
+                            if (item.role === 'user') {
+                                return (
+                                    <View key={item.id} style={styles.userTurn}>
+                                        <Text style={styles.userLabel}>질문</Text>
+                                        <Text style={styles.userText} selectable>{item.content}</Text>
+                                    </View>
+                                );
+                            }
+                            return (
+                                <View key={item.id} style={styles.assistantTurn}>
+                                    <View style={styles.assistantHeader}>
+                                        <View style={styles.assistantIconWrap}>
+                                            <Ionicons name="sparkles" size={13} color={Colors.tertiary} />
+                                        </View>
+                                        <Text style={styles.assistantLabel}>AI 답변</Text>
+                                    </View>
+                                    <SelectableMarkdown content={item.content} />
+                                    <CopyButton text={item.content} />
+                                </View>
+                            );
+                        })
+                    )}
+
+                    {/* Typing indicator */}
+                    {loading && (
+                        <View style={styles.assistantTurn}>
+                            <View style={styles.assistantHeader}>
+                                <View style={styles.assistantIconWrap}>
+                                    <Ionicons name="sparkles" size={13} color={Colors.tertiary} />
+                                </View>
+                                <Text style={styles.assistantLabel}>AI 답변</Text>
+                            </View>
+                            <View style={styles.typingRow}>
+                                <ActivityIndicator size="small" color={Colors.tertiary} />
+                                <Text style={styles.typingText}>생각하는 중...</Text>
+                            </View>
+                        </View>
+                    )}
+                </ScrollView>
 
                 {/* Error */}
                 {error && (
@@ -283,6 +350,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    headerTextWrap: {
+        flex: 1,
+    },
     headerTitle: {
         ...Typography.subtitle1,
         fontSize: 16,
@@ -290,7 +360,6 @@ const styles = StyleSheet.create({
     headerSub: {
         ...Typography.caption,
         color: Colors.textTertiary,
-        maxWidth: 180,
     },
     headerRight: {
         flexDirection: 'row',
@@ -317,72 +386,21 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.surfaceMuted,
     },
 
-    // Messages
-    flatList: {
+    // Scroll
+    scroll: {
         flex: 1,
     },
-    messageList: {
+    scrollContent: {
         padding: Spacing.l,
-        gap: Spacing.m,
+        paddingBottom: Spacing.xl,
     },
-    emptyList: {
+    scrollContentEmpty: {
         flexGrow: 1,
-    },
-    messageBubbleRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-end',
-        gap: Spacing.s,
-    },
-    messageBubbleRowUser: {
-        flexDirection: 'row-reverse',
-    },
-    avatarWrap: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        backgroundColor: Colors.tertiaryLight,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 2,
-    },
-    messageBubble: {
-        maxWidth: '78%',
-        borderRadius: Layout.borderRadius.l,
-        paddingHorizontal: Spacing.m,
-        paddingVertical: 12,
-    },
-    userBubble: {
-        backgroundColor: Colors.primary,
-        borderBottomRightRadius: 6,
-    },
-    assistantBubble: {
-        backgroundColor: Colors.surface,
-        borderWidth: 1,
-        borderColor: Colors.border,
-        borderBottomLeftRadius: 6,
-    },
-    messageText: {
-        ...Typography.body2,
-        color: Colors.textPrimary,
-        lineHeight: 22,
-    },
-    userMessageText: {
-        color: '#FFFFFF',
-    },
-    typingBubble: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: Spacing.s,
-    },
-    typingText: {
-        ...Typography.caption,
-        color: Colors.textTertiary,
     },
 
     // Empty state
     emptyContainer: {
         alignItems: 'center',
-        paddingHorizontal: Spacing.xl,
         paddingTop: Spacing.xxl,
     },
     emptyIconWrap: {
@@ -405,8 +423,6 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginBottom: Spacing.xl,
     },
-
-    // Quick actions
     quickActions: {
         width: '100%',
         gap: Spacing.s,
@@ -428,7 +444,87 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
 
+    // User turn
+    userTurn: {
+        marginBottom: Spacing.xl,
+    },
+    userLabel: {
+        ...Typography.caption,
+        color: Colors.textTertiary,
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        marginBottom: Spacing.xs,
+    },
+    userText: {
+        ...Typography.subtitle1,
+        fontSize: 17,
+        color: Colors.textPrimary,
+        lineHeight: 26,
+    },
+
+    // Assistant turn
+    assistantTurn: {
+        marginBottom: Spacing.xl,
+        paddingBottom: Spacing.m,
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.border,
+    },
+    assistantHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.xs,
+        marginBottom: Spacing.m,
+    },
+    assistantIconWrap: {
+        width: 22,
+        height: 22,
+        borderRadius: 6,
+        backgroundColor: Colors.tertiaryLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    assistantLabel: {
+        ...Typography.caption,
+        color: Colors.tertiary,
+        fontWeight: '700',
+    },
+
+    // Typing
+    typingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.s,
+        paddingVertical: Spacing.s,
+    },
+    typingText: {
+        ...Typography.caption,
+        color: Colors.textTertiary,
+    },
+
+    // Copy button
+    copyBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        alignSelf: 'flex-start',
+        marginTop: Spacing.m,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        backgroundColor: Colors.surfaceMuted,
+        borderRadius: Layout.borderRadius.s,
+    },
+    copyBtnText: {
+        ...Typography.caption,
+        color: Colors.textTertiary,
+        fontWeight: '600',
+    },
+    copyBtnTextDone: {
+        color: Colors.success,
+    },
+
     // Error
+
     errorBar: {
         flexDirection: 'row',
         alignItems: 'center',

@@ -16,6 +16,7 @@
     "@react-navigation/bottom-tabs": "^7.8.8",
     "@react-navigation/native": "^7.1.22",
     "@react-navigation/stack": "^7.6.8",
+    "@rob117/react-native-selectable-text": "^2.1.0",
     "axios": "^1.13.2",
     "expo": "~54.0.27",
     "expo-background-fetch": "~14.0.9",
