@@ -9,6 +9,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { useToast } from './context/ToastContext';
 import { transcribeVod, getVodTranscript, summarizeVod } from './services/api';
+import AIChatModal from './AIChatModal';
 
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
@@ -80,6 +81,7 @@ export default function VodTranscriptScreen() {
     const [loading, setLoading] = useState(true);
     const [transcript, setTranscript] = useState<string | null>(null);
     const [error, setError] = useState(false);
+    const [chatVisible, setChatVisible] = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const stopPolling = useCallback(() => {
@@ -138,7 +140,7 @@ export default function VodTranscriptScreen() {
     };
 
     const handleChat = () => {
-        showInfo('준비 중', '이 기능은 아직 개발 중이에요.');
+        setChatVisible(true);
     };
 
     return (
@@ -202,11 +204,18 @@ export default function VodTranscriptScreen() {
                     </TouchableOpacity>
                     <View style={styles.bottomDivider} />
                     <TouchableOpacity style={styles.bottomBtn} onPress={handleChat} activeOpacity={0.8}>
-                        <Ionicons name="chatbubble-outline" size={18} color={Colors.textSecondary} />
-                        <Text style={[styles.bottomBtnText, { color: Colors.textSecondary }]}>AI 질문</Text>
+                        <Ionicons name="chatbubble-outline" size={18} color={Colors.tertiary} />
+                        <Text style={[styles.bottomBtnText, { color: Colors.tertiary }]}>AI 질문</Text>
                     </TouchableOpacity>
                 </View>
             )}
+            <AIChatModal
+                visible={chatVisible}
+                onClose={() => setChatVisible(false)}
+                vodMoodleId={vodMoodleId}
+                title={title}
+                courseName={courseName}
+            />
         </SafeAreaView>
     );
 }

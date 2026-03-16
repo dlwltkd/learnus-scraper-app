@@ -148,6 +148,16 @@ export const summarizeVod = async (vodMoodleId: number) => {
     return response.data;
 };
 
+export interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
+export const chatWithVod = async (vodMoodleId: number, messages: ChatMessage[]): Promise<{ status: string; reply: string; remaining: number }> => {
+    const response = await api.post(`/vods/${vodMoodleId}/chat`, { messages });
+    return response.data;
+};
+
 // Auth & Login
 
 
