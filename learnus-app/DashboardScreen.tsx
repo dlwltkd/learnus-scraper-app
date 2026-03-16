@@ -26,6 +26,7 @@ import { useUser } from './context/UserContext';
 import { useToast } from './context/ToastContext';
 import { getUnreadCount } from './services/NotificationHistoryService';
 import Card from './components/Card';
+import TypingDots from './TypingDots';
 import Badge, { StatusBadge } from './components/Badge';
 import Button, { IconButton } from './components/Button';
 import ItemRow from './components/ItemRow';
@@ -394,7 +395,7 @@ const AISummaryModal = ({
                     {/* AI Insight */}
                     <View style={modalStyles.insightBox}>
                         <View style={modalStyles.insightHeader}>
-                            <Ionicons name="sparkles" size={16} color={Colors.secondary} />
+                            <Ionicons name="sparkles" size={16} color={Colors.primary} />
                             <Text style={modalStyles.insightLabel}>AI 코멘트</Text>
                         </View>
                         <Text style={modalStyles.insightText}>{summary.insight}</Text>
@@ -696,7 +697,7 @@ const DashboardScreen = () => {
                     <SectionHeader
                         title="AI 브리핑"
                         icon="sparkles"
-                        iconColor={Colors.secondary}
+                        iconColor={Colors.primary}
                         action={
                             aiSummaries.length > 0 && !loadingAI ? (
                                 <TouchableOpacity
@@ -724,7 +725,7 @@ const DashboardScreen = () => {
 
                     {loadingAI && (
                         <View style={styles.aiLoading}>
-                            <ActivityIndicator size="small" color={Colors.primary} />
+                            <TypingDots size={9} />
                             <Text style={styles.aiLoadingText}>AI가 요약을 생성하고 있어요...</Text>
                         </View>
                     )}

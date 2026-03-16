@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
-    ActivityIndicator, Clipboard, Animated,
+    Clipboard, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +10,7 @@ import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { useToast } from './context/ToastContext';
 import { transcribeVod, getVodTranscript, summarizeVod } from './services/api';
 import AIChatModal from './AIChatModal';
+import TypingDots from './TypingDots';
 
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ const SummaryCard = ({ vodMoodleId }: { vodMoodleId: number }) => {
             <Animated.View style={[styles.summaryCard, { opacity: fadeIn }]}>
                 <View style={styles.summaryHeader}>
                     <View style={styles.summaryIconWrap}>
-                        <Ionicons name="sparkles" size={16} color={Colors.tertiary} />
+                        <Ionicons name="sparkles" size={16} color={Colors.primary} />
                     </View>
                     <Text style={styles.summaryTitle}>AI 요약</Text>
                 </View>
@@ -58,9 +59,9 @@ const SummaryCard = ({ vodMoodleId }: { vodMoodleId: number }) => {
             activeOpacity={0.8}
         >
             {loading ? (
-                <ActivityIndicator size="small" color={Colors.tertiary} />
+                <TypingDots size={7} />
             ) : (
-                <Ionicons name="sparkles" size={18} color={Colors.tertiary} />
+                <Ionicons name="sparkles" size={18} color={Colors.primary} />
             )}
             <Text style={styles.summaryBtnText}>
                 {loading ? 'AI가 요약하는 중...' : 'AI 요약 보기'}
@@ -158,9 +159,7 @@ export default function VodTranscriptScreen() {
 
             {loading ? (
                 <View style={styles.centered}>
-                    <View style={styles.loadingIconWrap}>
-                        <ActivityIndicator size="large" color={Colors.primary} />
-                    </View>
+                    <TypingDots size={14} gap={12} />
                     <Text style={styles.loadingText}>텍스트 추출 중...</Text>
                     <Text style={styles.loadingSubText}>
                         AI가 강의 음성을 텍스트로 변환하고 있어요.{'\n'}
@@ -204,8 +203,8 @@ export default function VodTranscriptScreen() {
                     </TouchableOpacity>
                     <View style={styles.bottomDivider} />
                     <TouchableOpacity style={styles.bottomBtn} onPress={handleChat} activeOpacity={0.8}>
-                        <Ionicons name="chatbubble-outline" size={18} color={Colors.tertiary} />
-                        <Text style={[styles.bottomBtnText, { color: Colors.tertiary }]}>AI 질문</Text>
+                        <Ionicons name="chatbubble-outline" size={18} color={Colors.primary} />
+                        <Text style={[styles.bottomBtnText, { color: Colors.primary }]}>AI 질문</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -257,12 +256,12 @@ const styles = StyleSheet.create({
     // Summary button
     summaryBtn: {
         flexDirection: 'row', alignItems: 'center', gap: Spacing.s,
-        backgroundColor: Colors.tertiaryLight,
+        backgroundColor: Colors.primaryLighter,
         borderRadius: Layout.borderRadius.l,
         paddingVertical: Spacing.m, paddingHorizontal: Spacing.l,
-        borderWidth: 1, borderColor: 'rgba(139, 92, 246, 0.15)',
+        borderWidth: 1, borderColor: 'rgba(49, 130, 246, 0.15)',
     },
-    summaryBtnText: { fontSize: 15, fontWeight: '600', color: Colors.tertiary },
+    summaryBtnText: { fontSize: 15, fontWeight: '600', color: Colors.primary },
 
     // Summary card
     summaryCard: {
@@ -275,10 +274,10 @@ const styles = StyleSheet.create({
     summaryHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.s, marginBottom: Spacing.m },
     summaryIconWrap: {
         width: 28, height: 28, borderRadius: 8,
-        backgroundColor: Colors.tertiaryLight,
+        backgroundColor: Colors.primaryLighter,
         alignItems: 'center', justifyContent: 'center',
     },
-    summaryTitle: { ...Typography.subtitle2, color: Colors.tertiary, fontWeight: '700' },
+    summaryTitle: { ...Typography.subtitle2, color: Colors.primary, fontWeight: '700' },
     courseDesc: { ...Typography.caption, color: Colors.textSecondary, lineHeight: 18, marginBottom: Spacing.m, fontStyle: 'italic' },
     divider: { height: 1, backgroundColor: Colors.divider, marginBottom: Spacing.m },
     lectureDesc: { ...Typography.body2, lineHeight: 22, color: Colors.textPrimary },

@@ -2,14 +2,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
     View, Text, StyleSheet, Modal, TouchableOpacity,
     TextInput, ScrollView, KeyboardAvoidingView, Platform,
-    ActivityIndicator, Clipboard,
+    Animated, Clipboard,
 } from 'react-native';
-import Markdown from 'react-native-markdown-display';
-import { SelectableText } from '@rob117/react-native-selectable-text';
+import { WebView } from 'react-native-webview';
+import { marked } from 'marked';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { chatWithVod, ChatMessage } from './services/api';
+import TypingDots from './TypingDots';
 
 interface AIChatModalProps {
     visible: boolean;
@@ -32,51 +33,101 @@ const QUICK_ACTIONS = [
 ];
 
 
-const markdownStyles = {
-    body: { fontSize: 14, lineHeight: 22, color: Colors.textPrimary },
-    heading1: { fontSize: 20, fontWeight: '700' as const, color: Colors.textPrimary, marginTop: 12, marginBottom: 4 },
-    heading2: { fontSize: 17, fontWeight: '700' as const, color: Colors.textPrimary, marginTop: 10, marginBottom: 4 },
-    heading3: { fontSize: 15, fontWeight: '600' as const, color: Colors.textPrimary, marginTop: 8, marginBottom: 2 },
-    paragraph: { fontSize: 14, lineHeight: 22, color: Colors.textPrimary, marginBottom: 8 },
-    strong: { fontWeight: '700' as const, color: Colors.textPrimary },
-    em: { fontStyle: 'italic' as const },
-    code_inline: {
-        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-        fontSize: 13, color: Colors.tertiary,
-        backgroundColor: Colors.surfaceMuted,
-    },
-    fence: { backgroundColor: Colors.surfaceMuted, borderRadius: 8, padding: 12, marginVertical: 8 },
-    bullet_list: { marginBottom: 8 },
-    ordered_list: { marginBottom: 8 },
-    list_item: { marginBottom: 4 },
-    bullet_list_icon: { color: Colors.tertiary, marginRight: 6 },
-    blockquote: { borderLeftWidth: 3, borderLeftColor: Colors.tertiary, paddingLeft: 12, marginLeft: 0, opacity: 0.8 },
-    hr: { backgroundColor: Colors.border, height: 1, marginVertical: 12 },
-};
+function buildHtml(content: string): string {
+    const body = marked.parse(content) as string;
+    const isDark = false; // app uses light theme
+    return `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, 'Helvetica Neue', sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+    color: #1A1D26;
+    background: transparent !important;
+    word-break: break-word;
+  }
+  h1 { font-size: 20px; font-weight: 700; margin: 16px 0 6px; }
+  h2 { font-size: 17px; font-weight: 700; margin: 14px 0 5px; }
+  h3 { font-size: 15px; font-weight: 600; margin: 12px 0 4px; }
+  p  { margin: 0 0 10px; }
+  ul, ol { margin: 0 0 10px; padding-left: 22px; }
+  li { margin-bottom: 4px; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+  code {
+    font-family: Menlo, 'Courier New', monospace;
+    font-size: 12.5px;
+    color: #3182F6;
+    background: #F2F5F9;
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  pre {
+    background: #F2F5F9;
+    border-radius: 8px;
+    padding: 12px;
+    overflow-x: auto;
+    margin: 8px 0;
+  }
+  pre code { background: none; padding: 0; color: #1A1D26; }
+  blockquote {
+    border-left: 3px solid #3182F6;
+    margin: 8px 0;
+    padding-left: 12px;
+    color: #5C6679;
+  }
+  hr { border: none; border-top: 1px solid #E8ECF2; margin: 12px 0; }
+  a  { color: #3182F6; text-decoration: none; }
+  :first-child { margin-top: 0; }
+  :last-child  { margin-bottom: 0; }
+</style>
+</head>
+<body>${body}</body>
+<script>
+  // Report rendered height so RN can size the WebView correctly
+  function postHeight() {
+    window.ReactNativeWebView.postMessage(
+      JSON.stringify({ type: 'height', value: document.body.scrollHeight })
+    );
+  }
+  window.addEventListener('load', postHeight);
+  // Re-report after images / fonts settle
+  setTimeout(postHeight, 300);
+</script>
+</html>`;
+}
 
 function SelectableMarkdown({ content }: { content: string }) {
-    const selectableRules = {
-        textgroup: (node: any, children: any) => (
-            <SelectableText
-                key={node.key}
-                menuItems={['복사']}
-                onSelection={({ eventType, content: sel }: { eventType: string; content: string }) => {
-                    if (eventType === '복사') Clipboard.setString(sel);
-                }}
-                textComponentProps={{
-                    children: (
-                        <Text key={node.key} selectable style={{ fontSize: 14, lineHeight: 22, color: Colors.textPrimary }}>
-                            {children}
-                        </Text>
-                    ),
-                }}
-                value=""
-            />
-        ),
+    const [height, setHeight] = useState(40);
+
+    const onMessage = (e: any) => {
+        try {
+            const msg = JSON.parse(e.nativeEvent.data);
+            if (msg.type === 'height' && msg.value > 0) {
+                setHeight(msg.value);
+            }
+        } catch {}
     };
 
-    return <Markdown style={markdownStyles} rules={selectableRules}>{content}</Markdown>;
+    return (
+        <WebView
+            source={{ html: buildHtml(content) }}
+            style={{ width: '100%', height, backgroundColor: 'transparent' }}
+            scrollEnabled={false}
+            onMessage={onMessage}
+            showsVerticalScrollIndicator={false}
+            showsHorizontalScrollIndicator={false}
+            originWhitelist={['*']}
+            backgroundColor="transparent"
+        />
+    );
 }
+
 
 function CopyButton({ text }: { text: string }) {
     const [copied, setCopied] = useState(false);
@@ -186,7 +237,7 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                 <View style={styles.header}>
                     <View style={styles.headerLeft}>
                         <View style={styles.headerIconWrap}>
-                            <Ionicons name="sparkles" size={18} color={Colors.tertiary} />
+                            <Ionicons name="sparkles" size={18} color={Colors.primary} />
                         </View>
                         <View style={styles.headerTextWrap}>
                             <Text style={styles.headerTitle}>AI 질문</Text>
@@ -218,7 +269,7 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                         /* Empty state */
                         <View style={styles.emptyContainer}>
                             <View style={styles.emptyIconWrap}>
-                                <Ionicons name="chatbubble-ellipses-outline" size={36} color={Colors.tertiary} />
+                                <Ionicons name="chatbubble-ellipses-outline" size={36} color={Colors.primary} />
                             </View>
                             <Text style={styles.emptyTitle}>강의 내용에 대해 질문해보세요</Text>
                             <Text style={styles.emptySubtitle}>
@@ -233,7 +284,7 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                                         activeOpacity={0.7}
                                     >
                                         <Text style={styles.quickActionText}>{action.label}</Text>
-                                        <Ionicons name="arrow-forward" size={14} color={Colors.tertiary} />
+                                        <Ionicons name="arrow-forward" size={14} color={Colors.primary} />
                                     </TouchableOpacity>
                                 ))}
                             </View>
@@ -253,7 +304,7 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                                 <View key={item.id} style={styles.assistantTurn}>
                                     <View style={styles.assistantHeader}>
                                         <View style={styles.assistantIconWrap}>
-                                            <Ionicons name="sparkles" size={13} color={Colors.tertiary} />
+                                            <Ionicons name="sparkles" size={13} color={Colors.primary} />
                                         </View>
                                         <Text style={styles.assistantLabel}>AI 답변</Text>
                                     </View>
@@ -269,14 +320,11 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                         <View style={styles.assistantTurn}>
                             <View style={styles.assistantHeader}>
                                 <View style={styles.assistantIconWrap}>
-                                    <Ionicons name="sparkles" size={13} color={Colors.tertiary} />
+                                    <Ionicons name="sparkles" size={13} color={Colors.primary} />
                                 </View>
                                 <Text style={styles.assistantLabel}>AI 답변</Text>
                             </View>
-                            <View style={styles.typingRow}>
-                                <ActivityIndicator size="small" color={Colors.tertiary} />
-                                <Text style={styles.typingText}>생각하는 중...</Text>
-                            </View>
+                            <TypingDots />
                         </View>
                     )}
                 </ScrollView>
@@ -346,7 +394,7 @@ const styles = StyleSheet.create({
         width: 34,
         height: 34,
         borderRadius: 10,
-        backgroundColor: Colors.tertiaryLight,
+        backgroundColor: Colors.primaryLighter,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -367,14 +415,14 @@ const styles = StyleSheet.create({
         gap: Spacing.s,
     },
     remainingBadge: {
-        backgroundColor: Colors.tertiaryLight,
+        backgroundColor: Colors.primaryLighter,
         paddingHorizontal: 10,
         paddingVertical: 4,
         borderRadius: Layout.borderRadius.full,
     },
     remainingText: {
         ...Typography.caption,
-        color: Colors.tertiary,
+        color: Colors.primary,
         fontWeight: '600',
     },
     closeBtn: {
@@ -407,7 +455,7 @@ const styles = StyleSheet.create({
         width: 64,
         height: 64,
         borderRadius: 20,
-        backgroundColor: Colors.tertiaryLight,
+        backgroundColor: Colors.primaryLighter,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: Spacing.l,
@@ -440,7 +488,7 @@ const styles = StyleSheet.create({
     },
     quickActionText: {
         ...Typography.body2,
-        color: Colors.tertiary,
+        color: Colors.primary,
         fontWeight: '600',
     },
 
@@ -480,26 +528,14 @@ const styles = StyleSheet.create({
         width: 22,
         height: 22,
         borderRadius: 6,
-        backgroundColor: Colors.tertiaryLight,
+        backgroundColor: Colors.primaryLighter,
         alignItems: 'center',
         justifyContent: 'center',
     },
     assistantLabel: {
         ...Typography.caption,
-        color: Colors.tertiary,
+        color: Colors.primary,
         fontWeight: '700',
-    },
-
-    // Typing
-    typingRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: Spacing.s,
-        paddingVertical: Spacing.s,
-    },
-    typingText: {
-        ...Typography.caption,
-        color: Colors.textTertiary,
     },
 
     // Copy button

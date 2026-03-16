@@ -94,8 +94,8 @@ const VodActionSheet = ({ item, onWatch, onTranscribe, onAutoWatch, onClose }: {
                     <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
                 </TouchableOpacity>
                 <TouchableOpacity style={sheetStyles.action} onPress={onTranscribe} activeOpacity={0.7}>
-                    <View style={[sheetStyles.actionIcon, { backgroundColor: Colors.tertiaryLight }]}>
-                        <Ionicons name="text" size={22} color={Colors.tertiary} />
+                    <View style={[sheetStyles.actionIcon, { backgroundColor: Colors.primaryLighter }]}>
+                        <Ionicons name="text" size={22} color={Colors.primary} />
                     </View>
                     <View style={sheetStyles.actionText}>
                         <Text style={sheetStyles.actionLabel}>텍스트 추출</Text>
