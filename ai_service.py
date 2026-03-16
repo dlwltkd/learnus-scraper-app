@@ -230,6 +230,46 @@ Transcript:
         )
         return response.choices[0].message.content.strip()
 
+    def chat_about_transcript(self, transcript: str, course_name: str, lecture_title: str, messages: list) -> str:
+        """
+        Multi-turn chat about a lecture transcript.
+        messages: list of {role: "user"|"assistant", content: str}
+        Returns the assistant's reply.
+        """
+        # Truncate transcript to fit within context window
+        truncated = transcript[:80000]
+
+        system_prompt = f"""You are a Korean academic assistant helping a student understand a lecture.
+You answer based on the lecture transcript provided below. You can:
+- Answer questions about the lecture content
+- Generate study notes, flashcards, or summaries
+- Explain concepts mentioned in the lecture
+- Help with exam preparation
+
+Always respond in Korean (해요체). Be concise and helpful.
+If asked about something not in the transcript, say so honestly.
+
+Course: {course_name}
+Lecture: {lecture_title}
+
+=== Transcript ===
+{truncated}
+=== End Transcript ==="""
+
+        api_messages = [{"role": "system", "content": system_prompt}]
+        api_messages.extend(messages)
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=api_messages,
+                max_tokens=1000,
+                temperature=0.5,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            raise RuntimeError(f"AI chat failed: {e}")
+
     def summarize_text(self, text: str, max_length: int = 150) -> str:
         """
         Summarizes a long text into a concise notification body (approx max_length chars).

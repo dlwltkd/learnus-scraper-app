@@ -381,10 +381,9 @@ const styles = StyleSheet.create({
 
     // Empty state
     emptyContainer: {
-        flex: 1,
         alignItems: 'center',
-        justifyContent: 'center',
         paddingHorizontal: Spacing.xl,
+        paddingTop: Spacing.xxl,
     },
     emptyIconWrap: {
         width: 64,

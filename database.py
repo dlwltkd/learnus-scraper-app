@@ -26,6 +26,10 @@ class User(Base):
     push_token = Column(String, nullable=True)
     notification_preferences = Column(JSON, default={})
     notifications_initialized = Column(Boolean, default=False)  # False = first sync pending (no notifications)
+
+    # AI Chat rate limiting
+    chat_count_today = Column(Integer, default=0)
+    chat_count_date = Column(String, nullable=True)  # ISO date "2026-03-16"
     
     courses = relationship("Course", back_populates="owner", cascade="all, delete-orphan")
 
@@ -170,6 +174,13 @@ def init_db(db_url=None):
                 UPDATE courses SET is_initialized = TRUE
                 WHERE owner_id IN (SELECT id FROM users WHERE notifications_initialized = TRUE)
             """))
+            conn.commit()
+
+    # Migration: add AI chat rate limit columns to users
+    if 'chat_count_today' not in existing_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN chat_count_today INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN chat_count_date TEXT"))
             conn.commit()
 
     return sessionmaker(bind=engine)
