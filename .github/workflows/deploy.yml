@@ -6,11 +6,10 @@ on:
       - main
 
 jobs:
-  deploy:
+  deploy-api:
     runs-on: ubuntu-latest
-
     steps:
-      - name: SSH into Droplet and deploy
+      - name: Deploy API
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DROPLET_HOST }}
@@ -21,3 +20,35 @@ jobs:
             git pull origin main
             docker compose up -d --no-deps --build api
             docker compose up -d --no-deps worker
+
+  deploy-worker:
+    runs-on: ubuntu-latest
+    needs: deploy-api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            worker:
+              - 'worker.py'
+              - 'scheduler.py'
+              - 'ai_service.py'
+              - 'moodle_client.py'
+              - 'database.py'
+              - 'requirements.txt'
+              - 'Dockerfile'
+
+      - name: Rebuild worker
+        if: steps.changes.outputs.worker == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            docker compose up -d --no-deps --build worker
