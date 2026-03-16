@@ -215,6 +215,7 @@ export default function LoginScreen({
         const isAuthenticatedPage =
             url === 'https://ys.learnus.org/' ||
             url === 'https://ys.learnus.org' ||
+            url.startsWith('https://ys.learnus.org/?') ||
             url.includes('/my/') ||
             url.includes('/course/') ||
             url.includes('/mod/');
