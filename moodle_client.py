@@ -537,8 +537,14 @@ class MoodleClient:
             self.logger.error(f"get_vod_stream_url failed for VOD {vod_moodle_id}: {e}")
             return None
 
-    def _watch_laby(self, vod_id, viewer_url):
-        """Watch a laby-type VOD. Laby tracking is a single POST with state=3 on page open."""
+    def _watch_laby(self, vod_id, viewer_url, duration=None):
+        """Watch a laby-type VOD.
+        Tracking flow (from lab.MainApp.js):
+        1. POST to /mod/laby/action.php with state=3 (start)
+        2. POST to /webservice/rest/server.php with wsfunction=mod_laby_track, state=3 (play)
+        3. POST periodic state=8 ticks every intervalTime seconds
+        4. POST state=10 (ended)
+        """
         self.logger.info(f"Fetching laby viewer: {viewer_url}")
         try:
             response = self.session.get(viewer_url, headers={"Referer": self.base_url})
@@ -550,28 +556,75 @@ class MoodleClient:
                 self.logger.info(f"Laby VOD {vod_id} has no progress tracking, skipping.")
                 return False
 
+            # Parse action.php tracking params
             track_match = re.search(r'"track"\s*:\s*(\d+)', html)
             attempts_match = re.search(r'"attempts"\s*:\s*(\d+)', html)
             interval_match = re.search(r'"interval"\s*:\s*(\d+)', html)
-
             if not track_match:
                 self.logger.error(f"Could not find track ID in laby viewer for VOD {vod_id}")
                 return False
-
             track_id = track_match.group(1)
             attempts = attempts_match.group(1) if attempts_match else '1'
-            interval = interval_match.group(1) if interval_match else '60'
+            interval_sec = int(interval_match.group(1)) if interval_match else 60
+
+            # Parse webservice params from redirect URL
+            redirect_match = re.search(r'location\.href\s*=\s*"([^"]+)"', html)
+            wstoken = asskey = att = cmsid = None
+            if redirect_match:
+                redirect_url = redirect_match.group(1)
+                wstoken = (re.search(r'rskey=([^&]+)', redirect_url) or [None, None])[1]
+                asskey  = (re.search(r'asskey=([^&]+)', redirect_url) or [None, None])[1]
+                att     = (re.search(r'att=([^&]+)', redirect_url) or [None, None])[1]
+                cmsid   = (re.search(r'cmsid=([^&]+)', redirect_url) or [None, None])[1]
+                # Parse duration from cpltime if not provided (format MM:SS or HH:MM:SS)
+                if not duration:
+                    cpltime = (re.search(r'cpltime=([^&]+)', redirect_url) or [None, None])[1]
+                    if cpltime:
+                        parts = cpltime.split(':')
+                        if len(parts) == 2:
+                            duration = int(parts[0]) * 60 + int(parts[1])
+                        elif len(parts) == 3:
+                            duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
 
             action_url = f"{self.base_url}/mod/laby/action.php"
+            ws_url = f"{self.base_url}/webservice/rest/server.php"
+            has_ws = all([wstoken, asskey, att, cmsid])
+
+            def send_ws(state, pos_old, pos_new):
+                if not has_ws:
+                    return
+                self.session.post(ws_url, data={
+                    'wstoken': wstoken, 'wsfunction': 'mod_laby_track',
+                    'moodlewsrestformat': 'json',
+                    'asskey': asskey, 'att': att, 'cmsid': cmsid,
+                    'state': state, 'positionold': pos_old, 'positionnew': pos_new,
+                })
+
+            # 1. action.php start signal
             r = self.session.post(action_url, headers={"Referer": viewer_url}, data={
-                'type': 'track_for_onwindow',
-                'track': track_id,
-                'state': 3,
-                'position': 0,
-                'attempts': attempts,
-                'interval': interval,
+                'type': 'track_for_onwindow', 'track': track_id,
+                'state': 3, 'position': 0, 'attempts': attempts, 'interval': interval_sec,
             })
-            self.logger.info(f"Laby VOD {vod_id} track_for_onwindow state=3: {r.text[:80]}")
+            self.logger.info(f"Laby VOD {vod_id} action.php state=3: {r.text[:80]}")
+
+            # 2. Webservice play signal
+            send_ws(3, 0, 0)
+
+            if not duration:
+                self.logger.warning(f"Laby VOD {vod_id}: no duration, sending ended signal immediately")
+                send_ws(10, 0, 0)
+                return True
+
+            # 3. Periodic ticks
+            pos = 0
+            while pos < duration:
+                time.sleep(interval_sec)
+                pos = min(pos + interval_sec, duration)
+                send_ws(8, pos - interval_sec, pos)
+
+            # 4. Ended
+            send_ws(10, duration, duration)
+            self.logger.info(f"Laby VOD {vod_id} watch complete.")
             return True
         except Exception as e:
             self.logger.error(f"_watch_laby failed for VOD {vod_id}: {e}")
@@ -587,7 +640,7 @@ class MoodleClient:
         - viewer_url: override the viewer URL (required for laby-type VODs)
         """
         if viewer_url and '/mod/laby/' in viewer_url:
-            return self._watch_laby(vod_id, viewer_url)
+            return self._watch_laby(vod_id, viewer_url, duration=duration)
         viewer_url = viewer_url or f"{self.base_url}/mod/vod/viewer.php?id={vod_id}"
         self.logger.info(f"Fetching VOD viewer: {viewer_url}")
         try:

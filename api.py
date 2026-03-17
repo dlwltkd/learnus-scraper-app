@@ -729,10 +729,11 @@ def trigger_watch_all(user: User = Depends(get_current_user), db: Session = Depe
     return {"status": "started", "message": "VOD watching started in background"}
 
 @app.post("/debug/vod-watch-fast/{vod_id}")
-def debug_vod_watch_fast(vod_id: int, user: User = Depends(get_current_user)):
+def debug_vod_watch_fast(vod_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Run watch_vod with fake spread logtimes. Completes instantly, checks attendance page after."""
     client = get_moodle_client(user)
-    success = client.watch_vod(vod_id)
+    vod = db.query(VOD).filter(VOD.moodle_id == vod_id).first()
+    success = client.watch_vod(vod_id, duration=vod.duration if vod else None, viewer_url=vod.url if vod else None)
     return {"vod_id": vod_id, "success": success}
 
 @app.post("/debug/vod-time-test/{vod_id}")
