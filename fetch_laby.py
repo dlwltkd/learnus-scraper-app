@@ -5,9 +5,9 @@ ver = f"?ver={int(datetime.now().timestamp() * 1000)}"
 base = "https://alrs.yonsei.ac.kr/lab241player_180124/lab-script"
 
 files = [
-    f"lab.Mainlauncher.js{ver}",
-    f"lab.BizPlayController.js{ver}",
-    f"lab.UtilAjax.js{ver}",
+    f"lab.MainApp.js{ver}",
+    f"lab.DtoStatscontentsinfoService.js{ver}",
+    f"lab.BizVideoPlayer.js{ver}",
 ]
 
 for filename in files:
