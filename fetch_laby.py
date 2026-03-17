@@ -1,7 +1,8 @@
-from database import SessionLocal, User
+from database import init_db, User
 from moodle_client import MoodleClient
 import json
 
+SessionLocal = init_db()
 db = SessionLocal()
 user = db.query(User).filter(User.moodle_username == 'moodle_631292').first()
 if not user:
