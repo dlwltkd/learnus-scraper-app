@@ -4,6 +4,7 @@ sys.path.insert(0, '/app')
 from database import init_db, User
 from api import get_moodle_client
 import re
+import requests
 
 SessionLocal = init_db()
 db = SessionLocal()
@@ -15,25 +16,37 @@ if not user or not user.moodle_cookies:
 print(f"Using user: {user.username}")
 client = get_moodle_client(user)
 
-# Step 1: fetch laby viewer to get the redirect URL
+# Step 1: fetch laby viewer to get redirect URL
 r = client.session.get("https://ys.learnus.org/mod/laby/viewer.php?i=5254")
-print(f"Laby viewer status: {r.status_code}")
-
-# Extract the redirect URL from the JS
 match = re.search(r'location\.href\s*=\s*"([^"]+)"', r.text)
-if not match:
-    print("Could not find redirect URL")
-    exit(1)
-
 external_url = match.group(1)
-print(f"External player URL: {external_url[:100]}...")
+print(f"External URL: {external_url[:120]}")
 
-# Step 2: fetch the external player
-r2 = client.session.get(external_url)
+# Step 2: fetch external player page
+r2 = requests.get(external_url)
 print(f"External player status: {r2.status_code}")
-print(f"Final URL: {r2.url}")
 
-with open("/app/laby_external_player.html", "w", encoding="utf-8") as f:
-    f.write(r2.text)
-print("Saved to /app/laby_external_player.html")
+# Find all JS src files loaded
+js_files = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', r2.text)
+print(f"\nJS files loaded:")
+for js in js_files:
+    print(f"  {js}")
+
+# Step 3: fetch each JS file and save
+base = "https://alrs.yonsei.ac.kr"
+for js in js_files:
+    if 'jquery' in js.lower():
+        continue
+    url = js if js.startswith('http') else base + js
+    print(f"\nFetching: {url}")
+    try:
+        rjs = requests.get(url, timeout=10)
+        filename = js.split('/')[-1].split('?')[0]
+        path = f"/app/laby_js_{filename}"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(rjs.text)
+        print(f"  Saved {len(rjs.text)} chars to {path}")
+    except Exception as e:
+        print(f"  Failed: {e}")
+
 db.close()
