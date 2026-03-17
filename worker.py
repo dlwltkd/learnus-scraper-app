@@ -138,7 +138,7 @@ def _run_watch_one(payload: dict):
         client = get_client(user)
         if not client:
             raise ValueError(f"No valid Moodle session for user {user_id}")
-        success = client.watch_vod(vod_moodle_id, duration=vod.duration if vod else None)
+        success = client.watch_vod(vod_moodle_id, duration=vod.duration if vod else None, viewer_url=vod.url if vod else None)
         if success and vod:
             vod.is_completed = True
             db.commit()

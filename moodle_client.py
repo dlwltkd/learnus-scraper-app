@@ -324,6 +324,12 @@ class MoodleClient:
                     name = re.sub(r'<[^>]+>', '', name_match.group(1)).strip() if name_match else "Unknown"
                     url_match = re.search(r'href="([^"]+)"', inner_html)
                     item_url = url_match.group(1) if url_match else ""
+                    if 'modtype_laby' in activity_type_str:
+                        laby_viewer_match = re.search(r"window\.open\('(/mod/laby/viewer\.php\?i=\d+)'", inner_html)
+                        if laby_viewer_match:
+                            item_url = f"{self.base_url}{laby_viewer_match.group(1)}"
+                    elif 'modtype_vod' in activity_type_str:
+                        item_url = f"{self.base_url}/mod/vod/viewer.php?id={module_id}"
                     is_completed = 'completion-auto-y' in inner_html or 'completion-manual-y' in inner_html or 'text-success' in inner_html
                     has_tracking = 'class="autocompletion"' in inner_html or category != 'vods'
                     item_data = {'id': int(module_id), 'name': name, 'url': item_url, 'is_completed': is_completed, 'has_tracking': has_tracking}
@@ -510,12 +516,12 @@ class MoodleClient:
             return ast.literal_eval(f"[{args_str}]")
         except: return None
 
-    def get_vod_stream_url(self, vod_moodle_id):
+    def get_vod_stream_url(self, vod_moodle_id, viewer_url=None):
         """
         Fetches the VOD viewer page and extracts the HLS .m3u8 stream URL.
         Returns the URL string or None if not found.
         """
-        viewer_url = f"{self.base_url}/mod/vod/viewer.php?id={vod_moodle_id}"
+        viewer_url = viewer_url or f"{self.base_url}/mod/vod/viewer.php?id={vod_moodle_id}"
         self.logger.info(f"Fetching VOD viewer for stream URL: {viewer_url}")
         try:
             response = self.session.get(viewer_url, timeout=15)
@@ -531,15 +537,19 @@ class MoodleClient:
             self.logger.error(f"get_vod_stream_url failed for VOD {vod_moodle_id}: {e}")
             return None
 
-    def watch_vod(self, vod_id, duration=None):
+    def watch_vod(self, vod_id, duration=None, viewer_url=None):
         """Watch a VOD by replicating the exact signals the browser sends.
         - logtime = args[22] (page load time), constant throughout
-        - positionfrom == positionto == current video position  
+        - positionfrom == positionto == current video position
         - state=3 play, state=8 periodic tick, state=10 ended
         - vod_track_for_onwindow state=99 sent after every vod_log
         - duration: real video length in seconds (from DB); overrides args[10] if provided
+        - viewer_url: override the viewer URL (required for laby-type VODs)
         """
-        viewer_url = f"{self.base_url}/mod/vod/viewer.php?id={vod_id}"
+        if viewer_url and '/mod/laby/' in viewer_url:
+            self.logger.warning(f"Skipping auto-watch for laby VOD {vod_id} — laby tracking not yet supported")
+            return False
+        viewer_url = viewer_url or f"{self.base_url}/mod/vod/viewer.php?id={vod_id}"
         self.logger.info(f"Fetching VOD viewer: {viewer_url}")
         try:
             response = self.session.get(viewer_url, headers={"Referer": self.base_url})

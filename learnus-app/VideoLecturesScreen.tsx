@@ -263,7 +263,7 @@ const VideoLecturesScreen = () => {
 
     const openWebViewer = async (item: any) => {
         const cookies = await AsyncStorage.getItem('userToken') || '';
-        const viewerUrl = `https://ys.learnus.org/mod/vod/viewer.php?id=${item.id}`;
+        const viewerUrl = item.url || `https://ys.learnus.org/mod/vod/viewer.php?id=${item.id}`;
         await ScreenOrientation.unlockAsync();
         setWebViewer({ url: viewerUrl, title: item.title, cookies });
     };
