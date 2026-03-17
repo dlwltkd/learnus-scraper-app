@@ -537,6 +537,46 @@ class MoodleClient:
             self.logger.error(f"get_vod_stream_url failed for VOD {vod_moodle_id}: {e}")
             return None
 
+    def _watch_laby(self, vod_id, viewer_url):
+        """Watch a laby-type VOD. Laby tracking is a single POST with state=3 on page open."""
+        self.logger.info(f"Fetching laby viewer: {viewer_url}")
+        try:
+            response = self.session.get(viewer_url, headers={"Referer": self.base_url})
+            response.raise_for_status()
+            html = response.text
+
+            is_progress = re.search(r'var\s+is_progress\s*=\s*(\d+)', html)
+            if not is_progress or is_progress.group(1) == '0':
+                self.logger.info(f"Laby VOD {vod_id} has no progress tracking, skipping.")
+                return False
+
+            track_match = re.search(r'"track"\s*:\s*(\d+)', html)
+            attempts_match = re.search(r'"attempts"\s*:\s*(\d+)', html)
+            interval_match = re.search(r'"interval"\s*:\s*(\d+)', html)
+
+            if not track_match:
+                self.logger.error(f"Could not find track ID in laby viewer for VOD {vod_id}")
+                return False
+
+            track_id = track_match.group(1)
+            attempts = attempts_match.group(1) if attempts_match else '1'
+            interval = interval_match.group(1) if interval_match else '60'
+
+            action_url = f"{self.base_url}/mod/laby/action.php"
+            r = self.session.post(action_url, headers={"Referer": viewer_url}, data={
+                'type': 'track_for_onwindow',
+                'track': track_id,
+                'state': 3,
+                'position': 0,
+                'attempts': attempts,
+                'interval': interval,
+            })
+            self.logger.info(f"Laby VOD {vod_id} track_for_onwindow state=3: {r.text[:80]}")
+            return True
+        except Exception as e:
+            self.logger.error(f"_watch_laby failed for VOD {vod_id}: {e}")
+            return False
+
     def watch_vod(self, vod_id, duration=None, viewer_url=None):
         """Watch a VOD by replicating the exact signals the browser sends.
         - logtime = args[22] (page load time), constant throughout
@@ -547,8 +587,7 @@ class MoodleClient:
         - viewer_url: override the viewer URL (required for laby-type VODs)
         """
         if viewer_url and '/mod/laby/' in viewer_url:
-            self.logger.warning(f"Skipping auto-watch for laby VOD {vod_id} — laby tracking not yet supported")
-            return False
+            return self._watch_laby(vod_id, viewer_url)
         viewer_url = viewer_url or f"{self.base_url}/mod/vod/viewer.php?id={vod_id}"
         self.logger.info(f"Fetching VOD viewer: {viewer_url}")
         try:
