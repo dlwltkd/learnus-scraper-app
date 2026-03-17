@@ -4,9 +4,16 @@ import json
 
 SessionLocal = init_db()
 db = SessionLocal()
+print("All users:")
+for u in db.query(User).all():
+    print(f"  id={u.id} username={u.username} moodle_username={u.moodle_username}")
+
 user = db.query(User).filter(User.moodle_username == 'moodle_631292').first()
 if not user:
-    print("User not found")
+    print("User not found by moodle_username, trying username...")
+    user = db.query(User).filter(User.username == 'moodle_631292').first()
+if not user:
+    print("Still not found, exiting")
     exit(1)
 
 cookies = json.loads(user.moodle_cookies)
