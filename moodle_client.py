@@ -315,7 +315,7 @@ class MoodleClient:
                 if 'modtype_assign' in activity_type_str: category = 'assignments'
                 elif 'modtype_ubfile' in activity_type_str: category = 'files'
                 elif 'modtype_ubboard' in activity_type_str: category = 'boards'
-                elif 'modtype_vod' in activity_type_str: category = 'vods'
+                elif 'modtype_vod' in activity_type_str or 'modtype_laby' in activity_type_str: category = 'vods'
                 elif 'modtype_quiz' in activity_type_str or 'quiz' in activity_type_str: category = 'assignments'
                 elif 'modtype_feedback' in activity_type_str: category = 'assignments' # Treat surveys as assignments
                 
