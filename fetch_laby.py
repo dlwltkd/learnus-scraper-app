@@ -1,10 +1,24 @@
 import requests
+from datetime import datetime
 
-url = "https://alrs.yonsei.ac.kr/lab241player_180124/lab-script/lab.AppImport.js"
-print(f"Fetching: {url}")
-r = requests.get(url, timeout=15)
-print(f"Status: {r.status_code}, Size: {len(r.text)} chars")
+ver = f"?ver={int(datetime.now().timestamp() * 1000)}"
+base = "https://alrs.yonsei.ac.kr/lab241player_180124/lab-script"
 
-with open("/app/laby_js_AppImport.js", "w", encoding="utf-8") as f:
-    f.write(r.text)
-print("Saved to /app/laby_js_AppImport.js")
+files = [
+    f"lab.Mainlauncher.js{ver}",
+    f"lab.BizPlayController.js{ver}",
+    f"lab.UtilAjax.js{ver}",
+]
+
+for filename in files:
+    url = f"{base}/{filename}"
+    print(f"Fetching: {url}")
+    try:
+        r = requests.get(url, timeout=15)
+        print(f"  Status: {r.status_code}, Size: {len(r.text)} chars")
+        savename = filename.split('?')[0]
+        with open(f"/app/laby_js_{savename}", "w", encoding="utf-8") as f:
+            f.write(r.text)
+        print(f"  Saved: laby_js_{savename}")
+    except Exception as e:
+        print(f"  Failed: {e}")
