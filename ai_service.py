@@ -270,6 +270,42 @@ Lecture: {lecture_title}
         except Exception as e:
             raise RuntimeError(f"AI chat failed: {e}")
 
+    def chat_about_transcript_stream(self, transcript: str, course_name: str, lecture_title: str, messages: list):
+        """Streaming version of chat_about_transcript. Yields token strings."""
+        truncated = transcript[:80000]
+
+        system_prompt = f"""You are a Korean academic assistant helping a student understand a lecture.
+You answer based on the lecture transcript provided below. You can:
+- Answer questions about the lecture content
+- Generate study notes, flashcards, or summaries
+- Explain concepts mentioned in the lecture
+- Help with exam preparation
+
+Always respond in Korean (해요체). Be concise and helpful.
+If asked about something not in the transcript, say so honestly.
+
+Course: {course_name}
+Lecture: {lecture_title}
+
+=== Transcript ===
+{truncated}
+=== End Transcript ==="""
+
+        api_messages = [{"role": "system", "content": system_prompt}]
+        api_messages.extend(messages)
+
+        response = self.client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=api_messages,
+            max_tokens=1000,
+            temperature=0.5,
+            stream=True,
+        )
+        for chunk in response:
+            delta = chunk.choices[0].delta
+            if delta.content:
+                yield delta.content
+
     def summarize_text(self, text: str, max_length: int = 150) -> str:
         """
         Summarizes a long text into a concise notification body (approx max_length chars).

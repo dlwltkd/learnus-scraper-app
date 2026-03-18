@@ -1,4 +1,5 @@
 import axios from 'axios';
+import EventSource from 'react-native-sse';
 import { secureStorage } from './secureStorage';
 
 const AUTH_TOKEN_KEY = 'auth_token';
@@ -156,6 +157,64 @@ export interface ChatMessage {
 export const chatWithVod = async (vodMoodleId: number, messages: ChatMessage[]): Promise<{ status: string; reply: string; remaining: number }> => {
     const response = await api.post(`/vods/${vodMoodleId}/chat`, { messages });
     return response.data;
+};
+
+export interface StreamCallbacks {
+    onToken: (token: string) => void;
+    onDone: (remaining: number) => void;
+    onError: (error: string) => void;
+}
+
+export const chatWithVodStream = (
+    vodMoodleId: number,
+    messages: ChatMessage[],
+    callbacks: StreamCallbacks,
+): (() => void) => {
+    const url = `${API_URL}/vods/${vodMoodleId}/chat/stream`;
+
+    const es = new EventSource<'message' | 'done' | 'error'>(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { 'X-API-Token': authToken } : {}),
+        },
+        body: JSON.stringify({ messages }),
+    });
+
+    es.addEventListener('message', (event: any) => {
+        if (event.data) {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.token) callbacks.onToken(data.token);
+            } catch {}
+        }
+    });
+
+    es.addEventListener('done', (event: any) => {
+        if (event.data) {
+            try {
+                const data = JSON.parse(event.data);
+                callbacks.onDone(data.remaining);
+            } catch {}
+        }
+        es.close();
+    });
+
+    es.addEventListener('error', (event: any) => {
+        if (event.data) {
+            try {
+                const data = JSON.parse(event.data);
+                callbacks.onError(data.error);
+            } catch {
+                callbacks.onError('연결이 끊어졌어요.');
+            }
+        } else {
+            callbacks.onError('연결이 끊어졌어요.');
+        }
+        es.close();
+    });
+
+    return () => es.close();
 };
 
 // Auth & Login

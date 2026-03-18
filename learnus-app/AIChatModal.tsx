@@ -9,8 +9,7 @@ import { marked } from 'marked';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
-import { chatWithVod, ChatMessage } from './services/api';
-import TypingDots from './TypingDots';
+import { chatWithVodStream, ChatMessage } from './services/api';
 
 interface AIChatModalProps {
     visible: boolean;
@@ -24,6 +23,7 @@ interface DisplayMessage {
     id: string;
     role: 'user' | 'assistant';
     content: string;
+    isStreaming?: boolean;
 }
 
 const QUICK_ACTIONS = [
@@ -161,8 +161,23 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
     const [error, setError] = useState<string | null>(null);
     const scrollRef = useRef<ScrollView>(null);
 
+    const cleanupRef = useRef<(() => void) | null>(null);
+    const pendingTokensRef = useRef('');
+    const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    const stopStreaming = () => {
+        cleanupRef.current?.();
+        cleanupRef.current = null;
+        if (flushIntervalRef.current) {
+            clearInterval(flushIntervalRef.current);
+            flushIntervalRef.current = null;
+        }
+        pendingTokensRef.current = '';
+    };
+
     useEffect(() => {
         if (!visible) {
+            stopStreaming();
             setMessages([]);
             setInput('');
             setLoading(false);
@@ -171,13 +186,31 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
         }
     }, [visible]);
 
+    useEffect(() => {
+        return () => stopStreaming();
+    }, []);
+
     const scrollToBottom = () => {
         setTimeout(() => {
             scrollRef.current?.scrollToEnd({ animated: true });
         }, 100);
     };
 
-    const sendMessage = async (content: string) => {
+    const flushTokens = () => {
+        if (!pendingTokensRef.current) return;
+        const tokens = pendingTokensRef.current;
+        pendingTokensRef.current = '';
+        setMessages(prev => {
+            const last = prev[prev.length - 1];
+            if (last?.isStreaming) {
+                return [...prev.slice(0, -1), { ...last, content: last.content + tokens }];
+            }
+            return prev;
+        });
+        scrollToBottom();
+    };
+
+    const sendMessage = (content: string) => {
         if (!content.trim() || loading) return;
 
         const userMsg: DisplayMessage = {
@@ -185,9 +218,15 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
             role: 'user',
             content: content.trim(),
         };
+        const assistantMsg: DisplayMessage = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: '',
+            isStreaming: true,
+        };
 
         const newMessages = [...messages, userMsg];
-        setMessages(newMessages);
+        setMessages([...newMessages, assistantMsg]);
         setInput('');
         setError(null);
         setLoading(true);
@@ -198,26 +237,48 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
             content: m.content,
         }));
 
-        try {
-            const data = await chatWithVod(vodMoodleId, apiMessages);
-            const assistantMsg: DisplayMessage = {
-                id: `assistant-${Date.now()}`,
-                role: 'assistant',
-                content: data.reply,
-            };
-            setMessages(prev => [...prev, assistantMsg]);
-            setRemaining(data.remaining);
-            scrollToBottom();
-        } catch (e: any) {
-            const status = e?.response?.status;
-            if (status === 429) {
-                setError('일일 사용 한도에 도달했어요. 내일 다시 이용해주세요.');
-            } else {
-                setError('응답을 받지 못했어요. 다시 시도해주세요.');
-            }
-        } finally {
-            setLoading(false);
-        }
+        pendingTokensRef.current = '';
+        flushIntervalRef.current = setInterval(flushTokens, 50);
+
+        cleanupRef.current = chatWithVodStream(vodMoodleId, apiMessages, {
+            onToken: (token) => {
+                pendingTokensRef.current += token;
+            },
+            onDone: (remaining) => {
+                if (flushIntervalRef.current) {
+                    clearInterval(flushIntervalRef.current);
+                    flushIntervalRef.current = null;
+                }
+                // Final flush
+                const finalTokens = pendingTokensRef.current;
+                pendingTokensRef.current = '';
+                setMessages(prev => {
+                    const last = prev[prev.length - 1];
+                    if (last?.isStreaming) {
+                        return [...prev.slice(0, -1), { ...last, content: last.content + finalTokens, isStreaming: false }];
+                    }
+                    return prev;
+                });
+                setRemaining(remaining);
+                setLoading(false);
+                scrollToBottom();
+            },
+            onError: (errorMsg) => {
+                stopStreaming();
+                setMessages(prev => {
+                    const last = prev[prev.length - 1];
+                    if (last?.isStreaming && !last.content) {
+                        return prev.slice(0, -1);
+                    }
+                    if (last?.isStreaming) {
+                        return [...prev.slice(0, -1), { ...last, isStreaming: false }];
+                    }
+                    return prev;
+                });
+                setError(errorMsg);
+                setLoading(false);
+            },
+        });
     };
 
     const isEmpty = messages.length === 0;
@@ -308,25 +369,23 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                                         </View>
                                         <Text style={styles.assistantLabel}>AI 답변</Text>
                                     </View>
-                                    <SelectableMarkdown content={item.content} />
-                                    <CopyButton text={item.content} />
+                                    {item.isStreaming ? (
+                                        <Text style={styles.streamingText} selectable>
+                                            {item.content}
+                                            <Text style={styles.streamingCursor}>▌</Text>
+                                        </Text>
+                                    ) : (
+                                        <>
+                                            <SelectableMarkdown content={item.content} />
+                                            <CopyButton text={item.content} />
+                                        </>
+                                    )}
                                 </View>
                             );
                         })
                     )}
 
-                    {/* Typing indicator */}
-                    {loading && (
-                        <View style={styles.assistantTurn}>
-                            <View style={styles.assistantHeader}>
-                                <View style={styles.assistantIconWrap}>
-                                    <Ionicons name="sparkles" size={13} color={Colors.primary} />
-                                </View>
-                                <Text style={styles.assistantLabel}>AI 답변</Text>
-                            </View>
-                            <TypingDots />
-                        </View>
-                    )}
+                    {/* Spacer for scroll */}
                 </ScrollView>
 
                 {/* Error */}
@@ -536,6 +595,17 @@ const styles = StyleSheet.create({
         ...Typography.caption,
         color: Colors.primary,
         fontWeight: '700',
+    },
+
+    // Streaming text
+    streamingText: {
+        ...Typography.body1,
+        color: Colors.textPrimary,
+        lineHeight: 22,
+    },
+    streamingCursor: {
+        color: Colors.primary,
+        fontWeight: '300',
     },
 
     // Copy button

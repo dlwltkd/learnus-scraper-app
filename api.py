@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from typing import List, Optional
@@ -593,6 +594,64 @@ def chat_with_vod(vod_moodle_id: int, req: ChatRequest, user: User = Depends(get
 
     remaining = DAILY_CHAT_LIMIT - user.chat_count_today
     return {"status": "ok", "reply": reply, "remaining": remaining}
+
+@app.post("/vods/{vod_moodle_id}/chat/stream")
+def chat_with_vod_stream(vod_moodle_id: int, req: ChatRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Streaming version of chat — returns SSE events with tokens."""
+    from datetime import date as date_type
+
+    today_str = date_type.today().isoformat()
+    if user.chat_count_date != today_str:
+        user.chat_count_today = 0
+        user.chat_count_date = today_str
+
+    if user.chat_count_today >= DAILY_CHAT_LIMIT:
+        raise HTTPException(429, f"일일 채팅 한도({DAILY_CHAT_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
+
+    vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
+    if not vod:
+        raise HTTPException(404, "VOD not found")
+
+    cached = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
+    if not cached or not cached.transcript:
+        raise HTTPException(400, "Transcript not available — transcribe first")
+
+    course = db.query(Course).filter(Course.id == vod.course_id).first()
+    course_name = course.name if course else ""
+    lecture_title = vod.title or ""
+
+    user.chat_count_today += 1
+    db.commit()
+    remaining = DAILY_CHAT_LIMIT - user.chat_count_today
+    user_id = user.id
+
+    def event_generator():
+        try:
+            from ai_service import AIService
+            for token in AIService().chat_about_transcript_stream(
+                cached.transcript, course_name, lecture_title, req.messages
+            ):
+                data = json.dumps({"token": token}, ensure_ascii=False)
+                yield f"data: {data}\n\n"
+            yield f"event: done\ndata: {json.dumps({'remaining': remaining})}\n\n"
+        except Exception as e:
+            logger.error(f"Stream failed for VOD {vod_moodle_id}: {e}")
+            refund_db = SessionLocal()
+            try:
+                u = refund_db.query(User).filter(User.id == user_id).first()
+                if u:
+                    u.chat_count_today = max(0, u.chat_count_today - 1)
+                    refund_db.commit()
+            finally:
+                refund_db.close()
+            error_data = json.dumps({"error": "AI 응답 생성 중 오류가 발생했어요."}, ensure_ascii=False)
+            yield f"event: error\ndata: {error_data}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 @app.get("/courses/{course_id}/boards", response_model=List[BoardResponse])
 def get_boards(course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
