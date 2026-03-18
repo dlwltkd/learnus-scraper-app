@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
     View, Text, StyleSheet, Modal, TouchableOpacity,
-    TextInput, ScrollView, KeyboardAvoidingView, Platform,
-    Animated, Clipboard, Keyboard,
+    TextInput, ScrollView, Platform,
+    Animated, Clipboard,
 } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { WebView } from 'react-native-webview';
 import { marked } from 'marked';
 import Markdown from 'react-native-markdown-display';
@@ -175,14 +176,7 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
     const [loading, setLoading] = useState(false);
     const [remaining, setRemaining] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [keyboardVisible, setKeyboardVisible] = useState(false);
     const scrollRef = useRef<ScrollView>(null);
-
-    useEffect(() => {
-        const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
-        const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
-        return () => { showSub.remove(); hideSub.remove(); };
-    }, []);
 
     const cleanupRef = useRef<(() => void) | null>(null);
     const pendingTokensRef = useRef('');
@@ -315,7 +309,8 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
         >
             <KeyboardAvoidingView
                 style={[styles.container, { paddingTop: insets.top }]}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                behavior="padding"
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
             >
                 {/* Header */}
                 <View style={styles.header}>
@@ -422,7 +417,7 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                 )}
 
                 {/* Input */}
-                <View style={[styles.inputBar, { paddingBottom: keyboardVisible ? Spacing.s : (insets.bottom || Spacing.m) }]}>
+                <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, Spacing.m) }]}>
                     <TextInput
                         style={styles.textInput}
                         value={input}
@@ -690,6 +685,7 @@ const styles = StyleSheet.create({
         gap: Spacing.s,
         paddingHorizontal: Spacing.l,
         paddingTop: Spacing.s,
+        paddingBottom: Spacing.m,
         borderTopWidth: 1,
         borderTopColor: Colors.border,
         backgroundColor: Colors.surface,
