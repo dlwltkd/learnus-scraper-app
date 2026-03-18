@@ -30,6 +30,9 @@ class User(Base):
     notification_preferences = Column(JSON, default={})
     notifications_initialized = Column(Boolean, default=False)  # False = first sync pending (no notifications)
 
+    # Session health
+    session_expired_notified = Column(Boolean, default=False)  # True = already sent "session expired" push
+
     # AI Chat rate limiting
     chat_count_today = Column(Integer, default=0)
     chat_count_date = Column(String, nullable=True)  # ISO date "2026-03-16"
@@ -198,6 +201,12 @@ def init_db(db_url=None):
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN chat_count_today INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE users ADD COLUMN chat_count_date TEXT"))
+            conn.commit()
+
+    # Migration: add session_expired_notified column to users
+    if 'session_expired_notified' not in existing_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN session_expired_notified BOOLEAN DEFAULT FALSE"))
             conn.commit()
 
     # Migration: create jobs table if it doesn't exist yet

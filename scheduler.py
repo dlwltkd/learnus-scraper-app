@@ -379,6 +379,41 @@ def check_notices_job(SessionLocal):
     finally:
         db.close()
 
+def check_session_health_job(SessionLocal):
+    """
+    Runs every 30 minutes.
+    Checks each user's Moodle session validity and sends a push notification
+    if the session has expired (once, until they re-login).
+    """
+    logger.info("Running session health check...")
+    db = SessionLocal()
+    try:
+        users = db.query(User).filter(
+            User.moodle_cookies.isnot(None),
+            User.push_token.isnot(None),
+            User.session_expired_notified == False,
+        ).all()
+        for user in users:
+            try:
+                client = get_client(user)
+                if client is not None:
+                    continue  # Session is still valid
+                logger.warning(f"Session expired for {user.username}, sending push notification")
+                send_simple_push(
+                    user,
+                    "세션 만료",
+                    "로그인 세션이 만료되었습니다. 앱을 열어 다시 로그인해주세요.",
+                    notif_type="session_expired",
+                )
+                user.session_expired_notified = True
+                db.commit()
+            except Exception as e:
+                logger.error(f"Session health check failed for {user.username}: {e}")
+    except Exception as e:
+        logger.error(f"Session Health Check Job Failed: {e}")
+    finally:
+        db.close()
+
 def sync_dashboard_job(SessionLocal):
     """
     Runs every 60 minutes.

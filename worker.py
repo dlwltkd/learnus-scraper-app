@@ -13,7 +13,7 @@ from datetime import datetime
 from database import init_db, Job, VodTranscript, User, VOD, Course
 from ai_service import AIService
 from moodle_client import MoodleClient
-from scheduler import check_notices_job, sync_dashboard_job, watch_vods_for_user
+from scheduler import check_notices_job, sync_dashboard_job, check_session_health_job, watch_vods_for_user
 from apscheduler.schedulers.background import BackgroundScheduler
 from exponent_server_sdk import PushClient, PushMessage
 
@@ -184,8 +184,9 @@ def main():
     sched = BackgroundScheduler()
     sched.add_job(check_notices_job, 'interval', minutes=5, args=[SessionLocal])
     sched.add_job(sync_dashboard_job, 'interval', minutes=60, args=[SessionLocal])
+    sched.add_job(check_session_health_job, 'interval', minutes=30, args=[SessionLocal])
     sched.start()
-    logger.info("Scheduler started (notices every 5min, sync every 60min)")
+    logger.info("Scheduler started (notices every 5min, sync every 60min, session health every 30min)")
 
     logger.info("Polling for jobs...")
     while not _shutdown:

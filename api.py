@@ -322,6 +322,7 @@ def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
     
     # Store raw cookie string to preserve all cookies including keyless tokens (e.g. device UUID)
     user.moodle_cookies = req.cookies
+    user.session_expired_notified = False  # Reset — user just re-authenticated
     db.commit()
     db.refresh(user)
 
