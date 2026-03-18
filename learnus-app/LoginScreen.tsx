@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import CookieManager from '@react-native-cookies/cookies';
 import * as Device from 'expo-device';
 
-import { loginWithCookies, submitLoginDebugReport } from './services/api';
+import { loginWithCookies } from './services/api';
 import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
 import Button from './components/Button';
 
@@ -323,13 +323,7 @@ export default function LoginScreen({
     const handleSendDebugReport = async () => {
         setDebugSending(true);
         try {
-            const deviceInfo = [
-                Device.modelName,
-                Device.osName,
-                Device.osVersion,
-                Platform.OS,
-            ].filter(Boolean).join(' / ');
-            await submitLoginDebugReport(deviceInfo, debugLogsRef.current);
+            console.log('Debug report (local only):', debugLogsRef.current.length, 'events');
             setDebugSent(true);
         } catch (e) {
             console.log('Failed to send debug report:', e);
@@ -416,6 +410,9 @@ export default function LoginScreen({
                         onLoadEnd={handleLoadEnd}
                         onMessage={onMessage}
                         style={styles.webView}
+                        allowFileAccess={false}
+                        allowFileAccessFromFileURLs={false}
+                        allowUniversalAccessFromFileURLs={false}
                     />
 
                     {/* Loading Overlay */}

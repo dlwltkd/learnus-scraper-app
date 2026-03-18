@@ -38,6 +38,8 @@ LATEST_VERSION = _read_app_version()
 
 app = FastAPI(title="LearnUs Connect API (Beta)")
 
+ENABLE_DEBUG = os.getenv("ENABLE_DEBUG", "false").lower() == "true"
+
 
 @app.get("/version")
 def get_version():
@@ -684,7 +686,12 @@ def get_ai_summary(user: User = Depends(get_current_user), db: Session = Depends
 
 
 
-@app.get("/debug/vod-inspect/{vod_id}")
+def require_debug():
+    """Dependency that blocks debug endpoints unless ENABLE_DEBUG=true."""
+    if not ENABLE_DEBUG:
+        raise HTTPException(404, "Not found")
+
+@app.get("/debug/vod-inspect/{vod_id}", dependencies=[Depends(require_debug)])
 def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
     """Fetch a VOD viewer page and return parsed amd.progress args for debugging."""
     import re as _re, ast as _ast
@@ -747,7 +754,7 @@ def trigger_watch_all(user: User = Depends(get_current_user), db: Session = Depe
     db.commit()
     return {"status": "started", "message": "VOD watching started in background"}
 
-@app.post("/debug/vod-watch-fast/{vod_id}")
+@app.post("/debug/vod-watch-fast/{vod_id}", dependencies=[Depends(require_debug)])
 def debug_vod_watch_fast(vod_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Run watch_vod with fake spread logtimes. Completes instantly, checks attendance page after."""
     client = get_moodle_client(user)
@@ -755,7 +762,7 @@ def debug_vod_watch_fast(vod_id: int, user: User = Depends(get_current_user), db
     success = client.watch_vod(vod_id, duration=vod.duration if vod else None, viewer_url=vod.url if vod else None)
     return {"vod_id": vod_id, "success": success}
 
-@app.post("/debug/vod-time-test/{vod_id}")
+@app.post("/debug/vod-time-test/{vod_id}", dependencies=[Depends(require_debug)])
 def debug_vod_time_test(vod_id: int, user: User = Depends(get_current_user)):
     """Send open signal, wait 30s with 2 progress ticks, then close. Check attendance page after."""
     import re as _re, ast as _ast, time as _time
@@ -813,7 +820,7 @@ def debug_vod_time_test(vod_id: int, user: User = Depends(get_current_user)):
     except Exception as e:
         return {"error": str(e)}
 
-@app.post("/debug/vod-action-test/{vod_id}")
+@app.post("/debug/vod-action-test/{vod_id}", dependencies=[Depends(require_debug)])
 def debug_vod_action_test(vod_id: int, user: User = Depends(get_current_user)):
     """Fire one start_log POST to action.php and return the raw response for debugging."""
     import re as _re, ast as _ast, time as _time
@@ -850,7 +857,7 @@ def debug_vod_action_test(vod_id: int, user: User = Depends(get_current_user)):
     except Exception as e:
         return {"error": str(e)}
 
-@app.post("/debug/create-test-assignment")
+@app.post("/debug/create-test-assignment", dependencies=[Depends(require_debug)])
 def create_test_assignment(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     # 1. Find or Create Test Course
     test_course = db.query(Course).filter(Course.owner_id == user.id, Course.name == "[TEST] Debug Course").first()
@@ -884,7 +891,7 @@ def create_test_assignment(user: User = Depends(get_current_user), db: Session =
 
 
 
-@app.post("/debug/delete-test-assignments")
+@app.post("/debug/delete-test-assignments", dependencies=[Depends(require_debug)])
 def delete_test_assignments(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     test_course = db.query(Course).filter(Course.owner_id == user.id, Course.name == "[TEST] Debug Course").first()
     if not test_course:
@@ -895,7 +902,7 @@ def delete_test_assignments(user: User = Depends(get_current_user), db: Session 
 
     return {"status": "success", "message": f"Deleted {deleted_count} test assignments."}
 
-@app.post("/debug/create-test-vod")
+@app.post("/debug/create-test-vod", dependencies=[Depends(require_debug)])
 def create_test_vod(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     # 1. Find or Create Test Course
     test_course = db.query(Course).filter(Course.owner_id == user.id, Course.name == "[TEST] Debug Course").first()
@@ -931,7 +938,7 @@ def create_test_vod(user: User = Depends(get_current_user), db: Session = Depend
 
     return {"status": "success", "message": f"Created {created_count} VODs (Ending in 1h, 5h, 12h, 24h from now). They should appear in 'available_vods' on dashboard."}
 
-@app.post("/debug/delete-test-vods")
+@app.post("/debug/delete-test-vods", dependencies=[Depends(require_debug)])
 def delete_test_vods(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     test_course = db.query(Course).filter(Course.owner_id == user.id, Course.name == "[TEST] Debug Course").first()
     if not test_course:
@@ -942,7 +949,7 @@ def delete_test_vods(user: User = Depends(get_current_user), db: Session = Depen
 
     return {"status": "success", "message": f"Deleted {deleted_count} test VODs."}
 
-@app.post("/debug/send-push")
+@app.post("/debug/send-push", dependencies=[Depends(require_debug)])
 def send_push_direct(
     payload: dict,
     user: User = Depends(get_current_user),
@@ -973,7 +980,7 @@ def send_push_direct(
         return {"status": "error", "message": str(e)}
 
 
-@app.get("/debug/login-reports")
+@app.get("/debug/login-reports", dependencies=[Depends(require_debug)])
 def get_login_debug_reports(db: Session = Depends(get_db)):
     reports = db.query(LoginDebugReport).order_by(LoginDebugReport.created_at.desc()).all()
     return [
@@ -986,7 +993,7 @@ def get_login_debug_reports(db: Session = Depends(get_db)):
         for r in reports
     ]
 
-@app.post("/debug/login-report")
+@app.post("/debug/login-report", dependencies=[Depends(require_debug)])
 def submit_login_debug_report(req: LoginDebugReportRequest, db: Session = Depends(get_db)):
     """Accept login debug logs from unauthenticated users stuck on login."""
     report = LoginDebugReport(

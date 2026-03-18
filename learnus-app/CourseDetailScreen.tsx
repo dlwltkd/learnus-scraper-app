@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     StyleSheet,
     View,
@@ -7,16 +7,19 @@ import {
     ActivityIndicator,
     ScrollView,
     StatusBar,
-    Animated,
     RefreshControl,
 } from 'react-native';
-import { getAssignments, getBoards, getVods } from './services/api';
+import { getAssignments, getBoards, getVods, watchSingleVod } from './services/api';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
 import { Ionicons } from '@expo/vector-icons';
-import Card from './components/Card';
-import Badge from './components/Badge';
-import EmptyState, { InlineEmpty } from './components/EmptyState';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import { InlineEmpty } from './components/EmptyState';
+import { useToast } from './context/ToastContext';
+import ItemRow from './components/ItemRow';
+import VodActionSheet from './components/VodActionSheet';
+import VodWebViewer from './components/VodWebViewer';
 
 // ============================================
 // SECTION HEADER
@@ -45,14 +48,7 @@ const SectionHeader = ({ title, icon, iconColor = Colors.primary, count }: Secti
 // ============================================
 // BOARD ITEM
 // ============================================
-interface BoardItemProps {
-    board: any;
-    onPress: () => void;
-    isFirst: boolean;
-    isLast: boolean;
-}
-
-const BoardItem = ({ board, onPress, isFirst, isLast }: BoardItemProps) => (
+const BoardItem = ({ board, onPress, isFirst, isLast }: { board: any; onPress: () => void; isFirst: boolean; isLast: boolean }) => (
     <TouchableOpacity
         style={[
             styles.boardItem,
@@ -74,177 +70,21 @@ const BoardItem = ({ board, onPress, isFirst, isLast }: BoardItemProps) => (
 );
 
 // ============================================
-// VOD ITEM
-// ============================================
-interface VodItemProps {
-    vod: any;
-    index: number;
-}
-
-const VodItem = ({ vod, index }: VodItemProps) => {
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(20)).current;
-
-    useEffect(() => {
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 300,
-                delay: index * 50,
-                useNativeDriver: true,
-            }),
-            Animated.timing(slideAnim, {
-                toValue: 0,
-                duration: 300,
-                delay: index * 50,
-                useNativeDriver: true,
-            }),
-        ]).start();
-    }, []);
-
-    return (
-        <Animated.View
-            style={{
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-            }}
-        >
-            <View style={[styles.vodCard, vod.is_completed && styles.vodCardCompleted]}>
-                <View style={[styles.vodIcon, vod.is_completed && styles.vodIconCompleted]}>
-                    <Ionicons
-                        name="play-circle"
-                        size={22}
-                        color={vod.is_completed ? Colors.textTertiary : Colors.primary}
-                    />
-                </View>
-
-                <View style={styles.vodContent}>
-                    <Text
-                        style={[styles.vodTitle, vod.is_completed && styles.vodTitleCompleted]}
-                        numberOfLines={2}
-                    >
-                        {vod.title}
-                    </Text>
-                    <View style={styles.vodMeta}>
-                        <Ionicons name="calendar-outline" size={12} color={Colors.textTertiary} />
-                        <Text style={styles.vodDate}>
-                            {vod.start_date ? `${vod.start_date} ~ ${vod.end_date}` : '날짜 없음'}
-                        </Text>
-                    </View>
-                </View>
-
-                {vod.is_completed && (
-                    <View style={styles.completedBadge}>
-                        <Ionicons name="checkmark" size={14} color={Colors.success} />
-                    </View>
-                )}
-            </View>
-        </Animated.View>
-    );
-};
-
-// ============================================
-// ASSIGNMENT ITEM
-// ============================================
-interface AssignmentItemProps {
-    assignment: any;
-    index: number;
-}
-
-const AssignmentItem = ({ assignment, index }: AssignmentItemProps) => {
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(20)).current;
-
-    useEffect(() => {
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 300,
-                delay: index * 50,
-                useNativeDriver: true,
-            }),
-            Animated.timing(slideAnim, {
-                toValue: 0,
-                duration: 300,
-                delay: index * 50,
-                useNativeDriver: true,
-            }),
-        ]).start();
-    }, []);
-
-    const isPastDue = assignment.due_date && new Date(assignment.due_date) < new Date();
-
-    return (
-        <Animated.View
-            style={{
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-            }}
-        >
-            <View style={[styles.assignmentCard, assignment.is_completed && styles.assignmentCardCompleted]}>
-                <View style={[
-                    styles.assignmentIcon,
-                    assignment.is_completed && styles.assignmentIconCompleted,
-                    !assignment.is_completed && isPastDue && styles.assignmentIconOverdue,
-                ]}>
-                    <Ionicons
-                        name="document-text"
-                        size={20}
-                        color={
-                            assignment.is_completed
-                                ? Colors.textTertiary
-                                : isPastDue
-                                    ? Colors.error
-                                    : Colors.primary
-                        }
-                    />
-                </View>
-
-                <View style={styles.assignmentContent}>
-                    <Text
-                        style={[styles.assignmentTitle, assignment.is_completed && styles.assignmentTitleCompleted]}
-                        numberOfLines={2}
-                    >
-                        {assignment.title}
-                    </Text>
-                    <View style={styles.assignmentMeta}>
-                        <Ionicons
-                            name="time-outline"
-                            size={12}
-                            color={isPastDue && !assignment.is_completed ? Colors.error : Colors.textTertiary}
-                        />
-                        <Text style={[
-                            styles.assignmentDate,
-                            isPastDue && !assignment.is_completed && styles.assignmentDateOverdue,
-                        ]}>
-                            마감: {assignment.due_date || '날짜 없음'}
-                        </Text>
-                    </View>
-                </View>
-
-                {assignment.is_completed && (
-                    <View style={styles.completedBadge}>
-                        <Ionicons name="checkmark" size={14} color={Colors.success} />
-                    </View>
-                )}
-            </View>
-        </Animated.View>
-    );
-};
-
-// ============================================
 // MAIN COURSE DETAIL SCREEN
 // ============================================
 export default function CourseDetailScreen() {
     const route = useRoute();
     const navigation = useNavigation();
     const { course } = route.params as { course: any };
+    const { showSuccess, showError } = useToast();
 
     const [assignments, setAssignments] = useState<any[]>([]);
     const [boards, setBoards] = useState<any[]>([]);
     const [vods, setVods] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [actionSheet, setActionSheet] = useState<any | null>(null);
+    const [webViewer, setWebViewer] = useState<{ url: string; title: string; cookies: string } | null>(null);
 
     useEffect(() => {
         navigation.setOptions({
@@ -284,6 +124,67 @@ export default function CourseDetailScreen() {
     const onRefresh = () => {
         setRefreshing(true);
         loadData();
+    };
+
+    const openWebViewer = async (item: any) => {
+        const cookies = await AsyncStorage.getItem('userToken') || '';
+        const viewerUrl = item.url || `https://ys.learnus.org/mod/vod/viewer.php?id=${item.id}`;
+        await ScreenOrientation.unlockAsync();
+        setWebViewer({ url: viewerUrl, title: item.title, cookies });
+    };
+
+    const closeWebViewer = async () => {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        setWebViewer(null);
+    };
+
+    const handleWatch = async () => {
+        const item = actionSheet;
+        setActionSheet(null);
+        await openWebViewer(item);
+    };
+
+    const handleAutoWatch = async () => {
+        const item = actionSheet;
+        setActionSheet(null);
+        if (item.is_completed) {
+            showSuccess('이미 완료', '이미 시청 완료된 강의예요.');
+            return;
+        }
+        try {
+            await watchSingleVod(item.id);
+            showSuccess('시청 시작', '백그라운드에서 강의를 시청하고 있어요.');
+        } catch (e: any) {
+            if (e?.response?.status === 409) {
+                showError('진행 중', '전체 시청이 이미 실행 중이에요. 완료 후 다시 시도해주세요.');
+            } else {
+                showError('오류', '자동 시청을 시작할 수 없어요.');
+            }
+        }
+    };
+
+    const handleTranscribe = () => {
+        const item = actionSheet;
+        setActionSheet(null);
+        (navigation as any).navigate('VodTranscript', {
+            vodMoodleId: item.id,
+            title: item.title,
+            courseName: course.name,
+        });
+    };
+
+    const getVodState = (vod: any) => {
+        if (vod.is_completed) return 'completed' as const;
+        const now = new Date();
+        if (vod.end_date && new Date(vod.end_date) < now) return 'missed' as const;
+        if (vod.start_date && new Date(vod.start_date) > now) return 'upcoming' as const;
+        return 'pending' as const;
+    };
+
+    const getAssignmentState = (a: any) => {
+        if (a.is_completed) return 'completed' as const;
+        if (a.due_date && new Date(a.due_date) < new Date()) return 'missed' as const;
+        return 'pending' as const;
     };
 
     if (loading) {
@@ -370,11 +271,17 @@ export default function CourseDetailScreen() {
                     {vods.length === 0 ? (
                         <InlineEmpty message="동영상 강의가 없습니다." />
                     ) : (
-                        <View style={styles.itemsList}>
-                            {vods.map((vod, index) => (
-                                <VodItem key={vod.id} vod={vod} index={index} />
-                            ))}
-                        </View>
+                        vods.map((vod) => (
+                            <ItemRow
+                                key={vod.id}
+                                title={vod.title}
+                                courseName={course.name}
+                                meta={vod.end_date ? `~ ${new Date(vod.end_date).toLocaleDateString()} 마감` : undefined}
+                                state={getVodState(vod)}
+                                type="vod"
+                                onMenuPress={() => setActionSheet(vod)}
+                            />
+                        ))
                     )}
                 </View>
 
@@ -389,16 +296,40 @@ export default function CourseDetailScreen() {
                     {assignments.length === 0 ? (
                         <InlineEmpty message="과제가 없습니다." />
                     ) : (
-                        <View style={styles.itemsList}>
-                            {assignments.map((assignment, index) => (
-                                <AssignmentItem key={assignment.id} assignment={assignment} index={index} />
-                            ))}
-                        </View>
+                        assignments.map((a) => (
+                            <ItemRow
+                                key={a.id}
+                                title={a.title}
+                                courseName={course.name}
+                                meta={a.due_date ? `마감: ${a.due_date}` : undefined}
+                                state={getAssignmentState(a)}
+                                type="assignment"
+                            />
+                        ))
                     )}
                 </View>
 
                 <View style={{ height: 40 }} />
             </ScrollView>
+
+            {webViewer && (
+                <VodWebViewer
+                    url={webViewer.url}
+                    title={webViewer.title}
+                    cookies={webViewer.cookies}
+                    onClose={closeWebViewer}
+                />
+            )}
+
+            {actionSheet && (
+                <VodActionSheet
+                    item={actionSheet}
+                    onWatch={handleWatch}
+                    onTranscribe={handleTranscribe}
+                    onAutoWatch={handleAutoWatch}
+                    onClose={() => setActionSheet(null)}
+                />
+            )}
         </View>
     );
 }
@@ -534,121 +465,5 @@ const styles = StyleSheet.create({
         fontSize: 15,
         flex: 1,
         marginRight: Spacing.s,
-    },
-
-    // Items List
-    itemsList: {
-        gap: Spacing.s,
-    },
-
-    // VOD Card
-    vodCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: Colors.surface,
-        padding: Spacing.m,
-        borderRadius: Layout.borderRadius.l,
-        borderWidth: 1,
-        borderColor: Colors.border,
-        ...Layout.shadow.sm,
-    },
-    vodCardCompleted: {
-        opacity: 0.7,
-        backgroundColor: Colors.surfaceMuted,
-    },
-    vodIcon: {
-        width: 44,
-        height: 44,
-        borderRadius: 14,
-        backgroundColor: Colors.primaryLighter,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: Spacing.m,
-    },
-    vodIconCompleted: {
-        backgroundColor: Colors.surfaceMuted,
-    },
-    vodContent: {
-        flex: 1,
-    },
-    vodTitle: {
-        ...Typography.subtitle1,
-        fontSize: 15,
-        marginBottom: 4,
-    },
-    vodTitleCompleted: {
-        color: Colors.textTertiary,
-    },
-    vodMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    vodDate: {
-        ...Typography.caption,
-    },
-
-    // Assignment Card
-    assignmentCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: Colors.surface,
-        padding: Spacing.m,
-        borderRadius: Layout.borderRadius.l,
-        borderWidth: 1,
-        borderColor: Colors.border,
-        ...Layout.shadow.sm,
-    },
-    assignmentCardCompleted: {
-        opacity: 0.7,
-        backgroundColor: Colors.surfaceMuted,
-    },
-    assignmentIcon: {
-        width: 44,
-        height: 44,
-        borderRadius: 14,
-        backgroundColor: Colors.primaryLighter,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: Spacing.m,
-    },
-    assignmentIconCompleted: {
-        backgroundColor: Colors.surfaceMuted,
-    },
-    assignmentIconOverdue: {
-        backgroundColor: Colors.errorLight,
-    },
-    assignmentContent: {
-        flex: 1,
-    },
-    assignmentTitle: {
-        ...Typography.subtitle1,
-        fontSize: 15,
-        marginBottom: 4,
-    },
-    assignmentTitleCompleted: {
-        color: Colors.textTertiary,
-    },
-    assignmentMeta: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    assignmentDate: {
-        ...Typography.caption,
-    },
-    assignmentDateOverdue: {
-        color: Colors.error,
-    },
-
-    // Completed Badge
-    completedBadge: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        backgroundColor: Colors.successLight,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginLeft: Spacing.s,
     },
 });

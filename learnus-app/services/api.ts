@@ -1,5 +1,5 @@
 import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { secureStorage } from './secureStorage';
 
 const AUTH_TOKEN_KEY = 'auth_token';
 
@@ -18,7 +18,7 @@ let onSessionExpired: (() => void) | null = null;
 
 export const loadAuthToken = async () => {
     try {
-        const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+        const token = await secureStorage.getItem(AUTH_TOKEN_KEY);
         if (token) {
             authToken = token;
         }
@@ -33,7 +33,7 @@ export const setAuthToken = async (token: string | null) => {
     authToken = token;
     if (token) {
         try {
-            await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
+            await secureStorage.setItem(AUTH_TOKEN_KEY, token);
         } catch (error) {
             console.error("Failed to save auth token:", error);
         }
@@ -43,7 +43,7 @@ export const setAuthToken = async (token: string | null) => {
 export const clearAuthToken = async () => {
     authToken = null;
     try {
-        await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+        await secureStorage.removeItem(AUTH_TOKEN_KEY);
     } catch (error) {
         console.error("Failed to clear auth token:", error);
     }
@@ -193,26 +193,6 @@ export const fetchAISummary = async () => {
     }
 };
 
-export const createTestAssignment = async () => {
-    const response = await api.post('/debug/create-test-assignment');
-    return response.data;
-};
-
-export const deleteTestAssignments = async () => {
-    const response = await api.post('/debug/delete-test-assignments');
-    return response.data;
-};
-
-export const createTestVod = async () => {
-    const response = await api.post('/debug/create-test-vod');
-    return response.data;
-};
-
-export const deleteTestVods = async () => {
-    const response = await api.post('/debug/delete-test-vods');
-    return response.data;
-};
-
 export const registerPushToken = async (token: string) => {
     const response = await api.post('/auth/push-token', { token });
     return response.data;
@@ -249,14 +229,6 @@ export const checkAppVersion = async (): Promise<string | null> => {
     } catch {
         return null;
     }
-};
-
-export const submitLoginDebugReport = async (deviceInfo: string, logs: any[]) => {
-    const response = await api.post('/debug/login-report', {
-        device_info: deviceInfo,
-        logs,
-    });
-    return response.data;
 };
 
 export default api;

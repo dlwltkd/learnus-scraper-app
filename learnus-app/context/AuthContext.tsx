@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { secureStorage } from '../services/secureStorage';
 import { login as apiLogin, setupAxiosInterceptors, clearAuthToken, validateSession } from '../services/api';
 import { useToast } from './ToastContext';
 
@@ -65,7 +65,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     const loadStorage = async () => {
-        const storedCookie = await AsyncStorage.getItem('userToken');
+        const storedCookie = await secureStorage.getItem('userToken');
 
         // No stored token - skip loading, show login immediately
         if (!storedCookie) {
@@ -82,7 +82,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const result = await validateSession();
             if (!result.valid) {
                 console.log(`AuthContext: Moodle session expired on restore (${result.reason}), clearing`);
-                await AsyncStorage.removeItem('userToken');
+                await secureStorage.removeItem('userToken');
                 await clearAuthToken();
                 // Don't set isLoggedIn — user will see login screen
                 return;
@@ -100,7 +100,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log("AuthContext: Login requested");
         try {
             await apiLogin(cookie);
-            await AsyncStorage.setItem('userToken', cookie);
+            await secureStorage.setItem('userToken', cookie);
             setIsLoggedIn(true);
             setAutoLogout(false);
         } catch (e) {
@@ -112,7 +112,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const logout = async () => {
         console.log("AuthContext: Logout requested");
         try {
-            await AsyncStorage.removeItem('userToken');
+            await secureStorage.removeItem('userToken');
             await clearAuthToken();
         } catch (e) {
             console.error("Failed to clear auth storage", e);
