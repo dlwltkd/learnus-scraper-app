@@ -229,6 +229,19 @@ export const updateNotificationPreferences = async (prefs: PreferencesRequest) =
     return response.data;
 };
 
+export const validateSession = async (): Promise<{ valid: boolean; reason?: string }> => {
+    try {
+        const response = await api.get('/auth/validate-session');
+        return response.data;
+    } catch (error: any) {
+        if (error.response?.status === 401) {
+            return { valid: false, reason: 'token_invalid' };
+        }
+        // Network errors — don't force logout on transient failures
+        return { valid: true };
+    }
+};
+
 export const checkAppVersion = async (): Promise<string | null> => {
     try {
         const response = await axios.get(`${API_URL}/version`);

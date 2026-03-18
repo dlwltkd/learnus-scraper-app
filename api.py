@@ -230,6 +230,16 @@ def login(creds: LoginRequest, db: Session = Depends(get_db)):
     db.refresh(user)
     return {"status": "success", "api_token": user.api_token, "username": user.username}
 
+@app.get("/auth/validate-session")
+def validate_session(user: User = Depends(get_current_user)):
+    """Check if the user's Moodle session (cookies) is still valid."""
+    if not user.moodle_cookies:
+        return {"valid": False, "reason": "no_cookies"}
+    client = get_moodle_client(user)
+    if not client.is_session_valid():
+        return {"valid": False, "reason": "session_expired"}
+    return {"valid": True}
+
 @app.post("/auth/push-token")
 def register_push_token(req: PushTokenRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not req.token: raise HTTPException(400, "Token required")
@@ -710,6 +720,10 @@ def watch_single_vod(vod_moodle_id: int, user: User = Depends(get_current_user),
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
         raise HTTPException(404, "VOD not found")
+    # Validate Moodle session before queuing — prevents silent failure
+    client = get_moodle_client(user)
+    if not client.is_session_valid():
+        raise HTTPException(401, "Moodle session expired. Please re-login.")
     db.add(Job(type='watch_one', payload={'user_id': user.id, 'vod_moodle_id': vod_moodle_id}))
     db.commit()
     return {"status": "started"}
@@ -717,6 +731,10 @@ def watch_single_vod(vod_moodle_id: int, user: User = Depends(get_current_user),
 @app.post("/vods/watch-all")
 def trigger_watch_all(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Manually trigger background VOD watching for the current user only."""
+    # Validate Moodle session before queuing — prevents silent failure
+    client = get_moodle_client(user)
+    if not client.is_session_valid():
+        raise HTTPException(401, "Moodle session expired. Please re-login.")
     # Avoid duplicate: if a watch_all job is already pending/processing for this user, skip
     existing = db.query(Job).filter(
         Job.type == 'watch_all',

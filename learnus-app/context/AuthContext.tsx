@@ -1,6 +1,7 @@
-import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import React, { createContext, useState, useContext, ReactNode, useEffect, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { login as apiLogin, setupAxiosInterceptors, clearAuthToken } from '../services/api';
+import { login as apiLogin, setupAxiosInterceptors, clearAuthToken, validateSession } from '../services/api';
 import { useToast } from './ToastContext';
 
 interface AuthContextType {
@@ -20,18 +21,47 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [autoLogout, setAutoLogout] = useState(false);
 
     const [isLoading, setIsLoading] = useState(true);
+    const isLoggedInRef = useRef(false);
+
+    // Keep ref in sync so AppState callback always sees latest value
+    useEffect(() => {
+        isLoggedInRef.current = isLoggedIn;
+    }, [isLoggedIn]);
+
+    const handleSessionExpired = () => {
+        console.log("AuthContext: Session expired, logging out...");
+        showAlert(
+            "세션 만료",
+            "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
+            [{ text: "확인", onPress: () => logout() }],
+            'warning'
+        );
+    };
+
+    const checkMoodleSession = async () => {
+        try {
+            const result = await validateSession();
+            if (!result.valid) {
+                console.log(`AuthContext: Moodle session invalid (${result.reason}), forcing re-login`);
+                handleSessionExpired();
+            }
+        } catch (e) {
+            console.error("AuthContext: Session validation error", e);
+        }
+    };
 
     useEffect(() => {
-        setupAxiosInterceptors(() => {
-            console.log("AuthContext: Session expired, logging out...");
-            showAlert(
-                "세션 만료",
-                "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
-                [{ text: "확인", onPress: () => logout() }],
-                'warning'
-            );
-        });
+        setupAxiosInterceptors(handleSessionExpired);
         loadStorage();
+
+        // Re-validate Moodle session when app comes back to foreground
+        const handleAppState = (nextState: AppStateStatus) => {
+            if (nextState === 'active' && isLoggedInRef.current) {
+                checkMoodleSession();
+            }
+        };
+        const subscription = AppState.addEventListener('change', handleAppState);
+        return () => subscription.remove();
     }, []);
 
     const loadStorage = async () => {
@@ -47,6 +77,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
             console.log("AuthContext: Restoring session...");
             await apiLogin(storedCookie);
+
+            // Verify the Moodle session is actually still valid
+            const result = await validateSession();
+            if (!result.valid) {
+                console.log(`AuthContext: Moodle session expired on restore (${result.reason}), clearing`);
+                await AsyncStorage.removeItem('userToken');
+                await clearAuthToken();
+                // Don't set isLoggedIn — user will see login screen
+                return;
+            }
+
             setIsLoggedIn(true);
         } catch (e) {
             console.error("Failed to load auth storage", e);
