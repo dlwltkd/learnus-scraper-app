@@ -28,9 +28,9 @@ interface DisplayMessage {
 }
 
 const QUICK_ACTIONS = [
-    { label: '핵심 용어 정리', prompt: '이 강의의 핵심 용어와 개념을 정리해줘.' },
-    { label: '시험 대비 요약', prompt: '이 강의 내용을 시험 대비용으로 요약해줘.' },
-    { label: '플래시카드 만들기', prompt: '이 강의 내용으로 플래시카드(질문-답변 형식)를 만들어줘.' },
+    { icon: 'list-outline' as const, label: '핵심 용어 정리', prompt: '이 강의의 핵심 용어와 개념을 정리해줘.' },
+    { icon: 'document-text-outline' as const, label: '시험 대비 요약', prompt: '이 강의 내용을 시험 대비용으로 요약해줘.' },
+    { icon: 'layers-outline' as const, label: '플래시카드', prompt: '이 강의 내용으로 플래시카드(질문-답변 형식)를 만들어줘.' },
 ];
 
 
@@ -345,13 +345,13 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                     {isEmpty ? (
                         /* Empty state */
                         <View style={styles.emptyContainer}>
-                            <View style={styles.emptyIconWrap}>
-                                <Ionicons name="chatbubble-ellipses-outline" size={36} color={Colors.primary} />
+                            <View style={styles.emptyHero}>
+                                <Ionicons name="sparkles" size={28} color={Colors.primary} />
+                                <Text style={styles.emptyTitle}>무엇이든 물어보세요</Text>
+                                <Text style={styles.emptySubtitle}>
+                                    강의 내용을 바탕으로 답변해드려요
+                                </Text>
                             </View>
-                            <Text style={styles.emptyTitle}>강의 내용에 대해 질문해보세요</Text>
-                            <Text style={styles.emptySubtitle}>
-                                AI가 강의 텍스트를 바탕으로 답변해드려요
-                            </Text>
                             <View style={styles.quickActions}>
                                 {QUICK_ACTIONS.map((action, i) => (
                                     <TouchableOpacity
@@ -360,8 +360,8 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                                         onPress={() => sendMessage(action.prompt)}
                                         activeOpacity={0.7}
                                     >
+                                        <Ionicons name={action.icon} size={15} color={Colors.primary} />
                                         <Text style={styles.quickActionText}>{action.label}</Text>
-                                        <Ionicons name="arrow-forward" size={14} color={Colors.primary} />
                                     </TouchableOpacity>
                                 ))}
                             </View>
@@ -544,46 +544,42 @@ const styles = StyleSheet.create({
 
     // Empty state
     emptyContainer: {
-        alignItems: 'center',
-        paddingTop: Spacing.xxl,
+        flex: 1,
+        justifyContent: 'space-between',
     },
-    emptyIconWrap: {
-        width: 64,
-        height: 64,
-        borderRadius: 20,
-        backgroundColor: Colors.primaryLighter,
+    emptyHero: {
         alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: Spacing.l,
+        paddingTop: 80,
+        gap: 8,
     },
     emptyTitle: {
-        ...Typography.subtitle1,
-        textAlign: 'center',
-        marginBottom: Spacing.xs,
+        fontSize: 18,
+        fontWeight: '700',
+        color: Colors.textPrimary,
+        marginTop: 12,
     },
     emptySubtitle: {
         ...Typography.body2,
         color: Colors.textTertiary,
-        textAlign: 'center',
-        marginBottom: Spacing.xl,
     },
     quickActions: {
-        width: '100%',
-        gap: Spacing.s,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        justifyContent: 'center',
+        paddingBottom: Spacing.l,
     },
     quickActionChip: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: Colors.surface,
-        borderWidth: 1,
-        borderColor: Colors.border,
-        borderRadius: Layout.borderRadius.m,
-        paddingHorizontal: Spacing.l,
-        paddingVertical: Spacing.m,
+        gap: 6,
+        backgroundColor: Colors.primaryLighter,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: Layout.borderRadius.full,
     },
     quickActionText: {
-        ...Typography.body2,
+        fontSize: 13,
         color: Colors.primary,
         fontWeight: '600',
     },
