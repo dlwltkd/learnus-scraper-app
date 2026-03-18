@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { marked } from 'marked';
+import Markdown from 'react-native-markdown-display';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, Layout, Typography } from './constants/theme';
@@ -385,10 +386,10 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                                         <Text style={styles.assistantLabel}>AI 답변</Text>
                                     </View>
                                     {item.isStreaming ? (
-                                        <View style={styles.streamingRow}>
-                                            <Text style={styles.streamingText} selectable>
-                                                {item.content}
-                                            </Text>
+                                        <View>
+                                            <Markdown style={markdownStyles}>
+                                                {item.content || ' '}
+                                            </Markdown>
                                             <BlinkingCursor />
                                         </View>
                                     ) : (
@@ -442,6 +443,25 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
         </Modal>
     );
 }
+
+const markdownStyles = StyleSheet.create({
+    body: { color: '#1A1D26', fontSize: 14, lineHeight: 23 },
+    heading1: { fontSize: 20, fontWeight: '700', marginTop: 16, marginBottom: 6 },
+    heading2: { fontSize: 17, fontWeight: '700', marginTop: 14, marginBottom: 5 },
+    heading3: { fontSize: 15, fontWeight: '600', marginTop: 12, marginBottom: 4 },
+    paragraph: { marginTop: 0, marginBottom: 10 },
+    strong: { fontWeight: '700' },
+    em: { fontStyle: 'italic' },
+    code_inline: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 12.5, color: '#3182F6', backgroundColor: '#F2F5F9', paddingHorizontal: 5, borderRadius: 4 },
+    fence: { backgroundColor: '#F2F5F9', borderRadius: 8, padding: 12, marginVertical: 8 },
+    code_block: { backgroundColor: '#F2F5F9', borderRadius: 8, padding: 12, marginVertical: 8 },
+    blockquote: { borderLeftWidth: 3, borderLeftColor: '#3182F6', paddingLeft: 12, marginVertical: 8 },
+    bullet_list: { marginBottom: 10 },
+    ordered_list: { marginBottom: 10 },
+    list_item: { marginBottom: 4 },
+    hr: { borderColor: '#E8ECF2', marginVertical: 12 },
+    link: { color: '#3182F6', textDecorationLine: 'none' },
+});
 
 const styles = StyleSheet.create({
     container: {
@@ -614,18 +634,7 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
 
-    // Streaming text
-    streamingRow: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        alignItems: 'flex-end',
-    },
-    streamingText: {
-        ...Typography.body1,
-        color: Colors.textPrimary,
-        lineHeight: 22,
-        flexShrink: 1,
-    },
+    // Streaming cursor
     blinkingCursor: {
         width: 2,
         height: 16,
