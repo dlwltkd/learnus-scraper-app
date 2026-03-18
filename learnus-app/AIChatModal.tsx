@@ -33,6 +33,21 @@ const QUICK_ACTIONS = [
 ];
 
 
+function BlinkingCursor() {
+    const opacity = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        const anim = Animated.loop(
+            Animated.sequence([
+                Animated.timing(opacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+                Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+            ])
+        );
+        anim.start();
+        return () => anim.stop();
+    }, []);
+    return <Animated.View style={[styles.blinkingCursor, { opacity }]} />;
+}
+
 function buildHtml(content: string): string {
     const body = marked.parse(content) as string;
     const isDark = false; // app uses light theme
@@ -370,10 +385,12 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                                         <Text style={styles.assistantLabel}>AI 답변</Text>
                                     </View>
                                     {item.isStreaming ? (
-                                        <Text style={styles.streamingText} selectable>
-                                            {item.content}
-                                            <Text style={styles.streamingCursor}>▌</Text>
-                                        </Text>
+                                        <View style={styles.streamingRow}>
+                                            <Text style={styles.streamingText} selectable>
+                                                {item.content}
+                                            </Text>
+                                            <BlinkingCursor />
+                                        </View>
                                     ) : (
                                         <>
                                             <SelectableMarkdown content={item.content} />
@@ -598,14 +615,24 @@ const styles = StyleSheet.create({
     },
 
     // Streaming text
+    streamingRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        alignItems: 'flex-end',
+    },
     streamingText: {
         ...Typography.body1,
         color: Colors.textPrimary,
         lineHeight: 22,
+        flexShrink: 1,
     },
-    streamingCursor: {
-        color: Colors.primary,
-        fontWeight: '300',
+    blinkingCursor: {
+        width: 2,
+        height: 16,
+        backgroundColor: Colors.primary,
+        borderRadius: 1,
+        marginLeft: 1,
+        marginBottom: 3,
     },
 
     // Copy button
