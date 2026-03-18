@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
     View, Text, StyleSheet, Modal, TouchableOpacity,
     TextInput, ScrollView, KeyboardAvoidingView, Platform,
-    Animated, Clipboard,
+    Animated, Clipboard, Keyboard,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { marked } from 'marked';
@@ -175,7 +175,14 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
     const [loading, setLoading] = useState(false);
     const [remaining, setRemaining] = useState<number | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [keyboardVisible, setKeyboardVisible] = useState(false);
     const scrollRef = useRef<ScrollView>(null);
+
+    useEffect(() => {
+        const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+        const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+        return () => { showSub.remove(); hideSub.remove(); };
+    }, []);
 
     const cleanupRef = useRef<(() => void) | null>(null);
     const pendingTokensRef = useRef('');
@@ -415,7 +422,7 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
                 )}
 
                 {/* Input */}
-                <View style={[styles.inputBar, { paddingBottom: insets.bottom || Spacing.m }]}>
+                <View style={[styles.inputBar, { paddingBottom: keyboardVisible ? Spacing.s : (insets.bottom || Spacing.m) }]}>
                     <TextInput
                         style={styles.textInput}
                         value={input}
