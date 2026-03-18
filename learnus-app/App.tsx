@@ -125,9 +125,19 @@ function AppContent() {
   const [forceUpdate, setForceUpdate] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    checkAppVersion().then(latestVersion => {
-      if (latestVersion && latestVersion !== APP_VERSION) {
+    checkAppVersion().then(({ version: latestVersion, forceUpdateMin }) => {
+      if (!latestVersion || latestVersion === APP_VERSION) return;
+
+      if (forceUpdateMin && APP_VERSION < forceUpdateMin) {
+        // App is below the minimum required version — block usage
         setForceUpdate(latestVersion);
+      } else {
+        // Optional update — just show a dismissable alert
+        Alert.alert(
+          '업데이트 안내',
+          `새로운 버전(${latestVersion})이 있습니다.\n앱을 업데이트해 주세요.`,
+          [{ text: '확인' }]
+        );
       }
     });
   }, []);

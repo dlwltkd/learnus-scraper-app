@@ -222,12 +222,15 @@ export const validateSession = async (): Promise<{ valid: boolean; reason?: stri
     }
 };
 
-export const checkAppVersion = async (): Promise<string | null> => {
+export const checkAppVersion = async (): Promise<{ version: string | null; forceUpdateMin: string | null }> => {
     try {
         const response = await axios.get(`${API_URL}/version`);
-        return response.data?.version ?? null;
+        return {
+            version: response.data?.version ?? null,
+            forceUpdateMin: response.data?.force_update_min ?? null,
+        };
     } catch {
-        return null;
+        return { version: null, forceUpdateMin: null };
     }
 };
 

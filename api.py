@@ -41,9 +41,14 @@ app = FastAPI(title="LearnUs Connect API (Beta)")
 ENABLE_DEBUG = os.getenv("ENABLE_DEBUG", "false").lower() == "true"
 
 
+FORCE_UPDATE_MIN_VERSION = os.getenv("FORCE_UPDATE_MIN_VERSION", "")
+
 @app.get("/version")
 def get_version():
-    return {"version": LATEST_VERSION}
+    return {
+        "version": LATEST_VERSION,
+        "force_update_min": FORCE_UPDATE_MIN_VERSION or None,
+    }
 
 
 def get_db():
