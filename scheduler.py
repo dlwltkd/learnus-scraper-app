@@ -264,8 +264,9 @@ def send_simple_push(user: User, title: str, body: str, notif_type: str = "gener
 
 _watch_running = set()  # track which user IDs are currently being watched
 
-def watch_vods_for_user(user_id, SessionLocal):
-    """Watch all available unwatched VODs for a single user. Safe to call from any thread."""
+def watch_vods_for_user(user_id, SessionLocal, blocking=False):
+    """Watch all available unwatched VODs for a single user. Safe to call from any thread.
+    When blocking=True, waits for all VODs to finish before returning (used by worker jobs)."""
     if user_id in _watch_running:
         logger.info(f"Skipping user {user_id} — watch already in progress")
         return
@@ -346,9 +347,12 @@ def watch_vods_for_user(user_id, SessionLocal):
         finally:
             _watch_running.discard(user_id)
 
-    t = ThreadPoolExecutor(max_workers=1)
-    t.submit(watch_user_vods, user_id, available, cookies)
-    t.shutdown(wait=False)
+    if blocking:
+        watch_user_vods(user_id, available, cookies)
+    else:
+        t = ThreadPoolExecutor(max_workers=1)
+        t.submit(watch_user_vods, user_id, available, cookies)
+        t.shutdown(wait=False)
 
 def watch_vods_job(SessionLocal):
     """Scheduler entry point — runs watch_vods_for_user for all users."""

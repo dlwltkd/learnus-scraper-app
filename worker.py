@@ -121,7 +121,7 @@ def _run_transcribe(payload: dict, db):
 
 def _run_watch_all(payload: dict):
     user_id = payload['user_id']
-    watch_vods_for_user(user_id, SessionLocal)
+    watch_vods_for_user(user_id, SessionLocal, blocking=True)
 
 
 def _run_watch_one(payload: dict):

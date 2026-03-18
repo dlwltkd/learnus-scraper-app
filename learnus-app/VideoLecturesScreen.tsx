@@ -324,8 +324,12 @@ const VideoLecturesScreen = () => {
     const handleWatchAll = async () => {
         setWatching(true);
         try {
-            await watchAllVods();
-            showSuccess('시청 시작', '백그라운드에서 강의를 시청하고 있어요. 앱을 닫아도 계속 진행됩니다.');
+            const result = await watchAllVods();
+            if (result.status === 'already_running') {
+                showSuccess('이미 진행 중', '백그라운드에서 이미 시청이 진행되고 있어요.');
+            } else {
+                showSuccess('시청 시작', '백그라운드에서 강의를 시청하고 있어요. 앱을 닫아도 계속 진행됩니다.');
+            }
         } catch (e) {
             showError('오류', '시청을 시작할 수 없어요. 다시 시도해주세요.');
         } finally {
