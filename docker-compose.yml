@@ -17,6 +17,8 @@ services:
   api:
     build: .
     container_name: learnus_api
+    ports:
+      - "8000:8000"   # TODO: remove once all users have updated to HTTPS
     expose:
       - "8000"
     environment:

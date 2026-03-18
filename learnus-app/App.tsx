@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, ActivityIndicator, StatusBar, Alert, AppState } from 'react-native';
+import { StyleSheet, View, ActivityIndicator, StatusBar, Alert, AppState, Text, Linking, TouchableOpacity } from 'react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -122,14 +122,12 @@ function AppContent() {
     }
   }, [isLoggedIn]);
 
+  const [forceUpdate, setForceUpdate] = React.useState<string | null>(null);
+
   React.useEffect(() => {
     checkAppVersion().then(latestVersion => {
       if (latestVersion && latestVersion !== APP_VERSION) {
-        Alert.alert(
-          '업데이트 안내',
-          `새로운 버전(${latestVersion})이 있습니다.\n현재 버전(${APP_VERSION})은 최신 버전이 아닙니다.\n앱을 업데이트해 주세요.`,
-          [{ text: '확인' }]
-        );
+        setForceUpdate(latestVersion);
       }
     });
   }, []);
@@ -149,6 +147,27 @@ function AppContent() {
       <View style={styles.loadingContainer}>
         <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
         <ActivityIndicator size="large" color={Colors.primary} />
+      </View>
+    );
+  }
+
+  if (forceUpdate) {
+    return (
+      <View style={styles.forceUpdateContainer}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+        <Text style={styles.forceUpdateTitle}>업데이트 필요</Text>
+        <Text style={styles.forceUpdateMessage}>
+          새로운 버전({forceUpdate})이 출시되었습니다.{'\n'}
+          현재 버전({APP_VERSION})은 더 이상 사용할 수 없습니다.{'\n'}
+          앱을 업데이트해 주세요.
+        </Text>
+        <TouchableOpacity
+          style={styles.forceUpdateButton}
+          onPress={() => Linking.openURL('https://play.google.com/store/apps/details?id=com.jisang.learnusconnect')}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.forceUpdateButtonText}>업데이트</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -368,5 +387,36 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  forceUpdateContainer: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  forceUpdateTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 16,
+  },
+  forceUpdateMessage: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  forceUpdateButton: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  forceUpdateButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
