@@ -1,0 +1,15 @@
+diff --git a/node_modules/react-native/Libraries/Components/Keyboard/KeyboardAvoidingView.js b/node_modules/react-native/Libraries/Components/Keyboard/KeyboardAvoidingView.js
+index 6eca156..c76804e 100644
+--- a/node_modules/react-native/Libraries/Components/Keyboard/KeyboardAvoidingView.js
++++ b/node_modules/react-native/Libraries/Components/Keyboard/KeyboardAvoidingView.js
+@@ -164,7 +164,9 @@ class KeyboardAvoidingView extends React.Component<
+       return;
+     }
+ 
+-    this._setBottom(height);
++    // FIX: Android KeyboardAvoidingView leaves extra bottom padding after keyboard closes #52596
++    const bottom = Keyboard.isVisible() ? height : 0;
++    this._setBottom(Platform.OS === 'ios' ? height : bottom);
+ 
+     const enabled = this.props.enabled ?? true;
+     if (enabled && duration && easing) {

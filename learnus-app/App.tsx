@@ -6,7 +6,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import * as Notifications from 'expo-notifications';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { KeyboardProvider } from 'react-native-keyboard-controller';
+
 
 import LoginScreen from './LoginScreen';
 import DashboardScreen from './DashboardScreen';
@@ -372,17 +372,15 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <KeyboardProvider>
-        <SafeAreaProvider>
-          <ToastProvider>
-            <AuthProvider>
-              <UserProvider>
-                <AppContent />
-              </UserProvider>
-            </AuthProvider>
-          </ToastProvider>
-        </SafeAreaProvider>
-      </KeyboardProvider>
+      <SafeAreaProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <UserProvider>
+              <AppContent />
+            </UserProvider>
+          </AuthProvider>
+        </ToastProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
