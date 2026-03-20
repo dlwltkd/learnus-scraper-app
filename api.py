@@ -21,7 +21,7 @@ logging.getLogger('openai').setLevel(logging.WARNING)
 logging.getLogger('httpx').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-SessionLocal = init_db()
+SessionLocal = None if os.getenv("TESTING") else init_db()
 
 # ============================================================
 # APP VERSION — Reads from learnus-app/app.json automatically.
