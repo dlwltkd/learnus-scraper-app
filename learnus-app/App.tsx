@@ -205,11 +205,14 @@ function AppContent() {
         // App is below the minimum required version — block usage
         setForceUpdate(latestVersion);
       } else {
-        // Optional update — just show a dismissable alert
+        // Optional update — prompt with link to Play Store
         Alert.alert(
           '업데이트 안내',
           `새로운 버전(${latestVersion})이 있습니다.\n앱을 업데이트해 주세요.`,
-          [{ text: '확인' }]
+          [
+            { text: '나중에', style: 'cancel' },
+            { text: '업데이트', onPress: () => Linking.openURL('https://play.google.com/store/apps/details?id=com.jisang.learnusconnect') },
+          ]
         );
       }
     });
