@@ -78,8 +78,10 @@ const VideoLecturesScreen = () => {
     useEffect(() => { loadData(); }, []);
 
     // Mock data during tour, revert when done
+    const tourActiveRef = React.useRef(false);
     const prevTourActive = React.useRef(false);
     useEffect(() => {
+        tourActiveRef.current = tourActive;
         if (tourActive) {
             setData(TOUR_MOCK_OVERVIEW);
             setLoading(false);
@@ -150,8 +152,12 @@ const VideoLecturesScreen = () => {
     };
 
     const loadData = async () => {
-        try { setData(await getDashboardOverview()); }
-        catch (e) { console.error(e); }
+        if (tourActiveRef.current) return;
+        try {
+            const result = await getDashboardOverview();
+            if (tourActiveRef.current) return;
+            setData(result);
+        } catch (e) { console.error(e); }
         finally { setLoading(false); }
     };
 

@@ -183,12 +183,14 @@ export default function CoursesScreen() {
 
     // Tour
     const { isActive: tourActive } = useTour();
+    const tourActiveRef = useRef(false);
     const prevTourActive = useRef(false);
     const firstCardRef = useTourRef('courses-first-card');
 
     useEffect(() => { loadCourses(); }, []);
 
     useEffect(() => {
+        tourActiveRef.current = tourActive;
         if (tourActive) {
             setCourses(TOUR_MOCK_COURSES);
             setLoading(false);
@@ -199,8 +201,10 @@ export default function CoursesScreen() {
     }, [tourActive]);
 
     const loadCourses = async () => {
+        if (tourActiveRef.current) return;
         try {
             const data = await getCourses();
+            if (tourActiveRef.current) return;
             setCourses(data);
         } catch (e) {
             console.error(e);

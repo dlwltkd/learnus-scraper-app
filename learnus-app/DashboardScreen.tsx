@@ -498,11 +498,13 @@ const DashboardScreen = () => {
 
     // Tour
     const { isActive: tourActive } = useTour();
+    const tourActiveRef = useRef(false);
     const prevTourActive = useRef(false);
     const statsRef = useTourRef('dashboard-stats');
     const aiSectionRef = useTourRef('dashboard-ai-section');
 
     useEffect(() => {
+        tourActiveRef.current = tourActive;
         if (tourActive) {
             setData(TOUR_MOCK_OVERVIEW);
             setLoading(false);
@@ -541,8 +543,10 @@ const DashboardScreen = () => {
     };
 
     const loadDashboard = async () => {
+        if (tourActiveRef.current) return;
         try {
             const result = await getDashboardOverview();
+            if (tourActiveRef.current) return;
             setData(result);
         } catch (e) {
             console.error(e);
