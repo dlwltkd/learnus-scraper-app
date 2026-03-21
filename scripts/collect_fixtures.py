@@ -28,8 +28,8 @@ log = logging.getLogger(__name__)
 FIXTURES_DIR = Path(__file__).parent.parent / "tests" / "fixtures"
 BASE_URL = "https://ys.learnus.org"
 
-# Small delay between requests to avoid hammering LearnUs
-REQUEST_DELAY = 0.5
+# Delay between requests (seconds). Set to 0 for max speed.
+REQUEST_DELAY = 0
 
 
 def parse_cookie_string(raw: str) -> dict:
