@@ -25,7 +25,7 @@ export default function BoardScreen() {
             headerTintColor: colors.textPrimary,
         });
         loadPosts();
-    }, []);
+    }, [navigation, board.title, colors.surface, colors.textPrimary]);
 
     const loadPosts = async () => {
         try {
