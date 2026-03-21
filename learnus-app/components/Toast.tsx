@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import {
     View,
     Text,
@@ -10,7 +10,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Typography, Layout, Spacing, Animation } from '../constants/theme';
+import { Spacing, Animation } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -60,6 +62,9 @@ const Toast: React.FC<ToastProps> = ({
     duration = 3000,
     onHide,
 }) => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const insets = useSafeAreaInsets();
     const translateY = useRef(new Animated.Value(-100)).current;
     const opacity = useRef(new Animated.Value(0)).current;
@@ -170,7 +175,7 @@ const Toast: React.FC<ToastProps> = ({
 
                         {/* Dismiss indicator */}
                         <View style={styles.dismissHint}>
-                            <Ionicons name="close" size={16} color={Colors.textTertiary} />
+                            <Ionicons name="close" size={16} color={colors.textTertiary} />
                         </View>
                     </View>
                 </View>
@@ -179,7 +184,7 @@ const Toast: React.FC<ToastProps> = ({
     );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         position: 'absolute',
         left: 0,
@@ -193,7 +198,7 @@ const styles = StyleSheet.create({
         maxWidth: 400,
     },
     toast: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderRadius: 16,
         overflow: 'hidden',
         borderWidth: 1,
@@ -235,12 +240,12 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 15,
         fontWeight: '600',
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         letterSpacing: -0.2,
     },
     message: {
         fontSize: 13,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         marginTop: 2,
         lineHeight: 18,
     },

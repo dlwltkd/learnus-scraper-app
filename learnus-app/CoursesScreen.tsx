@@ -12,7 +12,9 @@ import {
     Platform,
     UIManager,
 } from 'react-native';
-import { Colors, Spacing, Layout, Typography } from './constants/theme';
+import { Spacing } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -28,18 +30,18 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 // Course color palette for variety
-const COURSE_COLORS = [
-    Colors.primary,
-    Colors.secondary,
-    Colors.tertiary,
-    Colors.accent,
-    Colors.success,
+const getCourseColors = (colors: ColorScheme) => [
+    colors.primary,
+    colors.secondary,
+    colors.tertiary,
+    colors.accent,
+    colors.success,
     '#10B981', // Emerald
     '#F59E0B', // Amber
     '#EC4899', // Pink
 ];
 
-const getCourseColor = (index: number) => COURSE_COLORS[index % COURSE_COLORS.length];
+const getCourseColor = (index: number, colors: ColorScheme) => getCourseColors(colors)[index % getCourseColors(colors).length];
 
 // ============================================
 // COURSE CARD COMPONENT
@@ -53,9 +55,11 @@ interface CourseCardProps {
 }
 
 const CourseCard = ({ item, index, onPress, onSync, syncing }: CourseCardProps) => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const rotateAnim = useRef(new Animated.Value(0)).current;
-    const color = getCourseColor(index);
+    const color = getCourseColor(index, colors);
 
     useEffect(() => {
         if (syncing) {
@@ -125,7 +129,7 @@ const CourseCard = ({ item, index, onPress, onSync, syncing }: CourseCardProps) 
                             {item.name}
                         </Text>
                         <View style={styles.courseMeta}>
-                            <Ionicons name="school-outline" size={12} color={Colors.textTertiary} />
+                            <Ionicons name="school-outline" size={12} color={colors.textTertiary} />
                             <Text style={styles.courseId}>ID: {item.id}</Text>
                         </View>
                     </View>
@@ -144,7 +148,7 @@ const CourseCard = ({ item, index, onPress, onSync, syncing }: CourseCardProps) 
                             <Ionicons
                                 name="refresh"
                                 size={20}
-                                color={syncing ? Colors.primary : Colors.textTertiary}
+                                color={syncing ? colors.primary : colors.textTertiary}
                             />
                         </Animated.View>
                     </TouchableOpacity>
@@ -153,7 +157,7 @@ const CourseCard = ({ item, index, onPress, onSync, syncing }: CourseCardProps) 
                     <Ionicons
                         name="chevron-forward"
                         size={20}
-                        color={Colors.textTertiary}
+                        color={colors.textTertiary}
                         style={styles.chevron}
                     />
                 </View>
@@ -166,6 +170,8 @@ const CourseCard = ({ item, index, onPress, onSync, syncing }: CourseCardProps) 
 // MAIN COURSES SCREEN
 // ============================================
 export default function CoursesScreen() {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const navigation = useNavigation();
     const { showSuccess, showError } = useToast();
     const [courses, setCourses] = useState<any[]>([]);
@@ -241,7 +247,7 @@ export default function CoursesScreen() {
             {/* Quick stats */}
             <View style={styles.statsContainer}>
                 <View style={styles.statPill}>
-                    <Ionicons name="book" size={14} color={Colors.primary} />
+                    <Ionicons name="book" size={14} color={colors.primary} />
                     <Text style={styles.statText}>{activeCourses.length} 강의</Text>
                 </View>
             </View>
@@ -252,7 +258,7 @@ export default function CoursesScreen() {
         return (
             <SafeAreaView style={styles.container} edges={['top']}>
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={Colors.primary} />
+                    <ActivityIndicator size="large" color={colors.primary} />
                 </View>
             </SafeAreaView>
         );
@@ -271,8 +277,8 @@ export default function CoursesScreen() {
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
-                        tintColor={Colors.primary}
-                        colors={[Colors.primary]}
+                        tintColor={colors.primary}
+                        colors={[colors.primary]}
                     />
                 }
                 ListEmptyComponent={
@@ -291,10 +297,10 @@ export default function CoursesScreen() {
 // ============================================
 // STYLES
 // ============================================
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
@@ -311,15 +317,15 @@ const styles = StyleSheet.create({
     statPill: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.primaryLighter,
+        backgroundColor: colors.primaryLighter,
         paddingHorizontal: Spacing.m,
         paddingVertical: Spacing.xs,
-        borderRadius: Layout.borderRadius.full,
+        borderRadius: layout.borderRadius.full,
         gap: 6,
     },
     statText: {
-        ...Typography.caption,
-        color: Colors.primary,
+        ...typography.caption,
+        color: colors.primary,
         fontWeight: '600',
     },
     listContent: {
@@ -329,12 +335,12 @@ const styles = StyleSheet.create({
 
     // Course Card
     courseCard: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.l,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.l,
         overflow: 'hidden',
         borderWidth: 1,
-        borderColor: Colors.border,
-        ...Layout.shadow.default,
+        borderColor: colors.border,
+        ...layout.shadow.default,
     },
     accentBar: {
         height: 4,
@@ -358,11 +364,11 @@ const styles = StyleSheet.create({
         marginRight: Spacing.s,
     },
     courseCode: {
-        ...Typography.overline,
+        ...typography.overline,
         marginBottom: 2,
     },
     courseName: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         fontSize: 15,
         marginBottom: 4,
         lineHeight: 20,
@@ -373,20 +379,20 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     courseId: {
-        ...Typography.caption,
-        color: Colors.textTertiary,
+        ...typography.caption,
+        color: colors.textTertiary,
     },
     syncButton: {
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: Colors.surfaceHighlight,
+        backgroundColor: colors.surfaceHighlight,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: Spacing.xs,
     },
     syncButtonActive: {
-        backgroundColor: Colors.primaryLighter,
+        backgroundColor: colors.primaryLighter,
     },
     chevron: {
         marginLeft: Spacing.xs,

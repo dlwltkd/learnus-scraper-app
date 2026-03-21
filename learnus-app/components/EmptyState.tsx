@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ViewStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Layout, Spacing, Typography } from '../constants/theme';
+import { Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 import Button from './Button';
 
 interface EmptyStateProps {
@@ -24,13 +26,16 @@ export default function EmptyState({
     style,
     compact = false,
 }: EmptyStateProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     return (
         <View style={[styles.container, compact && styles.compact, style]}>
             <View style={[styles.iconContainer, compact && styles.iconContainerCompact]}>
                 <Ionicons
                     name={icon}
                     size={compact ? 32 : 48}
-                    color={Colors.textTertiary}
+                    color={colors.textTertiary}
                 />
             </View>
             <Text style={[styles.title, compact && styles.titleCompact]}>{title}</Text>
@@ -59,6 +64,9 @@ interface InlineEmptyProps {
 }
 
 export function InlineEmpty({ message, style }: InlineEmptyProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     return (
         <View style={[styles.inlineContainer, style]}>
             <Text style={styles.inlineText}>{message}</Text>
@@ -66,7 +74,7 @@ export function InlineEmpty({ message, style }: InlineEmptyProps) {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         alignItems: 'center',
         justifyContent: 'center',
@@ -81,7 +89,7 @@ const styles = StyleSheet.create({
         width: 96,
         height: 96,
         borderRadius: 48,
-        backgroundColor: Colors.surfaceMuted,
+        backgroundColor: colors.surfaceMuted,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: Spacing.l,
@@ -93,21 +101,21 @@ const styles = StyleSheet.create({
         marginBottom: Spacing.m,
     },
     title: {
-        ...Typography.header3,
+        ...typography.header3,
         textAlign: 'center',
         marginBottom: Spacing.s,
     },
     titleCompact: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
     },
     description: {
-        ...Typography.body2,
+        ...typography.body2,
         textAlign: 'center',
         maxWidth: 280,
         lineHeight: 22,
     },
     descriptionCompact: {
-        ...Typography.caption,
+        ...typography.caption,
         maxWidth: 240,
     },
     actionButton: {
@@ -119,8 +127,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     inlineText: {
-        ...Typography.body2,
-        color: Colors.textTertiary,
+        ...typography.body2,
+        color: colors.textTertiary,
         fontStyle: 'italic',
     },
 });

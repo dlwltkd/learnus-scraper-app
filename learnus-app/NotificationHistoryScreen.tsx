@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
     View,
     Text,
@@ -12,7 +12,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Swipeable, RectButton } from 'react-native-gesture-handler';
-import { Colors, Spacing, Layout, Typography } from './constants/theme';
+import { Spacing } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import {
     NotificationHistoryItem,
     getNotificationHistory,
@@ -21,38 +23,40 @@ import {
     deleteNotification,
 } from './services/NotificationHistoryService';
 
-const TYPE_CONFIG = {
-    assignment: {
-        icon: 'document-text-outline' as const,
-        color: Colors.primary,
-        label: '과제',
-    },
-    vod: {
-        icon: 'play-circle-outline' as const,
-        color: '#8B5CF6',
-        label: '강의',
-    },
-    announcement: {
-        icon: 'megaphone-outline' as const,
-        color: '#6366F1',
-        label: '공지',
-    },
-    ai_summary: {
-        icon: 'sparkles' as const,
-        color: Colors.secondary,
-        label: '공지 요약',
-    },
-    transcription_complete: {
-        icon: 'document-text' as const,
-        color: '#10B981',
-        label: '텍스트 추출',
-    },
-    general: {
-        icon: 'notifications-outline' as const,
-        color: Colors.textSecondary,
-        label: '알림',
-    },
-};
+function getTypeConfig(colors: ColorScheme) {
+    return {
+        assignment: {
+            icon: 'document-text-outline' as const,
+            color: colors.primary,
+            label: '과제',
+        },
+        vod: {
+            icon: 'play-circle-outline' as const,
+            color: '#8B5CF6',
+            label: '강의',
+        },
+        announcement: {
+            icon: 'megaphone-outline' as const,
+            color: '#6366F1',
+            label: '공지',
+        },
+        ai_summary: {
+            icon: 'sparkles' as const,
+            color: colors.secondary,
+            label: '공지 요약',
+        },
+        transcription_complete: {
+            icon: 'document-text' as const,
+            color: '#10B981',
+            label: '텍스트 추출',
+        },
+        general: {
+            icon: 'notifications-outline' as const,
+            color: colors.textSecondary,
+            label: '알림',
+        },
+    };
+}
 
 function formatTimeAgo(timestamp: number): string {
     const now = Date.now();
@@ -75,10 +79,13 @@ interface NotificationItemProps {
     item: NotificationHistoryItem;
     onPress: () => void;
     onDelete: () => void;
+    colors: ColorScheme;
+    styles: any;
 }
 
-const NotificationItem = ({ item, onPress, onDelete }: NotificationItemProps) => {
+const NotificationItem = ({ item, onPress, onDelete, colors, styles }: NotificationItemProps) => {
     const swipeableRef = useRef<Swipeable>(null);
+    const TYPE_CONFIG = getTypeConfig(colors);
     const config = TYPE_CONFIG[item.type] || TYPE_CONFIG.general;
 
     const renderRightActions = () => (
@@ -135,7 +142,7 @@ const NotificationItem = ({ item, onPress, onDelete }: NotificationItemProps) =>
 
                 {/* Arrow for clickable items */}
                 {(item.type === 'announcement' || item.type === 'ai_summary' || item.type === 'transcription_complete') && (
-                    <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+                    <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
                 )}
             </TouchableOpacity>
         </Swipeable>
@@ -144,6 +151,9 @@ const NotificationItem = ({ item, onPress, onDelete }: NotificationItemProps) =>
 
 export default function NotificationHistoryScreen() {
     const navigation = useNavigation();
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const [notifications, setNotifications] = useState<NotificationHistoryItem[]>([]);
     const [refreshing, setRefreshing] = useState(false);
 
@@ -213,7 +223,7 @@ export default function NotificationHistoryScreen() {
     const renderEmpty = () => (
         <View style={styles.emptyContainer}>
             <View style={styles.emptyIcon}>
-                <Ionicons name="notifications-off-outline" size={48} color={Colors.textTertiary} />
+                <Ionicons name="notifications-off-outline" size={48} color={colors.textTertiary} />
             </View>
             <Text style={styles.emptyTitle}>알림이 없습니다</Text>
             <Text style={styles.emptySubtitle}>새로운 알림이 도착하면 여기에 표시됩니다</Text>
@@ -230,7 +240,7 @@ export default function NotificationHistoryScreen() {
                         onPress={handleMarkAllRead}
                         activeOpacity={0.7}
                     >
-                        <Ionicons name="checkmark-done-outline" size={18} color={Colors.primary} />
+                        <Ionicons name="checkmark-done-outline" size={18} color={colors.primary} />
                         <Text style={styles.markAllText}>모두 읽음 처리</Text>
                     </TouchableOpacity>
                 </View>
@@ -244,6 +254,8 @@ export default function NotificationHistoryScreen() {
                         item={item}
                         onPress={() => handleNotificationPress(item)}
                         onDelete={() => handleDelete(item.id)}
+                        colors={colors}
+                        styles={styles}
                     />
                 )}
                 contentContainerStyle={[
@@ -256,8 +268,8 @@ export default function NotificationHistoryScreen() {
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
-                        tintColor={Colors.primary}
-                        colors={[Colors.primary]}
+                        tintColor={colors.primary}
+                        colors={[colors.primary]}
                     />
                 }
                 ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -266,10 +278,10 @@ export default function NotificationHistoryScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     actionBar: {
         flexDirection: 'row',
@@ -277,20 +289,20 @@ const styles = StyleSheet.create({
         paddingHorizontal: Spacing.l,
         paddingVertical: Spacing.s,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
-        backgroundColor: Colors.surface,
+        borderBottomColor: colors.border,
+        backgroundColor: colors.surface,
     },
     markAllButton: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: Spacing.m,
         paddingVertical: Spacing.xs,
-        backgroundColor: Colors.primaryLighter,
-        borderRadius: Layout.borderRadius.m,
+        backgroundColor: colors.primaryLighter,
+        borderRadius: layout.borderRadius.m,
     },
     markAllText: {
-        ...Typography.caption,
-        color: Colors.primary,
+        ...typography.caption,
+        color: colors.primary,
         fontWeight: '600',
         marginLeft: 4,
     },
@@ -302,7 +314,7 @@ const styles = StyleSheet.create({
     },
     separator: {
         height: 1,
-        backgroundColor: Colors.border,
+        backgroundColor: colors.border,
         marginLeft: 72,
     },
     notificationItem: {
@@ -310,10 +322,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: Spacing.l,
         paddingVertical: Spacing.m,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
     },
     unreadItem: {
-        backgroundColor: Colors.primaryLighter + '30',
+        backgroundColor: colors.primaryLighter + '30',
     },
     unreadDot: {
         position: 'absolute',
@@ -321,7 +333,7 @@ const styles = StyleSheet.create({
         width: 8,
         height: 8,
         borderRadius: 4,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
     },
     iconContainer: {
         width: 44,
@@ -351,11 +363,11 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     timeText: {
-        ...Typography.caption,
-        color: Colors.textTertiary,
+        ...typography.caption,
+        color: colors.textTertiary,
     },
     titleText: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         fontSize: 15,
         marginBottom: 2,
     },
@@ -363,12 +375,12 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     bodyText: {
-        ...Typography.body2,
-        color: Colors.textSecondary,
+        ...typography.body2,
+        color: colors.textSecondary,
         lineHeight: 18,
     },
     deleteAction: {
-        backgroundColor: Colors.error,
+        backgroundColor: colors.error,
         justifyContent: 'center',
         alignItems: 'center',
         width: 70,
@@ -383,19 +395,19 @@ const styles = StyleSheet.create({
         width: 80,
         height: 80,
         borderRadius: 40,
-        backgroundColor: Colors.surfaceMuted,
+        backgroundColor: colors.surfaceMuted,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: Spacing.l,
     },
     emptyTitle: {
-        ...Typography.header3,
-        color: Colors.textSecondary,
+        ...typography.header3,
+        color: colors.textSecondary,
         marginBottom: Spacing.xs,
     },
     emptySubtitle: {
-        ...Typography.body2,
-        color: Colors.textTertiary,
+        ...typography.body2,
+        color: colors.textTertiary,
         textAlign: 'center',
     },
 });

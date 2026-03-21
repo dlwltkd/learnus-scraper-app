@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import {
     View,
     TouchableOpacity,
@@ -9,7 +9,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Layout, Spacing, Typography } from '../constants/theme';
+import { Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 
 interface TabItemConfig {
@@ -35,6 +37,9 @@ interface TabItemProps {
 }
 
 function TabItem({ route, index, state, descriptors, navigation, badge }: TabItemProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const isFocused = state.index === index;
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const opacityAnim = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
@@ -107,7 +112,7 @@ function TabItem({ route, index, state, descriptors, navigation, badge }: TabIte
                     <Ionicons
                         name={isFocused ? config.iconFocused : config.icon}
                         size={24}
-                        color={isFocused ? Colors.primary : Colors.textTertiary}
+                        color={isFocused ? colors.primary : colors.textTertiary}
                     />
                     {badge !== undefined && badge > 0 && (
                         <View style={styles.badge}>
@@ -136,6 +141,8 @@ interface CustomTabBarProps extends BottomTabBarProps {
 }
 
 export default function CustomTabBar({ state, descriptors, navigation, badges = {} }: CustomTabBarProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const insets = useSafeAreaInsets();
 
     return (
@@ -157,14 +164,14 @@ export default function CustomTabBar({ state, descriptors, navigation, badges = 
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderTopWidth: 1,
-        borderTopColor: Colors.borderLight,
+        borderTopColor: colors.borderLight,
         ...Platform.select({
             ios: {
-                shadowColor: Colors.textPrimary,
+                shadowColor: colors.textPrimary,
                 shadowOffset: { width: 0, height: -4 },
                 shadowOpacity: 0.05,
                 shadowRadius: 12,
@@ -197,8 +204,8 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: Colors.primaryLighter,
-        borderRadius: Layout.borderRadius.l,
+        backgroundColor: colors.primaryLighter,
+        borderRadius: layout.borderRadius.l,
     },
     iconContainer: {
         position: 'relative',
@@ -207,11 +214,11 @@ const styles = StyleSheet.create({
     label: {
         fontSize: 11,
         fontWeight: '500',
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
         marginTop: 2,
     },
     labelFocused: {
-        color: Colors.primary,
+        color: colors.primary,
         fontWeight: '600',
     },
     badge: {
@@ -221,15 +228,15 @@ const styles = StyleSheet.create({
         minWidth: 18,
         height: 18,
         borderRadius: 9,
-        backgroundColor: Colors.error,
+        backgroundColor: colors.error,
         alignItems: 'center',
         justifyContent: 'center',
         paddingHorizontal: 4,
         borderWidth: 2,
-        borderColor: Colors.surface,
+        borderColor: colors.surface,
     },
     badgeText: {
-        color: Colors.textInverse,
+        color: colors.textInverse,
         fontSize: 10,
         fontWeight: '700',
     },

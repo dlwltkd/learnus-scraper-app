@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { StyleSheet, Text, View, ViewStyle, TextStyle } from 'react-native';
-import { Colors, Layout, Spacing, Typography } from '../constants/theme';
+import { Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 type BadgeVariant = 'filled' | 'soft' | 'outline' | 'dot';
 type BadgeSize = 'sm' | 'md' | 'lg';
@@ -25,44 +27,47 @@ export default function Badge({
     style,
     textStyle,
 }: BadgeProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const getColorStyles = (): { bg: string; text: string; border: string } => {
         switch (color) {
             case 'primary':
                 return {
-                    bg: Colors.primary,
-                    text: Colors.textInverse,
-                    border: Colors.primary,
+                    bg: colors.primary,
+                    text: colors.textInverse,
+                    border: colors.primary,
                 };
             case 'success':
                 return {
-                    bg: Colors.success,
-                    text: Colors.textInverse,
-                    border: Colors.success,
+                    bg: colors.success,
+                    text: colors.textInverse,
+                    border: colors.success,
                 };
             case 'warning':
                 return {
-                    bg: Colors.warning,
+                    bg: colors.warning,
                     text: '#1A1D26',
-                    border: Colors.warning,
+                    border: colors.warning,
                 };
             case 'error':
                 return {
-                    bg: Colors.error,
-                    text: Colors.textInverse,
-                    border: Colors.error,
+                    bg: colors.error,
+                    text: colors.textInverse,
+                    border: colors.error,
                 };
             case 'secondary':
                 return {
-                    bg: Colors.secondary,
-                    text: Colors.textInverse,
-                    border: Colors.secondary,
+                    bg: colors.secondary,
+                    text: colors.textInverse,
+                    border: colors.secondary,
                 };
             case 'neutral':
             default:
                 return {
-                    bg: Colors.textTertiary,
-                    text: Colors.textInverse,
-                    border: Colors.textTertiary,
+                    bg: colors.textTertiary,
+                    text: colors.textInverse,
+                    border: colors.textTertiary,
                 };
         }
     };
@@ -70,18 +75,18 @@ export default function Badge({
     const getSoftColorStyles = (): { bg: string; text: string } => {
         switch (color) {
             case 'primary':
-                return { bg: Colors.primaryLighter, text: Colors.primary };
+                return { bg: colors.primaryLighter, text: colors.primary };
             case 'success':
-                return { bg: Colors.successLight, text: Colors.success };
+                return { bg: colors.successLight, text: colors.success };
             case 'warning':
-                return { bg: Colors.warningLight, text: '#92400E' };
+                return { bg: colors.warningLight, text: '#92400E' };
             case 'error':
-                return { bg: Colors.errorLight, text: Colors.error };
+                return { bg: colors.errorLight, text: colors.error };
             case 'secondary':
-                return { bg: Colors.secondaryLight, text: Colors.secondary };
+                return { bg: colors.secondaryLight, text: colors.secondary };
             case 'neutral':
             default:
-                return { bg: Colors.surfaceMuted, text: Colors.textSecondary };
+                return { bg: colors.surfaceMuted, text: colors.textSecondary };
         }
     };
 
@@ -233,6 +238,9 @@ export function CountBadge({
     color = 'error',
     style,
 }: CountBadgeProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     if (count <= 0) return null;
 
     const displayCount = count > maxCount ? `${maxCount}+` : count.toString();
@@ -243,9 +251,9 @@ export function CountBadge({
             style={[
                 styles.countBadge,
                 isSmall && styles.countBadgeSmall,
-                color === 'primary' && { backgroundColor: Colors.primary },
-                color === 'error' && { backgroundColor: Colors.error },
-                color === 'success' && { backgroundColor: Colors.success },
+                color === 'primary' && { backgroundColor: colors.primary },
+                color === 'error' && { backgroundColor: colors.error },
+                color === 'success' && { backgroundColor: colors.success },
                 style,
             ]}
         >
@@ -289,7 +297,7 @@ export function StatusBadge({ status, label, style }: StatusBadgeProps) {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     badge: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -320,7 +328,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 6,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: Colors.error,
+        backgroundColor: colors.error,
     },
     countBadgeSmall: {
         minWidth: 18,
@@ -329,7 +337,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 0,
     },
     countText: {
-        color: Colors.textInverse,
+        color: colors.textInverse,
         fontSize: 11,
         fontWeight: '700',
         letterSpacing: 0,

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import {
     View,
     Text,
@@ -9,7 +9,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Spacing, Layout, Typography, Animation } from '../constants/theme';
+import { Spacing, Animation } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 import { TourStep } from '../context/TourContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -36,6 +38,9 @@ export default function TourTooltip({
     onNext,
     onSkip,
 }: TourTooltipProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const scaleAnim = useRef(new Animated.Value(0.92)).current;
     const opacityAnim = useRef(new Animated.Value(0)).current;
     const translateYAnim = useRef(new Animated.Value(8)).current;
@@ -138,7 +143,7 @@ export default function TourTooltip({
                             <Ionicons
                                 name={isInteractive ? 'hand-left' : 'bulb'}
                                 size={16}
-                                color={Colors.primary}
+                                color={colors.primary}
                             />
                         </View>
                         <Text style={styles.title}>{step.title}</Text>
@@ -194,16 +199,16 @@ export default function TourTooltip({
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     card: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.xl,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.xl,
         overflow: 'hidden',
-        ...Layout.shadow.xl,
+        ...layout.shadow.xl,
     },
     accent: {
         height: 3,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
     },
     content: {
         paddingHorizontal: Spacing.l,
@@ -220,17 +225,17 @@ const styles = StyleSheet.create({
         width: 28,
         height: 28,
         borderRadius: 8,
-        backgroundColor: Colors.primaryLighter,
+        backgroundColor: colors.primaryLighter,
         alignItems: 'center',
         justifyContent: 'center',
     },
     title: {
-        ...Typography.header3,
+        ...typography.header3,
         flex: 1,
     },
     description: {
-        ...Typography.body2,
-        color: Colors.textSecondary,
+        ...typography.body2,
+        color: colors.textSecondary,
         lineHeight: 22,
     },
     footer: {
@@ -240,8 +245,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: Spacing.l,
         paddingVertical: Spacing.m,
         borderTopWidth: 1,
-        borderTopColor: Colors.border,
-        backgroundColor: Colors.surfaceHighlight,
+        borderTopColor: colors.border,
+        backgroundColor: colors.surfaceHighlight,
     },
     dots: {
         flexDirection: 'row',
@@ -251,15 +256,15 @@ const styles = StyleSheet.create({
         width: 6,
         height: 6,
         borderRadius: 3,
-        backgroundColor: Colors.border,
+        backgroundColor: colors.border,
     },
     dotActive: {
         width: 18,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         borderRadius: 3,
     },
     dotCompleted: {
-        backgroundColor: Colors.primaryLight,
+        backgroundColor: colors.primaryLight,
     },
     buttons: {
         flexDirection: 'row',
@@ -267,20 +272,20 @@ const styles = StyleSheet.create({
         gap: Spacing.m,
     },
     skipText: {
-        ...Typography.buttonSmall,
-        color: Colors.textTertiary,
+        ...typography.buttonSmall,
+        color: colors.textTertiary,
     },
     nextBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         paddingHorizontal: Spacing.m,
         paddingVertical: Spacing.s,
-        borderRadius: Layout.borderRadius.full,
+        borderRadius: layout.borderRadius.full,
     },
     nextText: {
-        ...Typography.buttonSmall,
+        ...typography.buttonSmall,
         color: '#fff',
     },
     arrowUp: {
@@ -293,7 +298,7 @@ const styles = StyleSheet.create({
         borderBottomWidth: ARROW_SIZE,
         borderLeftColor: 'transparent',
         borderRightColor: 'transparent',
-        borderBottomColor: Colors.primary,
+        borderBottomColor: colors.primary,
         zIndex: 1,
     },
     arrowDown: {
@@ -306,7 +311,7 @@ const styles = StyleSheet.create({
         borderTopWidth: ARROW_SIZE,
         borderLeftColor: 'transparent',
         borderRightColor: 'transparent',
-        borderTopColor: Colors.surface,
+        borderTopColor: colors.surface,
         zIndex: 1,
     },
 });

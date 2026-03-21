@@ -26,7 +26,8 @@ import NotificationHistoryScreen from './NotificationHistoryScreen';
 import VodTranscriptScreen from './VodTranscriptScreen';
 
 import CustomTabBar from './components/TabBar';
-import { Colors, Layout, Typography } from './constants/theme';
+import { Spacing } from './constants/theme';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserProvider } from './context/UserContext';
@@ -205,11 +206,14 @@ function AppContent() {
         // App is below the minimum required version — block usage
         setForceUpdate(latestVersion);
       } else {
-        // Optional update — just show a dismissable alert
+        // Optional update — prompt with link to Play Store
         Alert.alert(
           '업데이트 안내',
           `새로운 버전(${latestVersion})이 있습니다.\n앱을 업데이트해 주세요.`,
-          [{ text: '확인' }]
+          [
+            { text: '나중에', style: 'cancel' },
+            { text: '업데이트', onPress: () => Linking.openURL('https://play.google.com/store/apps/details?id=com.jisang.learnusconnect') },
+          ]
         );
       }
     });
@@ -225,27 +229,29 @@ function AppContent() {
     }
   };
 
+  const { colors, typography, isDark } = useTheme();
+
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   if (forceUpdate) {
     return (
-      <View style={styles.forceUpdateContainer}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
-        <Text style={styles.forceUpdateTitle}>업데이트 필요</Text>
-        <Text style={styles.forceUpdateMessage}>
+      <View style={[styles.forceUpdateContainer, { backgroundColor: colors.background }]}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
+        <Text style={[styles.forceUpdateTitle, { color: colors.textPrimary }]}>업데이트 필요</Text>
+        <Text style={[styles.forceUpdateMessage, { color: colors.textSecondary }]}>
           새로운 버전({forceUpdate})이 출시되었습니다.{'\n'}
           현재 버전({APP_VERSION})은 더 이상 사용할 수 없습니다.{'\n'}
           앱을 업데이트해 주세요.
         </Text>
         <TouchableOpacity
-          style={styles.forceUpdateButton}
+          style={[styles.forceUpdateButton, { backgroundColor: colors.primary }]}
           onPress={() => Linking.openURL('https://play.google.com/store/apps/details?id=com.jisang.learnusconnect')}
           activeOpacity={0.7}
         >
@@ -258,22 +264,22 @@ function AppContent() {
   return (
     <NavigationContainer ref={navigationRef}>
       <TourProvider navigationRef={navigationRef} ref={tourRef}>
-        <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
         <Stack.Navigator
           screenOptions={{
             headerStyle: {
-              backgroundColor: Colors.background,
+              backgroundColor: colors.background,
               elevation: 0,
               shadowOpacity: 0,
               borderBottomWidth: 0,
             },
-            headerTintColor: Colors.textPrimary,
+            headerTintColor: colors.textPrimary,
             headerTitleStyle: {
-              ...Typography.subtitle1,
+              ...typography.subtitle1,
               fontSize: 17,
             },
             cardStyle: {
-              backgroundColor: Colors.background,
+              backgroundColor: colors.background,
             },
           }}
         >
@@ -448,13 +454,15 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
-        <ToastProvider>
-          <AuthProvider>
-            <UserProvider>
-              <AppContent />
-            </UserProvider>
-          </AuthProvider>
-        </ToastProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <UserProvider>
+                <AppContent />
+              </UserProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -466,17 +474,14 @@ export default function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
   },
   forceUpdateContainer: {
     flex: 1,
-    backgroundColor: Colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
@@ -484,18 +489,15 @@ const styles = StyleSheet.create({
   forceUpdateTitle: {
     fontSize: 22,
     fontWeight: '700',
-    color: Colors.textPrimary,
     marginBottom: 16,
   },
   forceUpdateMessage: {
     fontSize: 15,
-    color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 32,
   },
   forceUpdateButton: {
-    backgroundColor: Colors.primary,
     paddingHorizontal: 32,
     paddingVertical: 14,
     borderRadius: 12,

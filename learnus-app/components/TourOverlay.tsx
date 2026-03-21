@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
     View,
     StyleSheet,
@@ -7,12 +7,16 @@ import {
 } from 'react-native';
 import { useTour, TargetRect } from '../context/TourContext';
 import TourTooltip from './TourTooltip';
-import { Colors } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 const OVERLAY_COLOR = 'rgba(26, 29, 38, 0.72)';
 const SPOTLIGHT_PADDING = 6;
 
 export default function TourOverlay() {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const {
         isActive,
         currentStep,
@@ -209,7 +213,7 @@ export default function TourOverlay() {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         ...StyleSheet.absoluteFillObject,
         zIndex: 9999,
@@ -224,8 +228,8 @@ const styles = StyleSheet.create({
     spotlightBorder: {
         position: 'absolute',
         borderWidth: 2,
-        borderColor: Colors.primary,
-        shadowColor: Colors.primary,
+        borderColor: colors.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 0 },
         shadowOpacity: 0.4,
         shadowRadius: 12,

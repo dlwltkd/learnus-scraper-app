@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -9,7 +9,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Spacing, Layout, Typography } from '../constants/theme';
+import { Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -18,31 +20,34 @@ interface NotificationOnboardingProps {
     onSkip: () => void;
 }
 
-const FEATURES = [
-    {
-        icon: 'sparkles' as const,
-        color: Colors.tertiary,
-        bg: Colors.tertiaryLight,
-        title: 'AI 공지 요약',
-        description: '새 공지사항을 AI가 요약해서 알려줘요',
-    },
-    {
-        icon: 'document-text-outline' as const,
-        color: Colors.primary,
-        bg: Colors.primaryLighter,
-        title: '과제 마감 알림',
-        description: '마감 전에 미리 알려드려요',
-    },
-    {
-        icon: 'notifications-outline' as const,
-        color: Colors.success,
-        bg: Colors.successLight,
-        title: '새로운 과제 · 강의',
-        description: '새 과제나 강의가 등록되면 바로 알림',
-    },
-];
-
 export default function NotificationOnboarding({ onEnable, onSkip }: NotificationOnboardingProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
+    const FEATURES = [
+        {
+            icon: 'sparkles' as const,
+            color: colors.tertiary,
+            bg: colors.tertiaryLight,
+            title: 'AI 공지 요약',
+            description: '새 공지사항을 AI가 요약해서 알려줘요',
+        },
+        {
+            icon: 'document-text-outline' as const,
+            color: colors.primary,
+            bg: colors.primaryLighter,
+            title: '과제 마감 알림',
+            description: '마감 전에 미리 알려드려요',
+        },
+        {
+            icon: 'notifications-outline' as const,
+            color: colors.success,
+            bg: colors.successLight,
+            title: '새로운 과제 · 강의',
+            description: '새 과제나 강의가 등록되면 바로 알림',
+        },
+    ];
+
     const insets = useSafeAreaInsets();
     const fadeIn = useRef(new Animated.Value(0)).current;
     const slideUp = useRef(new Animated.Value(40)).current;
@@ -102,7 +107,7 @@ export default function NotificationOnboarding({ onEnable, onSkip }: Notificatio
             >
                 {/* Bell icon */}
                 <View style={styles.iconCircle}>
-                    <Ionicons name="notifications" size={32} color={Colors.primary} />
+                    <Ionicons name="notifications" size={32} color={colors.primary} />
                 </View>
 
                 <Text style={styles.title}>알림을 켜볼까요?</Text>
@@ -136,7 +141,7 @@ export default function NotificationOnboarding({ onEnable, onSkip }: Notificatio
 
                 {/* Settings hint */}
                 <View style={styles.hintRow}>
-                    <Ionicons name="settings-outline" size={14} color={Colors.textTertiary} />
+                    <Ionicons name="settings-outline" size={14} color={colors.textTertiary} />
                     <Text style={styles.hintText}>설정에서 언제든 변경할 수 있어요</Text>
                 </View>
 
@@ -162,7 +167,7 @@ export default function NotificationOnboarding({ onEnable, onSkip }: Notificatio
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     overlay: {
         ...StyleSheet.absoluteFillObject,
         zIndex: 10000,
@@ -173,32 +178,32 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(26, 29, 38, 0.6)',
     },
     card: {
-        backgroundColor: Colors.surface,
-        borderTopLeftRadius: Layout.borderRadius.xl,
-        borderTopRightRadius: Layout.borderRadius.xl,
+        backgroundColor: colors.surface,
+        borderTopLeftRadius: layout.borderRadius.xl,
+        borderTopRightRadius: layout.borderRadius.xl,
         paddingHorizontal: Spacing.l,
         paddingTop: Spacing.xl,
-        ...Layout.shadow.xl,
+        ...layout.shadow.xl,
     },
     iconCircle: {
         width: 64,
         height: 64,
         borderRadius: 32,
-        backgroundColor: Colors.primaryLighter,
+        backgroundColor: colors.primaryLighter,
         alignItems: 'center',
         justifyContent: 'center',
         alignSelf: 'center',
         marginBottom: Spacing.m,
     },
     title: {
-        ...Typography.header2,
+        ...typography.header2,
         textAlign: 'center',
         marginBottom: Spacing.s,
     },
     subtitle: {
-        ...Typography.body2,
+        ...typography.body2,
         textAlign: 'center',
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         lineHeight: 22,
         marginBottom: Spacing.l,
     },
@@ -209,9 +214,9 @@ const styles = StyleSheet.create({
     featureRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.surfaceHighlight,
+        backgroundColor: colors.surfaceHighlight,
         padding: Spacing.m,
-        borderRadius: Layout.borderRadius.m,
+        borderRadius: layout.borderRadius.m,
         gap: Spacing.m,
     },
     featureIcon: {
@@ -225,13 +230,13 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     featureTitle: {
-        ...Typography.subtitle2,
-        color: Colors.textPrimary,
+        ...typography.subtitle2,
+        color: colors.textPrimary,
         marginBottom: 2,
     },
     featureDesc: {
-        ...Typography.caption,
-        color: Colors.textSecondary,
+        ...typography.caption,
+        color: colors.textSecondary,
     },
     hintRow: {
         flexDirection: 'row',
@@ -241,22 +246,22 @@ const styles = StyleSheet.create({
         marginBottom: Spacing.l,
     },
     hintText: {
-        ...Typography.caption,
-        color: Colors.textTertiary,
+        ...typography.caption,
+        color: colors.textTertiary,
     },
     enableBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         paddingVertical: 16,
-        borderRadius: Layout.borderRadius.m,
+        borderRadius: layout.borderRadius.m,
         marginBottom: Spacing.s,
-        ...Layout.shadow.primary,
+        ...layout.shadow.primary,
     },
     enableText: {
-        ...Typography.button,
+        ...typography.button,
         color: '#fff',
     },
     skipBtn: {
@@ -264,8 +269,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     skipText: {
-        ...Typography.body2,
-        color: Colors.textTertiary,
+        ...typography.body2,
+        color: colors.textTertiary,
         fontWeight: '500',
     },
 });

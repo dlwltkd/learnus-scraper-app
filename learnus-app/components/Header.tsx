@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -8,7 +8,9 @@ import {
     ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Layout, Spacing, Typography } from '../constants/theme';
+import { Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 interface HeaderProps {
     title?: string;
@@ -43,6 +45,8 @@ function HeaderButton({
     badge?: number;
     loading?: boolean;
 }) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
     const handlePressIn = useCallback(() => {
@@ -76,7 +80,7 @@ function HeaderButton({
                 <Ionicons
                     name={loading ? 'sync' : icon}
                     size={22}
-                    color={Colors.textPrimary}
+                    color={colors.textPrimary}
                     style={loading ? styles.spinningIcon : undefined}
                 />
                 {badge !== undefined && badge > 0 && (
@@ -101,6 +105,9 @@ export default function Header({
     transparent = false,
     style,
 }: HeaderProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     return (
         <View
             style={[
@@ -168,6 +175,9 @@ interface ScreenHeaderProps {
 }
 
 export function ScreenHeader({ title, subtitle, rightAction, style }: ScreenHeaderProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     return (
         <View style={[styles.screenHeader, style]}>
             <View style={styles.screenHeaderText}>
@@ -187,14 +197,14 @@ export function ScreenHeader({ title, subtitle, rightAction, style }: ScreenHead
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: Spacing.m,
         paddingVertical: Spacing.s,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
         minHeight: 56,
     },
     transparent: {
@@ -224,23 +234,23 @@ const styles = StyleSheet.create({
         gap: Spacing.xs,
     },
     title: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         fontSize: 17,
         textAlign: 'center',
     },
     titleLarge: {
-        ...Typography.header2,
+        ...typography.header2,
         textAlign: 'left',
     },
     subtitle: {
-        ...Typography.caption,
+        ...typography.caption,
         marginTop: 2,
     },
     headerButton: {
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: Colors.surfaceHighlight,
+        backgroundColor: colors.surfaceHighlight,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -254,13 +264,13 @@ const styles = StyleSheet.create({
         minWidth: 16,
         height: 16,
         borderRadius: 8,
-        backgroundColor: Colors.error,
+        backgroundColor: colors.error,
         alignItems: 'center',
         justifyContent: 'center',
         paddingHorizontal: 4,
     },
     badgeText: {
-        color: Colors.textInverse,
+        color: colors.textInverse,
         fontSize: 10,
         fontWeight: '700',
     },
@@ -271,29 +281,29 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: Spacing.l,
         paddingVertical: Spacing.m,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     screenHeaderText: {
         flex: 1,
     },
     screenTitle: {
-        ...Typography.header1,
+        ...typography.header1,
         fontSize: 28,
     },
     screenSubtitle: {
-        ...Typography.body2,
+        ...typography.body2,
         marginTop: 4,
     },
     screenHeaderAction: {
         paddingVertical: 8,
         paddingHorizontal: 16,
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.full,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.full,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     screenHeaderActionText: {
-        ...Typography.buttonSmall,
-        color: Colors.textPrimary,
+        ...typography.buttonSmall,
+        color: colors.textPrimary,
     },
 });

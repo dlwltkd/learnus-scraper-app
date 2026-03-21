@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
     StyleSheet,
     TextInput,
@@ -11,7 +11,9 @@ import {
     TextInputProps,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Layout, Spacing, Typography } from '../constants/theme';
+import { Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 interface InputProps extends TextInputProps {
     label?: string;
@@ -40,6 +42,9 @@ export default function Input({
     secureTextEntry,
     ...props
 }: InputProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const [isFocused, setIsFocused] = useState(false);
     const [isPasswordVisible, setIsPasswordVisible] = useState(false);
     const focusAnim = useRef(new Animated.Value(0)).current;
@@ -94,12 +99,12 @@ export default function Input({
             case 'filled':
                 return {
                     container: {
-                        backgroundColor: isFocused ? Colors.surface : Colors.surfaceMuted,
+                        backgroundColor: isFocused ? colors.surface : colors.surfaceMuted,
                         borderWidth: 2,
                         borderColor: hasError
-                            ? Colors.error
+                            ? colors.error
                             : isFocused
-                                ? Colors.primary
+                                ? colors.primary
                                 : 'transparent',
                     },
                 };
@@ -109,22 +114,22 @@ export default function Input({
                         backgroundColor: 'transparent',
                         borderWidth: 2,
                         borderColor: hasError
-                            ? Colors.error
+                            ? colors.error
                             : isFocused
-                                ? Colors.primary
-                                : Colors.border,
+                                ? colors.primary
+                                : colors.border,
                     },
                 };
             default:
                 return {
                     container: {
-                        backgroundColor: Colors.surface,
+                        backgroundColor: colors.surface,
                         borderWidth: 1,
                         borderColor: hasError
-                            ? Colors.error
+                            ? colors.error
                             : isFocused
-                                ? Colors.primary
-                                : Colors.border,
+                                ? colors.primary
+                                : colors.border,
                     },
                 };
         }
@@ -150,15 +155,15 @@ export default function Input({
                     styles.inputContainer,
                     sizeStyles.container,
                     variantStyles.container,
-                    { borderRadius: Layout.borderRadius.m },
-                    isFocused && !error && Layout.shadow.sm,
+                    { borderRadius: layout.borderRadius.m },
+                    isFocused && !error && layout.shadow.sm,
                 ]}
             >
                 {leftIcon && (
                     <Ionicons
                         name={leftIcon}
                         size={sizeStyles.icon}
-                        color={isFocused ? Colors.primary : Colors.textTertiary}
+                        color={isFocused ? colors.primary : colors.textTertiary}
                         style={styles.leftIcon}
                     />
                 )}
@@ -169,7 +174,7 @@ export default function Input({
                         sizeStyles.text,
                         inputStyle,
                     ]}
-                    placeholderTextColor={Colors.textTertiary}
+                    placeholderTextColor={colors.textTertiary}
                     onFocus={handleFocus}
                     onBlur={handleBlur}
                     secureTextEntry={actualSecureEntry}
@@ -184,7 +189,7 @@ export default function Input({
                         <Ionicons
                             name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
                             size={sizeStyles.icon}
-                            color={Colors.textTertiary}
+                            color={colors.textTertiary}
                         />
                     </TouchableOpacity>
                 )}
@@ -198,7 +203,7 @@ export default function Input({
                         <Ionicons
                             name={rightIcon}
                             size={sizeStyles.icon}
-                            color={Colors.textTertiary}
+                            color={colors.textTertiary}
                         />
                     </TouchableOpacity>
                 )}
@@ -232,12 +237,12 @@ export function SearchInput({ value, onClear, ...props }: SearchInputProps) {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     wrapper: {
         marginBottom: Spacing.m,
     },
     label: {
-        ...Typography.label,
+        ...typography.label,
         marginBottom: Spacing.xs,
         marginLeft: Spacing.xxs,
     },
@@ -247,7 +252,7 @@ const styles = StyleSheet.create({
     },
     input: {
         flex: 1,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         padding: 0,
         margin: 0,
     },
@@ -259,11 +264,11 @@ const styles = StyleSheet.create({
         padding: 2,
     },
     helperText: {
-        ...Typography.caption,
+        ...typography.caption,
         marginTop: Spacing.xs,
         marginLeft: Spacing.xxs,
     },
     errorText: {
-        color: Colors.error,
+        color: colors.error,
     },
 });
