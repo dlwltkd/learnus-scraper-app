@@ -20,6 +20,7 @@ import VodActionSheet from './components/VodActionSheet';
 import VodWebViewer from './components/VodWebViewer';
 import { useTourRef } from './hooks/useTourRef';
 import { useTour } from './context/TourContext';
+import { TOUR_MOCK_DASHBOARD } from './constants/tourMockData';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -59,7 +60,7 @@ const VideoLecturesScreen = () => {
     const { colors, typography, layout, isDark } = useTheme();
     const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const { showSuccess, showError } = useToast();
-    const { notifyInteraction, isActive: tourActive } = useTour();
+    const { notifyInteraction, isActive: tourActive, currentStep } = useTour();
     const navigation = useNavigation<any>();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
@@ -75,6 +76,19 @@ const VideoLecturesScreen = () => {
     const actionSheetRef = useTourRef('vod-action-sheet-area');
 
     useEffect(() => { loadData(); }, []);
+
+    // Mock data during tour, revert when done
+    const prevTourActive = React.useRef(false);
+    useEffect(() => {
+        if (tourActive) {
+            setData(TOUR_MOCK_DASHBOARD);
+            setLoading(false);
+        } else if (prevTourActive.current) {
+            setActionSheet(null);
+            loadData();
+        }
+        prevTourActive.current = tourActive;
+    }, [tourActive]);
 
     const openWebViewer = async (item: any) => {
         const cookies = await AsyncStorage.getItem('userToken') || '';
@@ -230,6 +244,7 @@ const VideoLecturesScreen = () => {
                                         state={item.is_completed ? 'completed' : 'pending'}
                                         type="vod"
                                         onMenuPress={() => openActionSheet(item)}
+                                        highlightMenu={tourActive && currentStep?.id === 'vod-tap-item'}
                                     />
                                 </View>
                             ) : (

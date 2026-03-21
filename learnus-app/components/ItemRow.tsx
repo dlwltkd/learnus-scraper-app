@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useMemo, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
@@ -16,6 +16,7 @@ interface ItemRowProps {
     type: ItemType;
     onWebPress?: () => void;
     onMenuPress?: () => void;
+    highlightMenu?: boolean;
 }
 
 const TYPE_ICON: Record<ItemType, keyof typeof Ionicons.glyphMap> = {
@@ -28,9 +29,25 @@ const COMPLETED_ICON: Record<ItemType, keyof typeof Ionicons.glyphMap> = {
     vod: 'checkmark-circle',
 };
 
-export default function ItemRow({ title, courseName, meta, state, type, onWebPress, onMenuPress }: ItemRowProps) {
+export default function ItemRow({ title, courseName, meta, state, type, onWebPress, onMenuPress, highlightMenu }: ItemRowProps) {
     const { colors, typography, layout, isDark } = useTheme();
     const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
+    const pulseAnim = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        if (highlightMenu) {
+            const pulse = Animated.loop(
+                Animated.sequence([
+                    Animated.timing(pulseAnim, { toValue: 1.25, duration: 700, useNativeDriver: true }),
+                    Animated.timing(pulseAnim, { toValue: 1, duration: 700, useNativeDriver: true }),
+                ])
+            );
+            pulse.start();
+            return () => pulse.stop();
+        } else {
+            pulseAnim.setValue(1);
+        }
+    }, [highlightMenu]);
 
     const STATE_CONFIG: Record<ItemState, {
         bar: string;
@@ -114,14 +131,22 @@ export default function ItemRow({ title, courseName, meta, state, type, onWebPre
                     </View>
                 )}
                 {onMenuPress ? (
-                    <TouchableOpacity
-                        style={styles.webBtn}
-                        onPress={onMenuPress}
-                        activeOpacity={0.7}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                        <Ionicons name="ellipsis-vertical" size={18} color={colors.textTertiary} />
-                    </TouchableOpacity>
+                    <Animated.View style={highlightMenu ? {
+                        transform: [{ scale: pulseAnim }],
+                    } : undefined}>
+                        <TouchableOpacity
+                            style={[styles.webBtn, highlightMenu && {
+                                backgroundColor: colors.primaryLighter,
+                                borderWidth: 1.5,
+                                borderColor: colors.primary,
+                            }]}
+                            onPress={onMenuPress}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                            <Ionicons name="ellipsis-vertical" size={18} color={highlightMenu ? colors.primary : colors.textTertiary} />
+                        </TouchableOpacity>
+                    </Animated.View>
                 ) : onWebPress ? (
                     <TouchableOpacity
                         style={styles.webBtn}

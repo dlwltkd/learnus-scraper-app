@@ -24,6 +24,8 @@ import { ScreenHeader } from './components/Header';
 import Badge from './components/Badge';
 import EmptyState from './components/EmptyState';
 import { useTourRef } from './hooks/useTourRef';
+import { useTour } from './context/TourContext';
+import { TOUR_MOCK_COURSES } from './constants/tourMockData';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -179,10 +181,22 @@ export default function CoursesScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [syncingId, setSyncingId] = useState<number | null>(null);
 
-    // Tour ref
+    // Tour
+    const { isActive: tourActive } = useTour();
+    const prevTourActive = useRef(false);
     const firstCardRef = useTourRef('courses-first-card');
 
     useEffect(() => { loadCourses(); }, []);
+
+    useEffect(() => {
+        if (tourActive) {
+            setCourses(TOUR_MOCK_COURSES);
+            setLoading(false);
+        } else if (prevTourActive.current) {
+            loadCourses();
+        }
+        prevTourActive.current = tourActive;
+    }, [tourActive]);
 
     const loadCourses = async () => {
         try {

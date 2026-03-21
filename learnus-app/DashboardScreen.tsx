@@ -33,6 +33,8 @@ import Badge, { StatusBadge } from './components/Badge';
 import Button, { IconButton } from './components/Button';
 import ItemRow from './components/ItemRow';
 import { useTourRef } from './hooks/useTourRef';
+import { useTour } from './context/TourContext';
+import { TOUR_MOCK_DASHBOARD } from './constants/tourMockData';
 
 if (Platform.OS === 'android') {
     if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -494,9 +496,21 @@ const DashboardScreen = () => {
     const [syncing, setSyncing] = useState(false);
     const [unreadNotifications, setUnreadNotifications] = useState(0);
 
-    // Tour refs
+    // Tour
+    const { isActive: tourActive } = useTour();
+    const prevTourActive = useRef(false);
     const statsRef = useTourRef('dashboard-stats');
     const aiSectionRef = useTourRef('dashboard-ai-section');
+
+    useEffect(() => {
+        if (tourActive) {
+            setData(TOUR_MOCK_DASHBOARD);
+            setLoading(false);
+        } else if (prevTourActive.current) {
+            loadDashboard();
+        }
+        prevTourActive.current = tourActive;
+    }, [tourActive]);
 
     // Collapsible state
     const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({

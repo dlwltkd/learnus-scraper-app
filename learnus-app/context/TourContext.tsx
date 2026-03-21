@@ -15,7 +15,7 @@ const TOUR_STORAGE_KEY = 'tour_completed';
 
 // ─── Step Types ──────────────────────────────────────────────────────────────
 
-export type TourStepType = 'passive' | 'interactive';
+export type TourStepType = 'passive' | 'interactive' | 'welcome';
 
 export interface TourStep {
     id: string;
@@ -44,6 +44,15 @@ export interface TourStep {
 
 export const TOUR_STEPS: TourStep[] = [
     {
+        id: 'welcome',
+        targetRefKey: '',
+        title: '앱 사용법 안내',
+        description: '주요 기능을 빠르게 둘러볼게요.\n잠깐이면 끝나요!',
+        tooltipPosition: 'center',
+        type: 'welcome',
+        delayMs: 100,
+    },
+    {
         id: 'dashboard-stats',
         navigation: { tab: 'Dashboard' },
         targetRefKey: 'dashboard-stats',
@@ -62,18 +71,6 @@ export const TOUR_STEPS: TourStep[] = [
         description: 'AI가 각 강의의 현재 상태를 분석해줘요. 긴급 과제, 다가오는 일정을 요약해서 보여줍니다.',
         tooltipPosition: 'top',
         type: 'passive',
-        borderRadius: 16,
-        padding: 4,
-    },
-    {
-        id: 'courses-tab',
-        navigation: { tab: 'Courses' },
-        targetRefKey: 'courses-first-card',
-        title: '내 강의실',
-        description: '수강 중인 강의를 확인하고, 탭하면 상세 정보를 볼 수 있어요.',
-        tooltipPosition: 'bottom',
-        type: 'passive',
-        delayMs: 500,
         borderRadius: 16,
         padding: 4,
     },
@@ -118,11 +115,33 @@ export const TOUR_STEPS: TourStep[] = [
         description: '강의 시청, 자동 시청, AI 텍스트 추출을 여기서 선택할 수 있어요.',
         tooltipPosition: 'top',
         type: 'passive',
-        delayMs: 600,
+        delayMs: 50,
         borderRadius: 24,
         padding: 8,
         adjustY: -56,
         adjustHeight: 56,
+    },
+    {
+        id: 'courses-tab',
+        navigation: { tab: 'Courses' },
+        targetRefKey: 'courses-first-card',
+        title: '내 강의실',
+        description: '수강 중인 강의를 확인하고, 탭하면 상세 정보를 볼 수 있어요.',
+        tooltipPosition: 'bottom',
+        type: 'passive',
+        delayMs: 500,
+        borderRadius: 16,
+        padding: 4,
+    },
+    {
+        id: 'settings-tab',
+        navigation: { tab: 'Settings' },
+        targetRefKey: '',
+        title: '설정',
+        description: '알림, 테마 등 앱 설정을 여기서 변경할 수 있어요.',
+        tooltipPosition: 'center',
+        type: 'welcome',
+        delayMs: 500,
     },
 ];
 
@@ -303,12 +322,16 @@ export const TourProvider = forwardRef<TourProviderHandle, TourProviderProps>(({
         }
     };
 
+    // Track the current tab so we can detect tab changes
+    const currentTabRef = useRef<string | undefined>(undefined);
+
     const completeTourInternal = useCallback(() => {
         clearTimeouts();
         setIsActive(false);
         setCurrentStepIndex(0);
         activeStepIndex.current = 0;
         setTargetRect(null);
+        currentTabRef.current = undefined;
         AsyncStorage.setItem(TOUR_STORAGE_KEY, 'true');
     }, [clearTimeouts]);
 
@@ -322,18 +345,51 @@ export const TourProvider = forwardRef<TourProviderHandle, TourProviderProps>(({
         setTargetRect(null);
         retryCount.current = 0;
 
-        const needsNavigation = step.navigation?.tab || step.navigation?.screen;
-        if (needsNavigation) {
-            navigateForStep(step);
+        // Welcome-type step: no measurement needed, navigate if needed, then show
+        if (step.type === 'welcome') {
+            const prevTab = currentTabRef.current;
+            const nextTab = step.navigation?.tab;
+            if (nextTab) {
+                currentTabRef.current = nextTab;
+                navigateForStep(step);
+            }
+            const delay = step.delayMs ?? 200;
+            measureTimeout.current = setTimeout(() => {
+                setTargetRect({ x: 0, y: 0, width: 0, height: 0 });
+            }, delay);
+            return;
         }
 
-        const delay = step.delayMs ?? (needsNavigation ? 400 : 200);
-        measureTimeout.current = setTimeout(() => {
-            requestAnimationFrame(() => measureTargetForIndex(index));
-        }, delay);
+        const prevTab = currentTabRef.current;
+        const nextTab = step.navigation?.tab;
+        const isTabChange = nextTab && prevTab && nextTab !== prevTab;
+        currentTabRef.current = nextTab || prevTab;
+
+        const needsNavigation = step.navigation?.tab || step.navigation?.screen;
+
+        if (isTabChange) {
+            // Tab is changing: wait for overlay to fade out, then navigate and measure
+            const navDelay = 200;
+            measureTimeout.current = setTimeout(() => {
+                navigateForStep(step);
+                const measureDelay = step.delayMs ?? 500;
+                measureTimeout.current = setTimeout(() => {
+                    requestAnimationFrame(() => measureTargetForIndex(index));
+                }, measureDelay);
+            }, navDelay);
+        } else {
+            if (needsNavigation) {
+                navigateForStep(step);
+            }
+            const delay = step.delayMs ?? (needsNavigation ? 400 : 200);
+            measureTimeout.current = setTimeout(() => {
+                requestAnimationFrame(() => measureTargetForIndex(index));
+            }, delay);
+        }
     }, [completeTourInternal, measureTargetForIndex]);
 
     const startTour = useCallback(() => {
+        currentTabRef.current = undefined;
         setIsActive(true);
         setCurrentStepIndex(0);
         activeStepIndex.current = 0;
@@ -372,7 +428,8 @@ export const TourProvider = forwardRef<TourProviderHandle, TourProviderProps>(({
         if (!isActive) return;
         const step = TOUR_STEPS[activeStepIndex.current];
         if (step && step.id === stepId && step.type === 'interactive') {
-            setTimeout(() => nextStep(), 300);
+            setTargetRect(null);
+            setTimeout(() => nextStep(), 100);
         }
     }, [isActive, nextStep]);
 

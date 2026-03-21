@@ -26,10 +26,17 @@ export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatc
     const [sheetReady, setSheetReady] = useState(false);
 
     useEffect(() => {
-        Animated.parallel([
-            Animated.timing(backdropOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
-            Animated.spring(slideY, { toValue: 0, damping: 22, stiffness: 220, useNativeDriver: true }),
-        ]).start(() => setSheetReady(true));
+        if (tourActive) {
+            // Appear instantly during tour so measurement is immediate
+            backdropOpacity.setValue(1);
+            slideY.setValue(0);
+            setSheetReady(true);
+        } else {
+            Animated.parallel([
+                Animated.timing(backdropOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+                Animated.spring(slideY, { toValue: 0, damping: 22, stiffness: 220, useNativeDriver: true }),
+            ]).start(() => setSheetReady(true));
+        }
     }, []);
 
     const dismiss = useCallback(() => {
