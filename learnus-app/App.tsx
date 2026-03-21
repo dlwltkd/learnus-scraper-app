@@ -33,9 +33,13 @@ import { UserProvider } from './context/UserContext';
 import { ToastProvider } from './context/ToastContext';
 import { TourProvider, TourProviderHandle, hasTourCompleted } from './context/TourContext';
 import TourOverlay from './components/TourOverlay';
+import NotificationOnboarding from './components/NotificationOnboarding';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDashboardOverview, registerPushToken, checkAppVersion } from './services/api';
 import { APP_VERSION } from './constants/version';
+
+const NOTIF_PROMPT_DISMISSED_KEY = 'notif_prompt_dismissed_at';
 import {
   registerForPushNotificationsAsync,
   registerBackgroundFetchAsync,
@@ -113,24 +117,82 @@ function TabNavigator() {
 function AppContent() {
   const { isLoggedIn, login, autoLogout, resetAutoLogout, isLoading } = useAuth();
   const tourRef = React.useRef<TourProviderHandle>(null);
+  const [showNotifOnboarding, setShowNotifOnboarding] = React.useState(false);
+
+  const startTourAfterOnboarding = React.useCallback(() => {
+    setTimeout(() => tourRef.current?.startTour(), 800);
+  }, []);
+
+  const isFirstTimeRef = React.useRef(false);
+
+  const handleNotifEnable = React.useCallback(() => {
+    setShowNotifOnboarding(false);
+    registerForPushNotificationsAsync().then(token => {
+      if (token) {
+        registerPushToken(token)
+          .then(() => console.log('Push Token Registered with Backend'))
+          .catch(e => console.log('Failed to register token with backend:', e));
+      }
+    });
+    if (isFirstTimeRef.current) {
+      startTourAfterOnboarding();
+    }
+  }, [startTourAfterOnboarding]);
+
+  const handleNotifSkip = React.useCallback(() => {
+    setShowNotifOnboarding(false);
+    // Remember dismissal for 7 days so we don't nag every app open
+    AsyncStorage.setItem(NOTIF_PROMPT_DISMISSED_KEY, Date.now().toString());
+    // Still request permission via OS dialog
+    registerForPushNotificationsAsync().then(token => {
+      if (token) registerPushToken(token).catch(() => {});
+    });
+    if (isFirstTimeRef.current) {
+      startTourAfterOnboarding();
+    }
+  }, [startTourAfterOnboarding]);
 
   React.useEffect(() => {
-    if (isLoggedIn) {
-      registerForPushNotificationsAsync().then(token => {
-        if (token) {
-          registerPushToken(token)
-            .then(() => console.log('Push Token Registered with Backend'))
-            .catch(e => console.log('Failed to register token with backend:', e));
-        }
-      });
+    if (!isLoggedIn) return;
 
-      // Check if first-time user and start tour
-      hasTourCompleted().then(completed => {
-        if (!completed) {
+    const init = async () => {
+      const tourCompleted = await hasTourCompleted();
+      const { status } = await Notifications.getPermissionsAsync();
+      const hasNotifPermission = status === 'granted';
+
+      if (!tourCompleted) {
+        // First-time user: always show notif onboarding, then tour
+        isFirstTimeRef.current = true;
+        if (!hasNotifPermission) {
+          setTimeout(() => setShowNotifOnboarding(true), 1000);
+        } else {
+          // Already has permission (e.g. granted at OS level), skip to tour
+          registerForPushNotificationsAsync().then(token => {
+            if (token) registerPushToken(token).catch(() => {});
+          });
           setTimeout(() => tourRef.current?.startTour(), 1500);
         }
-      });
-    }
+      } else {
+        // Returning user
+        isFirstTimeRef.current = false;
+        if (hasNotifPermission) {
+          // Already granted — register silently
+          registerForPushNotificationsAsync().then(token => {
+            if (token) registerPushToken(token).catch(() => {});
+          });
+        } else {
+          // Not granted — show prompt if they haven't dismissed recently (7 days)
+          const dismissedAt = await AsyncStorage.getItem(NOTIF_PROMPT_DISMISSED_KEY);
+          const sevenDays = 7 * 24 * 60 * 60 * 1000;
+          const shouldPrompt = !dismissedAt || (Date.now() - parseInt(dismissedAt, 10)) > sevenDays;
+          if (shouldPrompt) {
+            setTimeout(() => setShowNotifOnboarding(true), 1500);
+          }
+        }
+      }
+    };
+
+    init();
   }, [isLoggedIn]);
 
   const [forceUpdate, setForceUpdate] = React.useState<string | null>(null);
@@ -313,6 +375,12 @@ function AppContent() {
           )}
         </Stack.Navigator>
         <TourOverlay />
+        {showNotifOnboarding && (
+          <NotificationOnboarding
+            onEnable={handleNotifEnable}
+            onSkip={handleNotifSkip}
+          />
+        )}
       </TourProvider>
     </NavigationContainer>
   );
@@ -323,14 +391,8 @@ function AppContent() {
 // ============================================
 export default function App() {
   React.useEffect(() => {
-    const setupNotifications = async () => {
-      const token = await registerForPushNotificationsAsync();
-      if (token) {
-        console.log('Token obtained inside App:', token);
-      }
-    };
-
-    setupNotifications();
+    // Note: push notification registration is handled in AppContent
+    // after the onboarding prompt, so we don't request permission here.
     registerBackgroundFetchAsync();
 
     // Save any delivered notifications that arrived while app was in background
