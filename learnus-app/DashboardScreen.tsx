@@ -716,7 +716,6 @@ const DashboardScreen = () => {
                             ) : null
                         }
                     />
-                    </View>
 
                     {!loadingAI && aiSummaries.length === 0 && (
                         <Button
@@ -729,6 +728,7 @@ const DashboardScreen = () => {
                             rounded
                         />
                     )}
+                    </View>
 
                     {loadingAI && (
                         <View style={styles.aiLoading}>

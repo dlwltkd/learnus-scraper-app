@@ -7,6 +7,7 @@ import {
     Animated,
     Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Spacing, Layout, Typography, Animation } from '../constants/theme';
 import { TourStep } from '../context/TourContext';
@@ -35,22 +36,32 @@ export default function TourTooltip({
     onNext,
     onSkip,
 }: TourTooltipProps) {
-    const scaleAnim = useRef(new Animated.Value(0.85)).current;
+    const scaleAnim = useRef(new Animated.Value(0.92)).current;
     const opacityAnim = useRef(new Animated.Value(0)).current;
+    const translateYAnim = useRef(new Animated.Value(8)).current;
 
     useEffect(() => {
-        scaleAnim.setValue(0.85);
+        scaleAnim.setValue(0.92);
         opacityAnim.setValue(0);
+        translateYAnim.setValue(8);
         Animated.parallel([
             Animated.spring(scaleAnim, {
                 toValue: 1,
-                damping: 15,
-                stiffness: 200,
+                damping: 20,
+                stiffness: 300,
+                mass: 0.8,
+                useNativeDriver: true,
+            }),
+            Animated.spring(translateYAnim, {
+                toValue: 0,
+                damping: 20,
+                stiffness: 300,
+                mass: 0.8,
                 useNativeDriver: true,
             }),
             Animated.timing(opacityAnim, {
                 toValue: 1,
-                duration: Animation.duration.fast,
+                duration: 200,
                 useNativeDriver: true,
             }),
         ]).start();
@@ -58,6 +69,11 @@ export default function TourTooltip({
 
     const containerHeight = overlayHeight || Dimensions.get('window').height;
     const tooltipWidth = Math.min(TOOLTIP_WIDTH, MAX_WIDTH);
+    const insets = useSafeAreaInsets();
+    const TAB_BAR_HEIGHT = 64;
+
+    const isCentered = step.tooltipPosition === 'center';
+    const isAboveTabBar = step.tooltipPosition === 'aboveTabBar';
 
     // Determine position
     const position = step.tooltipPosition === 'auto'
@@ -67,7 +83,9 @@ export default function TourTooltip({
     const isAbove = position === 'top';
 
     // Calculate tooltip left to center it, clamped to screen
-    const centerX = targetRect.x + targetRect.width / 2;
+    const centerX = (isCentered || isAboveTabBar)
+        ? SCREEN_WIDTH / 2
+        : targetRect.x + targetRect.width / 2;
     let tooltipLeft = centerX - tooltipWidth / 2;
     tooltipLeft = Math.max(16, Math.min(tooltipLeft, SCREEN_WIDTH - tooltipWidth - 16));
 
@@ -80,7 +98,11 @@ export default function TourTooltip({
         width: tooltipWidth,
     };
 
-    if (isAbove) {
+    if (isAboveTabBar) {
+        tooltipStyle.bottom = TAB_BAR_HEIGHT + insets.bottom + 12;
+    } else if (isCentered) {
+        tooltipStyle.top = containerHeight / 2 - 80;
+    } else if (isAbove) {
         tooltipStyle.bottom = containerHeight - targetRect.y + 12;
     } else {
         tooltipStyle.top = targetRect.y + targetRect.height + 12;
@@ -94,14 +116,14 @@ export default function TourTooltip({
             style={[
                 tooltipStyle,
                 {
-                    transform: [{ scale: scaleAnim }],
+                    transform: [{ scale: scaleAnim }, { translateY: translateYAnim }],
                     opacity: opacityAnim,
                 },
             ]}
             pointerEvents="box-none"
         >
             {/* Arrow pointing toward target */}
-            {!isAbove && (
+            {!isAbove && !isCentered && !isAboveTabBar && (
                 <View style={[styles.arrowUp, { left: arrowLeft }]} />
             )}
 
@@ -165,7 +187,7 @@ export default function TourTooltip({
             </View>
 
             {/* Arrow below card */}
-            {isAbove && (
+            {isAbove && !isCentered && !isAboveTabBar && (
                 <View style={[styles.arrowDown, { left: arrowLeft }]} />
             )}
         </Animated.View>

@@ -185,6 +185,7 @@ const VideoLecturesScreen = () => {
                 refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
                 showsVerticalScrollIndicator={false}
             >
+              <View ref={availableSectionRef} collapsable={false}>
                 {/* Missed */}
                 {data?.missed_vods?.length > 0 && (
                     <View style={styles.section}>
@@ -210,11 +211,9 @@ const VideoLecturesScreen = () => {
                 {/* Available */}
                 {data?.available_vods?.length > 0 && (
                     <View style={styles.section}>
-                        <View ref={availableSectionRef} collapsable={false}>
-                            <SectionHeader
-                                title="시청 가능 강의" icon="play-circle-outline"
-                            />
-                        </View>
+                        <SectionHeader
+                            title="시청 가능 강의" icon="play-circle-outline"
+                        />
                         {data.available_vods.map((item: any, index: number) => (
                             index === 0 ? (
                                 <View key={item.id} ref={firstItemMenuRef} collapsable={false}>
@@ -276,6 +275,7 @@ const VideoLecturesScreen = () => {
                         ))}
                     </View>
                 )}
+              </View>
             </ScrollView>
 
             {webViewer && (

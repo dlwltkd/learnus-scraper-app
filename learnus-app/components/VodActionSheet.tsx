@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,12 +18,13 @@ export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatc
     const backdropOpacity = useRef(new Animated.Value(0)).current;
     const slideY = useRef(new Animated.Value(300)).current;
     const insets = useSafeAreaInsets();
+    const [sheetReady, setSheetReady] = useState(false);
 
     useEffect(() => {
         Animated.parallel([
             Animated.timing(backdropOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
             Animated.spring(slideY, { toValue: 0, damping: 22, stiffness: 220, useNativeDriver: true }),
-        ]).start();
+        ]).start(() => setSheetReady(true));
     }, []);
 
     const dismiss = useCallback(() => {
@@ -34,7 +35,7 @@ export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatc
     }, [onClose]);
 
     const sheetContent = (
-        <Animated.View ref={tourRef} collapsable={false} style={[styles.sheet, { transform: [{ translateY: slideY }], paddingBottom: insets.bottom + Spacing.m }]}>
+        <Animated.View style={[styles.sheet, { transform: [{ translateY: slideY }], paddingBottom: insets.bottom + Spacing.m }]}>
             <View style={styles.handle} />
             <Text style={styles.vodTitle} numberOfLines={2}>{item.title}</Text>
             {item.course_name && (
@@ -85,6 +86,23 @@ export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatc
                     <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={dismiss} />
                 </Animated.View>
                 {sheetContent}
+                {/* Invisible measurement view at final position (no animated transform) for tour spotlight */}
+                {sheetReady && tourRef && (
+                    <View
+                        ref={tourRef}
+                        collapsable={false}
+                        pointerEvents="none"
+                        style={[styles.sheet, styles.measureView, { paddingBottom: insets.bottom + Spacing.m }]}
+                    >
+                        <View style={styles.handle} />
+                        <Text style={styles.vodTitle} numberOfLines={2}>{item.title}</Text>
+                        {item.course_name && <Text style={styles.vodCourse} numberOfLines={1}>{item.course_name}</Text>}
+                        <View style={styles.divider} />
+                        <View style={styles.action}><View style={styles.actionIcon} /><View style={styles.actionText}><Text style={styles.actionLabel}> </Text><Text style={styles.actionSub}> </Text></View></View>
+                        <View style={styles.action}><View style={styles.actionIcon} /><View style={styles.actionText}><Text style={styles.actionLabel}> </Text><Text style={styles.actionSub}> </Text></View></View>
+                        <View style={styles.action}><View style={styles.actionIcon} /><View style={styles.actionText}><Text style={styles.actionLabel}> </Text><Text style={styles.actionSub}> </Text></View></View>
+                    </View>
+                )}
             </View>
         );
     }
@@ -173,5 +191,8 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         color: Colors.textSecondary,
+    },
+    measureView: {
+        opacity: 0,
     },
 });

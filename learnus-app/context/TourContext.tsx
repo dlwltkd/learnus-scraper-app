@@ -27,11 +27,12 @@ export interface TourStep {
     targetRefKey: string;
     title: string;
     description: string;
-    tooltipPosition: 'top' | 'bottom' | 'auto';
+    tooltipPosition: 'top' | 'bottom' | 'center' | 'aboveTabBar' | 'auto';
     type: TourStepType;
     delayMs?: number;
     borderRadius?: number;
     padding?: number;
+    fullScreen?: boolean;  // Show entire page without spotlight, tooltip centered
     // Manual adjustments to the measured rect (in pixels)
     adjustY?: number;      // shift spotlight up (-) or down (+)
     adjustX?: number;      // shift spotlight left (-) or right (+)
@@ -59,10 +60,12 @@ export const TOUR_STEPS: TourStep[] = [
         targetRefKey: 'dashboard-ai-section',
         title: 'AI 브리핑',
         description: 'AI가 각 강의의 현재 상태를 분석해줘요. 긴급 과제, 다가오는 일정을 요약해서 보여줍니다.',
-        tooltipPosition: 'bottom',
+        tooltipPosition: 'top',
         type: 'passive',
         borderRadius: 16,
         padding: 4,
+    },
+    {
         id: 'courses-tab',
         navigation: { tab: 'Courses' },
         targetRefKey: 'courses-first-card',
@@ -80,7 +83,7 @@ export const TOUR_STEPS: TourStep[] = [
         targetRefKey: 'vod-available-section',
         title: '강의 목록',
         description: '놓친 강의, 시청 가능 강의 등 상태별로 분류되어 있어요.',
-        tooltipPosition: 'bottom',
+        tooltipPosition: 'aboveTabBar',
         type: 'passive',
         delayMs: 500,
         borderRadius: 14,
@@ -116,8 +119,10 @@ export const TOUR_STEPS: TourStep[] = [
         tooltipPosition: 'top',
         type: 'passive',
         delayMs: 600,
-        borderRadius: 50,
-        padding: 2000,
+        borderRadius: 24,
+        padding: 8,
+        adjustY: -56,
+        adjustHeight: 56,
     },
 ];
 
