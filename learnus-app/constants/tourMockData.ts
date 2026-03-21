@@ -1,7 +1,7 @@
 // Mock data shown during the app walkthrough tour
 // Ensures a consistent experience regardless of the user's actual data
 
-export const TOUR_MOCK_DASHBOARD = {
+export const TOUR_MOCK_OVERVIEW = {
     stats: {
         completed_assignments_due: 3,
         total_assignments_due: 5,

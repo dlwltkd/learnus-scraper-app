@@ -347,7 +347,6 @@ export const TourProvider = forwardRef<TourProviderHandle, TourProviderProps>(({
 
         // Welcome-type step: no measurement needed, navigate if needed, then show
         if (step.type === 'welcome') {
-            const prevTab = currentTabRef.current;
             const nextTab = step.navigation?.tab;
             if (nextTab) {
                 currentTabRef.current = nextTab;

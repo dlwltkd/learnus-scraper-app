@@ -20,7 +20,7 @@ import VodActionSheet from './components/VodActionSheet';
 import VodWebViewer from './components/VodWebViewer';
 import { useTourRef } from './hooks/useTourRef';
 import { useTour } from './context/TourContext';
-import { TOUR_MOCK_DASHBOARD } from './constants/tourMockData';
+import { TOUR_MOCK_OVERVIEW } from './constants/tourMockData';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -81,7 +81,7 @@ const VideoLecturesScreen = () => {
     const prevTourActive = React.useRef(false);
     useEffect(() => {
         if (tourActive) {
-            setData(TOUR_MOCK_DASHBOARD);
+            setData(TOUR_MOCK_OVERVIEW);
             setLoading(false);
         } else if (prevTourActive.current) {
             setActionSheet(null);

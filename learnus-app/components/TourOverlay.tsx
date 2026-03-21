@@ -9,7 +9,6 @@ import {
 import { useTour, TargetRect } from '../context/TourContext';
 import TourTooltip from './TourTooltip';
 import { useTheme } from '../context/ThemeContext';
-import { Spacing } from '../constants/theme';
 import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 const OVERLAY_COLOR = 'rgba(26, 29, 38, 0.72)';
@@ -117,7 +116,7 @@ export default function TourOverlay() {
 
     if (!isActive) return null;
 
-    const isWelcome = currentStep?.id === 'welcome';
+    const isWelcomeType = currentStep?.type === 'welcome';
     const borderRadius = currentStep?.borderRadius ?? 14;
     const isInteractive = currentStep?.type === 'interactive';
 
@@ -131,17 +130,18 @@ export default function TourOverlay() {
         }
         : null;
 
-    // Welcome screen — uses same card style as TourTooltip
-    if (isWelcome && targetRect) {
+    // Welcome-type steps (welcome + settings): overlay with centered tooltip, no spotlight
+    if (isWelcomeType && targetRect) {
+        const isFirstWelcome = currentStep?.id === 'welcome';
         return (
             <View ref={containerRef} style={styles.container} pointerEvents="box-none" collapsable={false} onLayout={handleLayout}>
                 <Animated.View style={[styles.fullOverlay, styles.welcomeOverlay, { opacity }]} pointerEvents="auto">
                     <TourTooltip
-                        step={{
+                        step={isFirstWelcome ? {
                             ...currentStep!,
                             title: '앱 둘러보기',
                             description: '주요 기능을 빠르게 안내해드릴게요.',
-                        }}
+                        } : currentStep!}
                         stepIndex={currentStepIndex}
                         totalSteps={totalSteps}
                         targetRect={{ x: 0, y: 0, width: 0, height: 0 }}

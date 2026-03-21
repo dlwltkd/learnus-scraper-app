@@ -37,7 +37,8 @@ export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatc
                 Animated.spring(slideY, { toValue: 0, damping: 22, stiffness: 220, useNativeDriver: true }),
             ]).start(() => setSheetReady(true));
         }
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tourActive]);
 
     const dismiss = useCallback(() => {
         Animated.parallel([
