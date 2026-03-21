@@ -105,7 +105,7 @@ export default function CourseDetailScreen() {
             },
         });
         loadData();
-    }, []);
+    }, [navigation, course.name, colors.background, colors.textPrimary]);
 
     const loadData = async () => {
         try {

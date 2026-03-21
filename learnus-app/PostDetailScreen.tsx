@@ -19,7 +19,7 @@ export default function PostDetailScreen() {
       headerStyle: { backgroundColor: colors.surface },
       headerTintColor: colors.textPrimary,
     });
-  }, []);
+  }, [navigation, colors.surface, colors.textPrimary]);
 
   // Wrap content in basic HTML structure for WebView
   const htmlContent = `

@@ -42,6 +42,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
                 setThemeModeState(saved);
             }
             setLoaded(true);
+        }).catch(() => {
+            setLoaded(true);
         });
     }, []);
 
