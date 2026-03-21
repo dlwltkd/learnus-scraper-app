@@ -17,7 +17,9 @@ import CookieManager from '@react-native-cookies/cookies';
 import * as Device from 'expo-device';
 
 import { loginWithCookies } from './services/api';
-import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
+import { Spacing, Animation } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import Button from './components/Button';
 
 interface LoginScreenProps {
@@ -31,6 +33,8 @@ export default function LoginScreen({
     autoLogout,
     onAutoLogoutComplete,
 }: LoginScreenProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const isLoggingOutRef = useRef(false);
     const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -350,7 +354,7 @@ export default function LoginScreen({
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
-            <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
             {/* Header */}
             <Animated.View
@@ -364,7 +368,7 @@ export default function LoginScreen({
             >
                 <View style={styles.logoContainer}>
                     <View style={styles.logoGradient}>
-                        <Ionicons name="school" size={24} color={Colors.textInverse} />
+                        <Ionicons name="school" size={24} color={colors.textInverse} />
                     </View>
                     <View style={styles.logoText}>
                         <Text style={styles.logoTitle}>LearnUs Connect</Text>
@@ -378,7 +382,7 @@ export default function LoginScreen({
                 {/* Controls */}
                 <View style={styles.webViewControls}>
                     <View style={styles.urlBar}>
-                        <Ionicons name="lock-closed" size={14} color={Colors.success} />
+                        <Ionicons name="lock-closed" size={14} color={colors.success} />
                         <Text style={styles.urlText} numberOfLines={1}>
                             ys.learnus.org
                         </Text>
@@ -392,7 +396,7 @@ export default function LoginScreen({
                         <Ionicons
                             name="refresh"
                             size={18}
-                            color={isLoggingOut ? Colors.textTertiary : Colors.textSecondary}
+                            color={isLoggingOut ? colors.textTertiary : colors.textSecondary}
                         />
                         <Text style={[styles.resetButtonText, isLoggingOut && styles.resetButtonTextDisabled]}>
                             {isLoggingOut ? '처리 중...' : '초기화'}
@@ -431,13 +435,13 @@ export default function LoginScreen({
                                 ]}
                             >
                                 <View style={styles.loadingIconContainer}>
-                                    <Ionicons name="school" size={32} color={Colors.primary} />
+                                    <Ionicons name="school" size={32} color={colors.primary} />
                                 </View>
                                 <Text style={styles.loadingTitle}>로그인 중...</Text>
                                 <Text style={styles.loadingSubtitle}>연세포털 인증을 처리하고 있습니다</Text>
                                 <ActivityIndicator
                                     size="small"
-                                    color={Colors.primary}
+                                    color={colors.primary}
                                     style={styles.loadingSpinner}
                                 />
                                 {showDebugLink && (
@@ -456,7 +460,7 @@ export default function LoginScreen({
 
             {/* Footer Hint */}
             <View style={styles.footer}>
-                <Ionicons name="information-circle-outline" size={16} color={Colors.textTertiary} />
+                <Ionicons name="information-circle-outline" size={16} color={colors.textTertiary} />
                 <Text style={styles.footerText}>
                     연세포털 계정으로 로그인하세요
                 </Text>
@@ -479,7 +483,7 @@ export default function LoginScreen({
                         </Text>
                         {debugSent ? (
                             <View style={styles.debugSentContainer}>
-                                <Ionicons name="checkmark-circle" size={24} color={Colors.success} />
+                                <Ionicons name="checkmark-circle" size={24} color={colors.success} />
                                 <Text style={styles.debugSentText}>전송 완료! 감사합니다.</Text>
                             </View>
                         ) : (
@@ -489,7 +493,7 @@ export default function LoginScreen({
                                 disabled={debugSending}
                             >
                                 {debugSending ? (
-                                    <ActivityIndicator size="small" color={Colors.textInverse} />
+                                    <ActivityIndicator size="small" color={colors.textInverse} />
                                 ) : (
                                     <Text style={styles.debugSendButtonText}>디버그 정보 전송</Text>
                                 )}
@@ -508,17 +512,17 @@ export default function LoginScreen({
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
 
     // Header
     header: {
         paddingHorizontal: Spacing.l,
         paddingVertical: Spacing.m,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     logoContainer: {
         flexDirection: 'row',
@@ -528,7 +532,7 @@ const styles = StyleSheet.create({
         width: 48,
         height: 48,
         borderRadius: 14,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: Spacing.m,
@@ -537,13 +541,13 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     logoTitle: {
-        ...Typography.header2,
+        ...typography.header2,
         fontSize: 20,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     logoSubtitle: {
-        ...Typography.caption,
-        color: Colors.textSecondary,
+        ...typography.caption,
+        color: colors.textSecondary,
         marginTop: 2,
     },
 
@@ -552,12 +556,12 @@ const styles = StyleSheet.create({
         flex: 1,
         marginHorizontal: Spacing.l,
         marginBottom: Spacing.m,
-        borderRadius: Layout.borderRadius.xl,
+        borderRadius: layout.borderRadius.xl,
         overflow: 'hidden',
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderWidth: 1,
-        borderColor: Colors.border,
-        ...Layout.shadow.default,
+        borderColor: colors.border,
+        ...layout.shadow.default,
     },
     webViewControls: {
         flexDirection: 'row',
@@ -565,85 +569,85 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: Spacing.m,
         paddingVertical: Spacing.s,
-        backgroundColor: Colors.surfaceHighlight,
+        backgroundColor: colors.surfaceHighlight,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.divider,
+        borderBottomColor: colors.divider,
     },
     urlBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         paddingHorizontal: Spacing.s,
         paddingVertical: Spacing.xs,
-        borderRadius: Layout.borderRadius.s,
+        borderRadius: layout.borderRadius.s,
         gap: 6,
     },
     urlText: {
-        ...Typography.caption,
-        color: Colors.textSecondary,
+        ...typography.caption,
+        color: colors.textSecondary,
     },
     resetButton: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: Spacing.m,
         paddingVertical: Spacing.xs,
-        borderRadius: Layout.borderRadius.full,
-        backgroundColor: Colors.surface,
+        borderRadius: layout.borderRadius.full,
+        backgroundColor: colors.surface,
         gap: 4,
     },
     resetButtonDisabled: {
         opacity: 0.6,
     },
     resetButtonText: {
-        ...Typography.buttonSmall,
-        color: Colors.textSecondary,
+        ...typography.buttonSmall,
+        color: colors.textSecondary,
     },
     resetButtonTextDisabled: {
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
     },
     webViewWrapper: {
         flex: 1,
     },
     webView: {
         flex: 1,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
     },
 
     // Loading Overlay
     loadingOverlay: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(248, 249, 252, 0.95)',
+        backgroundColor: isDark ? 'rgba(18, 20, 28, 0.95)' : 'rgba(248, 249, 252, 0.95)',
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 10,
     },
     loadingCard: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.xl,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.xl,
         padding: Spacing.xl,
         alignItems: 'center',
-        ...Layout.shadow.lg,
+        ...layout.shadow.lg,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         minWidth: 220,
     },
     loadingIconContainer: {
         width: 64,
         height: 64,
         borderRadius: 32,
-        backgroundColor: Colors.primaryLighter,
+        backgroundColor: colors.primaryLighter,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: Spacing.m,
     },
     loadingTitle: {
-        ...Typography.subtitle1,
-        color: Colors.textPrimary,
+        ...typography.subtitle1,
+        color: colors.textPrimary,
         marginBottom: Spacing.xs,
     },
     loadingSubtitle: {
-        ...Typography.caption,
-        color: Colors.textSecondary,
+        ...typography.caption,
+        color: colors.textSecondary,
         textAlign: 'center',
     },
     loadingSpinner: {
@@ -659,8 +663,8 @@ const styles = StyleSheet.create({
         gap: 6,
     },
     footerText: {
-        ...Typography.caption,
-        color: Colors.textTertiary,
+        ...typography.caption,
+        color: colors.textTertiary,
     },
 
     // Debug
@@ -668,8 +672,8 @@ const styles = StyleSheet.create({
         marginTop: Spacing.m,
     },
     debugLinkText: {
-        ...Typography.caption,
-        color: Colors.textTertiary,
+        ...typography.caption,
+        color: colors.textTertiary,
         textDecorationLine: 'underline',
     },
     debugModalBackdrop: {
@@ -679,36 +683,36 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(26, 29, 38, 0.6)',
     },
     debugModalContent: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.xl,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.xl,
         padding: Spacing.xl,
         marginHorizontal: Spacing.l,
         maxWidth: 340,
         width: '100%',
-        ...Layout.shadow.lg,
+        ...layout.shadow.lg,
     },
     debugModalTitle: {
-        ...Typography.header3,
+        ...typography.header3,
         textAlign: 'center',
         marginBottom: Spacing.m,
     },
     debugModalText: {
-        ...Typography.body2,
-        color: Colors.textSecondary,
+        ...typography.body2,
+        color: colors.textSecondary,
         textAlign: 'center',
         marginBottom: Spacing.l,
         lineHeight: 22,
     },
     debugSendButton: {
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         paddingVertical: Spacing.m,
-        borderRadius: Layout.borderRadius.m,
+        borderRadius: layout.borderRadius.m,
         alignItems: 'center',
         marginBottom: Spacing.s,
     },
     debugSendButtonText: {
-        ...Typography.button,
-        color: Colors.textInverse,
+        ...typography.button,
+        color: colors.textInverse,
     },
     debugSentContainer: {
         flexDirection: 'row',
@@ -719,15 +723,15 @@ const styles = StyleSheet.create({
         paddingVertical: Spacing.m,
     },
     debugSentText: {
-        ...Typography.subtitle2,
-        color: Colors.success,
+        ...typography.subtitle2,
+        color: colors.success,
     },
     debugCloseButton: {
         paddingVertical: Spacing.s,
         alignItems: 'center',
     },
     debugCloseButtonText: {
-        ...Typography.buttonSmall,
-        color: Colors.textTertiary,
+        ...typography.buttonSmall,
+        color: colors.textTertiary,
     },
 });

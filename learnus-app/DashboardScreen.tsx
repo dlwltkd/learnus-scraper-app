@@ -21,7 +21,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { getDashboardOverview, syncAllActiveCourses, fetchAISummary } from './services/api';
-import { Colors, Spacing, Layout, Typography, Animation } from './constants/theme';
+import { Spacing, Animation } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import { useUser } from './context/UserContext';
 import { useToast } from './context/ToastContext';
 import { getUnreadCount } from './services/NotificationHistoryService';
@@ -47,24 +49,29 @@ interface StatItemProps {
     label: string;
     value: number;
     total?: number;
-    color?: string;
+    color?: string | null;
     icon: keyof typeof Ionicons.glyphMap;
 }
 
-const StatItem = ({ label, value, total, color = Colors.primary, icon }: StatItemProps) => (
-    <View style={styles.statItem}>
-        <View style={[styles.statIconContainer, { backgroundColor: color + '15' }]}>
-            <Ionicons name={icon} size={20} color={color} />
+const StatItem = ({ label, value, total, color, icon }: StatItemProps) => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+    const resolvedColor = color ?? colors.primary;
+    return (
+        <View style={styles.statItem}>
+            <View style={[styles.statIconContainer, { backgroundColor: resolvedColor + '15' }]}>
+                <Ionicons name={icon} size={20} color={resolvedColor} />
+            </View>
+            <Text style={styles.statLabel}>{label}</Text>
+            <View style={styles.statValueRow}>
+                <Text style={[styles.statValue, { color: resolvedColor }]}>{value}</Text>
+                {total !== undefined && (
+                    <Text style={styles.statTotal}>/{total}</Text>
+                )}
+            </View>
         </View>
-        <Text style={styles.statLabel}>{label}</Text>
-        <View style={styles.statValueRow}>
-            <Text style={[styles.statValue, { color }]}>{value}</Text>
-            {total !== undefined && (
-                <Text style={styles.statTotal}>/{total}</Text>
-            )}
-        </View>
-    </View>
-);
+    );
+};
 
 // ============================================
 // AI SUMMARY TYPES & CONFIG
@@ -117,6 +124,8 @@ interface AISummary {
 // AI SUMMARY CARD (Fixed Height)
 // ============================================
 const AISummaryCard = ({ summary, onPress, index }: { summary: AISummary; onPress: () => void; index: number }) => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const aiStyles = React.useMemo(() => createAiStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const slideAnim = useRef(new Animated.Value(40)).current;
     const opacityAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.95)).current;
@@ -230,7 +239,7 @@ const AISummaryCard = ({ summary, onPress, index }: { summary: AISummary; onPres
                         </View>
                         <View style={aiStyles.viewMoreRow}>
                             <Text style={aiStyles.viewMore}>자세히</Text>
-                            <Ionicons name="chevron-forward" size={12} color={Colors.textTertiary} />
+                            <Ionicons name="chevron-forward" size={12} color={colors.textTertiary} />
                         </View>
                     </View>
                 </View>
@@ -251,6 +260,8 @@ const AISummaryModal = ({
     visible: boolean;
     onClose: () => void;
 }) => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const modalStyles = React.useMemo(() => createModalStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const slideAnim = useRef(new Animated.Value(300)).current;
     const backdropAnim = useRef(new Animated.Value(0)).current;
     const insets = useSafeAreaInsets();
@@ -307,7 +318,7 @@ const AISummaryModal = ({
                                 <Ionicons
                                     name={item.type === 'assignment' ? 'document-text-outline' : 'play-circle-outline'}
                                     size={16}
-                                    color={Colors.textSecondary}
+                                    color={colors.textSecondary}
                                 />
                                 <Text style={modalStyles.itemTitle} numberOfLines={1}>{item.title}</Text>
                             </View>
@@ -354,7 +365,7 @@ const AISummaryModal = ({
                             </Text>
                         </View>
                         <TouchableOpacity style={modalStyles.closeButton} onPress={onClose}>
-                            <Ionicons name="close" size={22} color={Colors.textSecondary} />
+                            <Ionicons name="close" size={22} color={colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -396,7 +407,7 @@ const AISummaryModal = ({
                     {/* AI Insight */}
                     <View style={modalStyles.insightBox}>
                         <View style={modalStyles.insightHeader}>
-                            <Ionicons name="sparkles" size={16} color={Colors.primary} />
+                            <Ionicons name="sparkles" size={16} color={colors.primary} />
                             <Text style={modalStyles.insightLabel}>AI 코멘트</Text>
                         </View>
                         <Text style={modalStyles.insightText}>{summary.insight}</Text>
@@ -413,7 +424,7 @@ const AISummaryModal = ({
 interface SectionHeaderProps {
     title: string;
     icon: keyof typeof Ionicons.glyphMap;
-    iconColor?: string;
+    iconColor?: string | null;
     count?: number;
     isCollapsible?: boolean;
     isCollapsed?: boolean;
@@ -424,41 +435,46 @@ interface SectionHeaderProps {
 const SectionHeader = ({
     title,
     icon,
-    iconColor = Colors.primary,
+    iconColor,
     count,
     isCollapsible,
     isCollapsed,
     onToggle,
     action,
-}: SectionHeaderProps) => (
-    <View style={styles.sectionHeader}>
-        <TouchableOpacity
-            style={styles.sectionHeaderLeft}
-            onPress={isCollapsible ? onToggle : undefined}
-            activeOpacity={isCollapsible ? 0.7 : 1}
-            disabled={!isCollapsible}
-        >
-            <View style={[styles.sectionIconContainer, { backgroundColor: iconColor + '15' }]}>
-                <Ionicons name={icon} size={18} color={iconColor} />
-            </View>
-            <Text style={styles.sectionTitle}>{title}</Text>
-            {isCollapsible && isCollapsed && count !== undefined && count > 0 && (
-                <View style={styles.countBadge}>
-                    <Text style={styles.countText}>{count}</Text>
+}: SectionHeaderProps) => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+    const resolvedIconColor = iconColor ?? colors.primary;
+    return (
+        <View style={styles.sectionHeader}>
+            <TouchableOpacity
+                style={styles.sectionHeaderLeft}
+                onPress={isCollapsible ? onToggle : undefined}
+                activeOpacity={isCollapsible ? 0.7 : 1}
+                disabled={!isCollapsible}
+            >
+                <View style={[styles.sectionIconContainer, { backgroundColor: resolvedIconColor + '15' }]}>
+                    <Ionicons name={icon} size={18} color={resolvedIconColor} />
                 </View>
-            )}
-            {isCollapsible && (
-                <Ionicons
-                    name={isCollapsed ? 'chevron-down' : 'chevron-up'}
-                    size={20}
-                    color={Colors.textTertiary}
-                    style={{ marginLeft: 8 }}
-                />
-            )}
-        </TouchableOpacity>
-        {action}
-    </View>
-);
+                <Text style={styles.sectionTitle}>{title}</Text>
+                {isCollapsible && isCollapsed && count !== undefined && count > 0 && (
+                    <View style={styles.countBadge}>
+                        <Text style={styles.countText}>{count}</Text>
+                    </View>
+                )}
+                {isCollapsible && (
+                    <Ionicons
+                        name={isCollapsed ? 'chevron-down' : 'chevron-up'}
+                        size={20}
+                        color={colors.textTertiary}
+                        style={{ marginLeft: 8 }}
+                    />
+                )}
+            </TouchableOpacity>
+            {action}
+        </View>
+    );
+};
 
 // AssignmentItem is now handled by the shared ItemRow component
 
@@ -466,6 +482,9 @@ const SectionHeader = ({
 // MAIN DASHBOARD SCREEN
 // ============================================
 const DashboardScreen = () => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+    const modalStyles = React.useMemo(() => createModalStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const navigation = useNavigation();
     const { profile } = useUser();
     const { showSuccess, showError } = useToast();
@@ -596,14 +615,14 @@ const DashboardScreen = () => {
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
 
     return (
         <SafeAreaView style={styles.container} edges={['top']}>
-            <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
@@ -611,8 +630,8 @@ const DashboardScreen = () => {
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
-                        tintColor={Colors.primary}
-                        colors={[Colors.primary]}
+                        tintColor={colors.primary}
+                        colors={[colors.primary]}
                     />
                 }
                 showsVerticalScrollIndicator={false}
@@ -640,7 +659,7 @@ const DashboardScreen = () => {
                             <Ionicons
                                 name="notifications-outline"
                                 size={22}
-                                color={Colors.textSecondary}
+                                color={colors.textSecondary}
                             />
                             {unreadNotifications > 0 && (
                                 <View style={styles.notificationBadge}>
@@ -662,7 +681,7 @@ const DashboardScreen = () => {
                                 <Ionicons
                                     name="refresh"
                                     size={22}
-                                    color={syncing ? Colors.primary : Colors.textSecondary}
+                                    color={syncing ? colors.primary : colors.textSecondary}
                                 />
                             </Animated.View>
                         </TouchableOpacity>
@@ -677,21 +696,21 @@ const DashboardScreen = () => {
                             label="과제/퀴즈"
                             value={data?.stats?.completed_assignments_due || 0}
                             total={data?.stats?.total_assignments_due || 0}
-                            color={Colors.primary}
+                            color={colors.primary}
                             icon="clipboard-outline"
                         />
                         <View style={styles.statsDivider} />
                         <StatItem
                             label="놓친 강의"
                             value={data?.stats?.missed_vods_count || 0}
-                            color={(data?.stats?.missed_vods_count || 0) > 0 ? Colors.error : Colors.success}
+                            color={(data?.stats?.missed_vods_count || 0) > 0 ? colors.error : colors.success}
                             icon="videocam-outline"
                         />
                         <View style={styles.statsDivider} />
                         <StatItem
                             label="놓친 과제"
                             value={data?.stats?.missed_assignments_count || 0}
-                            color={(data?.stats?.missed_assignments_count || 0) > 0 ? Colors.error : Colors.success}
+                            color={(data?.stats?.missed_assignments_count || 0) > 0 ? colors.error : colors.success}
                             icon="alert-circle-outline"
                         />
                     </View>
@@ -703,7 +722,7 @@ const DashboardScreen = () => {
                     <SectionHeader
                         title="AI 브리핑"
                         icon="sparkles"
-                        iconColor={Colors.primary}
+                        iconColor={colors.primary}
                         action={
                             aiSummaries.length > 0 && !loadingAI ? (
                                 <TouchableOpacity
@@ -711,7 +730,7 @@ const DashboardScreen = () => {
                                     onPress={loadAISummaries}
                                     activeOpacity={0.6}
                                 >
-                                    <Ionicons name="refresh-outline" size={16} color={Colors.textTertiary} />
+                                    <Ionicons name="refresh-outline" size={16} color={colors.textTertiary} />
                                 </TouchableOpacity>
                             ) : null
                         }
@@ -723,7 +742,7 @@ const DashboardScreen = () => {
                             onPress={loadAISummaries}
                             variant="primary"
                             size="md"
-                            icon={<Ionicons name="sparkles" size={18} color={Colors.textInverse} />}
+                            icon={<Ionicons name="sparkles" size={18} color={colors.textInverse} />}
                             style={styles.generateButton}
                             rounded
                         />
@@ -768,7 +787,7 @@ const DashboardScreen = () => {
                         <SectionHeader
                             title="마감 지난 과제"
                             icon="warning"
-                            iconColor={Colors.error}
+                            iconColor={colors.error}
                             count={data.missed_assignments.length}
                             isCollapsible
                             isCollapsed={collapsedSections.missedAssignments}
@@ -794,7 +813,7 @@ const DashboardScreen = () => {
                         <SectionHeader
                             title="다가오는 과제"
                             icon="calendar"
-                            iconColor={Colors.primary}
+                            iconColor={colors.primary}
                         />
                         {data.upcoming_assignments.map((item: any) => (
                             <ItemRow
@@ -813,7 +832,7 @@ const DashboardScreen = () => {
                 {!data?.missed_assignments?.length && !data?.upcoming_assignments?.length && (
                     <View style={styles.emptyState}>
                         <View style={styles.emptyIcon}>
-                            <Ionicons name="checkmark-done" size={48} color={Colors.success} />
+                            <Ionicons name="checkmark-done" size={48} color={colors.success} />
                         </View>
                         <Text style={styles.emptyTitle}>모든 과제를 완료했어요!</Text>
                         <Text style={styles.emptySubtitle}>잠시 쉬어가세요</Text>
@@ -836,20 +855,20 @@ const DashboardScreen = () => {
 // ============================================
 // AI CARD STYLES
 // ============================================
-const aiStyles = StyleSheet.create({
+const createAiStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     // Outer wrapper: holds shadow, no overflow clip
     cardShadow: {
         width: CARD_WIDTH,
         marginRight: Spacing.m,
         borderRadius: 16,
-        backgroundColor: Colors.surface,
-        ...Layout.shadow.default,
+        backgroundColor: colors.surface,
+        ...layout.shadow.default,
     },
     card: {
         borderRadius: 16,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         minHeight: CARD_HEIGHT,
     },
     cardContent: {
@@ -881,19 +900,19 @@ const aiStyles = StyleSheet.create({
     courseName: {
         fontSize: 14,
         fontWeight: '700',
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         letterSpacing: -0.2,
     },
     statusMessage: {
         fontSize: 13,
         lineHeight: 19,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         marginBottom: 10,
     },
     priorityPreview: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.surfaceAlt,
+        backgroundColor: colors.surfaceAlt,
         paddingHorizontal: 10,
         paddingVertical: 7,
         borderRadius: 8,
@@ -908,7 +927,7 @@ const aiStyles = StyleSheet.create({
     priorityText: {
         flex: 1,
         fontSize: 12,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         fontWeight: '500',
     },
     priorityDue: {
@@ -941,14 +960,14 @@ const aiStyles = StyleSheet.create({
     },
     viewMore: {
         fontSize: 11,
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
     },
 });
 
 // ============================================
 // AI MODAL STYLES
 // ============================================
-const modalStyles = StyleSheet.create({
+const createModalStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     backdrop: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0, 0, 0, 0.4)',
@@ -958,11 +977,11 @@ const modalStyles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         maxHeight: '85%',
-        ...Layout.shadow.lg,
+        ...layout.shadow.lg,
     },
     handleContainer: {
         alignItems: 'center',
@@ -972,7 +991,7 @@ const modalStyles = StyleSheet.create({
         width: 36,
         height: 4,
         borderRadius: 2,
-        backgroundColor: Colors.border,
+        backgroundColor: colors.border,
     },
     header: {
         paddingHorizontal: Spacing.l,
@@ -997,7 +1016,7 @@ const modalStyles = StyleSheet.create({
     courseTitle: {
         fontSize: 18,
         fontWeight: '700',
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         marginBottom: 2,
     },
     statusText: {
@@ -1008,7 +1027,7 @@ const modalStyles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: Colors.surfaceAlt || Colors.surface,
+        backgroundColor: colors.surfaceAlt || colors.surface,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -1033,7 +1052,7 @@ const modalStyles = StyleSheet.create({
         marginRight: Spacing.s,
     },
     sectionTitle: {
-        ...Typography.header3,
+        ...typography.header3,
         flex: 1,
     },
     countBadge: {
@@ -1061,7 +1080,7 @@ const modalStyles = StyleSheet.create({
         padding: Spacing.xs,
     },
     itemsList: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderRadius: 12,
         overflow: 'hidden',
     },
@@ -1072,7 +1091,7 @@ const modalStyles = StyleSheet.create({
         paddingHorizontal: Spacing.m,
         paddingVertical: Spacing.sm,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
     },
     itemLeft: {
         flexDirection: 'row',
@@ -1082,7 +1101,7 @@ const modalStyles = StyleSheet.create({
     },
     itemTitle: {
         fontSize: 14,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         marginLeft: Spacing.s,
         flex: 1,
     },
@@ -1097,12 +1116,12 @@ const modalStyles = StyleSheet.create({
     },
     emptyText: {
         fontSize: 14,
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
         fontStyle: 'italic',
         paddingVertical: Spacing.s,
     },
     announcementBox: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderRadius: 12,
         padding: Spacing.m,
         borderLeftWidth: 3,
@@ -1111,7 +1130,7 @@ const modalStyles = StyleSheet.create({
     announcementText: {
         fontSize: 14,
         lineHeight: 21,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     insightBox: {
         backgroundColor: 'rgba(139, 92, 246, 0.06)',
@@ -1128,29 +1147,29 @@ const modalStyles = StyleSheet.create({
     insightLabel: {
         fontSize: 12,
         fontWeight: '600',
-        color: Colors.secondary,
+        color: colors.secondary,
         marginLeft: 6,
     },
     insightText: {
         fontSize: 14,
         lineHeight: 22,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
 });
 
 // ============================================
 // STYLES
 // ============================================
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     scrollContent: {
         paddingHorizontal: Spacing.l,
@@ -1169,12 +1188,12 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     greeting: {
-        ...Typography.header1,
+        ...typography.header1,
         fontSize: 26,
         letterSpacing: -0.5,
     },
     date: {
-        ...Typography.body2,
+        ...typography.body2,
         marginTop: 4,
     },
     headerButtons: {
@@ -1186,12 +1205,12 @@ const styles = StyleSheet.create({
         width: 44,
         height: 44,
         borderRadius: 22,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: Colors.border,
-        ...Layout.shadow.sm,
+        borderColor: colors.border,
+        ...layout.shadow.sm,
     },
     notificationBadge: {
         position: 'absolute',
@@ -1200,12 +1219,12 @@ const styles = StyleSheet.create({
         minWidth: 18,
         height: 18,
         borderRadius: 9,
-        backgroundColor: Colors.error,
+        backgroundColor: colors.error,
         justifyContent: 'center',
         alignItems: 'center',
         paddingHorizontal: 4,
         borderWidth: 2,
-        borderColor: Colors.surface,
+        borderColor: colors.surface,
     },
     notificationBadgeText: {
         fontSize: 10,
@@ -1213,22 +1232,22 @@ const styles = StyleSheet.create({
         color: '#FFF',
     },
     syncButtonActive: {
-        backgroundColor: Colors.primaryLighter,
-        borderColor: Colors.primary,
+        backgroundColor: colors.primaryLighter,
+        borderColor: colors.primary,
     },
 
     // Stats Card
     statsCard: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.xl,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.xl,
         padding: Spacing.l,
         marginBottom: Spacing.xl,
         borderWidth: 1,
-        borderColor: Colors.border,
-        ...Layout.shadow.default,
+        borderColor: colors.border,
+        ...layout.shadow.default,
     },
     statsTitle: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         marginBottom: Spacing.l,
     },
     statsGrid: {
@@ -1249,7 +1268,7 @@ const styles = StyleSheet.create({
         marginBottom: Spacing.s,
     },
     statLabel: {
-        ...Typography.caption,
+        ...typography.caption,
         marginBottom: 4,
     },
     statValueRow: {
@@ -1264,12 +1283,12 @@ const styles = StyleSheet.create({
     statTotal: {
         fontSize: 16,
         fontWeight: '500',
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
     },
     statsDivider: {
         width: 1,
         height: 60,
-        backgroundColor: Colors.divider,
+        backgroundColor: colors.divider,
         marginHorizontal: Spacing.s,
     },
 
@@ -1297,18 +1316,18 @@ const styles = StyleSheet.create({
         marginRight: Spacing.s,
     },
     sectionTitle: {
-        ...Typography.header3,
+        ...typography.header3,
         flex: 1,
     },
     countBadge: {
-        backgroundColor: Colors.error,
+        backgroundColor: colors.error,
         borderRadius: 12,
         paddingHorizontal: 10,
         paddingVertical: 3,
         marginLeft: 8,
     },
     countText: {
-        color: Colors.textInverse,
+        color: colors.textInverse,
         fontSize: 12,
         fontWeight: '700',
     },
@@ -1323,20 +1342,20 @@ const styles = StyleSheet.create({
         padding: Spacing.m,
     },
     aiLoadingText: {
-        ...Typography.body2,
+        ...typography.body2,
         marginLeft: Spacing.s,
     },
     swipeAction: {
-        backgroundColor: Colors.success,
+        backgroundColor: colors.success,
         justifyContent: 'center',
         alignItems: 'center',
         width: 80,
         marginBottom: Spacing.s,
-        borderRadius: Layout.borderRadius.l,
-        marginLeft: -Layout.borderRadius.l,
+        borderRadius: layout.borderRadius.l,
+        marginLeft: -layout.borderRadius.l,
     },
     swipeActionText: {
-        color: Colors.textInverse,
+        color: colors.textInverse,
         fontSize: 12,
         fontWeight: '600',
         marginTop: 2,
@@ -1351,17 +1370,17 @@ const styles = StyleSheet.create({
         width: 80,
         height: 80,
         borderRadius: 40,
-        backgroundColor: Colors.successLight,
+        backgroundColor: colors.successLight,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: Spacing.l,
     },
     emptyTitle: {
-        ...Typography.header3,
+        ...typography.header3,
         marginBottom: Spacing.xs,
     },
     emptySubtitle: {
-        ...Typography.body2,
+        ...typography.body2,
     },
 });
 

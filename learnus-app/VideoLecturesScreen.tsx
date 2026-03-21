@@ -11,7 +11,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { getDashboardOverview, watchAllVods, watchSingleVod } from './services/api';
-import { Colors, Spacing, Layout, Typography } from './constants/theme';
+import { Spacing } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import { useToast } from './context/ToastContext';
 import ItemRow from './components/ItemRow';
 import VodActionSheet from './components/VodActionSheet';
@@ -27,15 +29,17 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 // ─── SectionHeader ────────────────────────────────────────────────────────────
 
 const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollapsed, onToggle, action }: any) => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const content = (
         <>
-            <Ionicons name={icon} size={20} color={iconColor || Colors.primary} style={{ marginRight: 8 }} />
+            <Ionicons name={icon} size={20} color={iconColor || colors.primary} style={{ marginRight: 8 }} />
             <Text style={styles.sectionTitle}>{title}</Text>
             {isCollapsible && isCollapsed && count > 0 && (
                 <View style={styles.countBadge}><Text style={styles.countText}>{count}</Text></View>
             )}
             {isCollapsible && (
-                <Ionicons name={isCollapsed ? 'chevron-down' : 'chevron-up'} size={20} color={Colors.textTertiary} style={{ marginLeft: 8 }} />
+                <Ionicons name={isCollapsed ? 'chevron-down' : 'chevron-up'} size={20} color={colors.textTertiary} style={{ marginLeft: 8 }} />
             )}
         </>
     );
@@ -52,6 +56,8 @@ const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollaps
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 const VideoLecturesScreen = () => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const { showSuccess, showError } = useToast();
     const { notifyInteraction, isActive: tourActive } = useTour();
     const navigation = useNavigation<any>();
@@ -154,7 +160,7 @@ const VideoLecturesScreen = () => {
     const unwatchedCount = (data?.available_vods ?? []).filter((v: any) => !v.is_completed).length;
 
     if (loading) {
-        return <View style={styles.centered}><ActivityIndicator size="large" color={Colors.primary} /></View>;
+        return <View style={styles.centered}><ActivityIndicator size="large" color={colors.primary} /></View>;
     }
 
     return (
@@ -191,7 +197,7 @@ const VideoLecturesScreen = () => {
                     <View style={styles.section}>
                         <SectionHeader
                             title="놓친 강의" count={data.missed_vods.length}
-                            icon="alert-circle" iconColor={Colors.error}
+                            icon="alert-circle" iconColor={colors.error}
                             isCollapsible isCollapsed={collapsed.missed}
                             onToggle={() => toggleSection('missed')}
                         />
@@ -302,21 +308,21 @@ const VideoLecturesScreen = () => {
     );
 };
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
     centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     header: { paddingHorizontal: Spacing.l, paddingVertical: Spacing.m, marginBottom: Spacing.s, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    headerTitle: { ...Typography.header1, fontSize: 28, flexShrink: 1 },
-    watchAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+    headerTitle: { ...typography.header1, fontSize: 28, flexShrink: 1 },
+    watchAllBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.primary, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
     watchAllText: { color: '#fff', fontSize: 13, fontWeight: '600' },
     scrollContent: { padding: Spacing.l, paddingBottom: Spacing.xxl },
     section: { marginBottom: Spacing.xl },
     sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.m },
     sectionHeaderLeft: { flexDirection: 'row', alignItems: 'center' },
-    sectionTitle: { ...Typography.header3 },
-    countBadge: { backgroundColor: Colors.error, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2, marginLeft: 8 },
+    sectionTitle: { ...typography.header3 },
+    countBadge: { backgroundColor: colors.error, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2, marginLeft: 8 },
     countText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-    actionLink: { ...Typography.body2, color: Colors.primary, fontWeight: '600' },
+    actionLink: { ...typography.body2, color: colors.primary, fontWeight: '600' },
 });
 
 export default VideoLecturesScreen;

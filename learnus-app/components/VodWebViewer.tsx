@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
-import { Colors, Spacing, Typography } from '../constants/theme';
+import { Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 interface VodWebViewerProps {
     url: string;
@@ -13,6 +15,8 @@ interface VodWebViewerProps {
 }
 
 export default function VodWebViewer({ url, title, cookies, onClose }: VodWebViewerProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const [loading, setLoading] = useState(true);
 
     const cookieScript = cookies
@@ -23,10 +27,10 @@ export default function VodWebViewer({ url, title, cookies, onClose }: VodWebVie
 
     return (
         <Modal animationType="slide" statusBarTranslucent>
-            <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }} edges={['top']}>
+            <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={['top']}>
                 <View style={styles.header}>
                     <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
-                        <Ionicons name="close" size={22} color={Colors.textPrimary} />
+                        <Ionicons name="close" size={22} color={colors.textPrimary} />
                     </TouchableOpacity>
                     <Text style={styles.headerTitle} numberOfLines={1}>{title}</Text>
                     <View style={{ width: 36 }} />
@@ -55,7 +59,7 @@ export default function VodWebViewer({ url, title, cookies, onClose }: VodWebVie
                 />
                 {loading && (
                     <View style={styles.loadingOverlay}>
-                        <ActivityIndicator size="large" color={Colors.primary} />
+                        <ActivityIndicator size="large" color={colors.primary} />
                     </View>
                 )}
             </SafeAreaView>
@@ -63,14 +67,14 @@ export default function VodWebViewer({ url, title, cookies, onClose }: VodWebVie
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: Spacing.m,
         paddingVertical: Spacing.s,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.divider,
+        borderBottomColor: colors.divider,
     },
     closeBtn: {
         width: 36,
@@ -80,7 +84,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     headerTitle: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         flex: 1,
         textAlign: 'center',
         marginHorizontal: Spacing.s,
@@ -89,6 +93,6 @@ const styles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
 });

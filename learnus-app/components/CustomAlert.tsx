@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import {
     View,
     Text,
@@ -11,7 +11,9 @@ import {
     Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Typography, Layout, Spacing, Animation } from '../constants/theme';
+import { Spacing, Animation } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -32,34 +34,6 @@ interface CustomAlertProps {
     onDismiss: () => void;
 }
 
-const ALERT_CONFIG = {
-    info: {
-        icon: 'information-circle' as const,
-        color: Colors.primary,
-        bgColor: Colors.primaryLighter,
-    },
-    success: {
-        icon: 'checkmark-circle' as const,
-        color: Colors.success,
-        bgColor: Colors.successLight,
-    },
-    warning: {
-        icon: 'warning' as const,
-        color: Colors.warning,
-        bgColor: Colors.warningLight,
-    },
-    error: {
-        icon: 'close-circle' as const,
-        color: Colors.error,
-        bgColor: Colors.errorLight,
-    },
-    confirm: {
-        icon: 'help-circle' as const,
-        color: Colors.secondary,
-        bgColor: Colors.secondaryLight,
-    },
-};
-
 const CustomAlert: React.FC<CustomAlertProps> = ({
     visible,
     type = 'info',
@@ -68,6 +42,37 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
     buttons = [{ text: '확인', style: 'default' }],
     onDismiss,
 }) => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
+    const ALERT_CONFIG = {
+        info: {
+            icon: 'information-circle' as const,
+            color: colors.primary,
+            bgColor: colors.primaryLighter,
+        },
+        success: {
+            icon: 'checkmark-circle' as const,
+            color: colors.success,
+            bgColor: colors.successLight,
+        },
+        warning: {
+            icon: 'warning' as const,
+            color: colors.warning,
+            bgColor: colors.warningLight,
+        },
+        error: {
+            icon: 'close-circle' as const,
+            color: colors.error,
+            bgColor: colors.errorLight,
+        },
+        confirm: {
+            icon: 'help-circle' as const,
+            color: colors.secondary,
+            bgColor: colors.secondaryLight,
+        },
+    };
+
     const scale = useRef(new Animated.Value(0.8)).current;
     const opacity = useRef(new Animated.Value(0)).current;
     const backdropOpacity = useRef(new Animated.Value(0)).current;
@@ -127,18 +132,18 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
         switch (style) {
             case 'destructive':
                 return {
-                    backgroundColor: Colors.error,
-                    textColor: Colors.textInverse,
+                    backgroundColor: colors.error,
+                    textColor: colors.textInverse,
                 };
             case 'cancel':
                 return {
-                    backgroundColor: Colors.surfaceMuted,
-                    textColor: Colors.textSecondary,
+                    backgroundColor: colors.surfaceMuted,
+                    textColor: colors.textSecondary,
                 };
             default:
                 return {
-                    backgroundColor: Colors.primary,
-                    textColor: Colors.textInverse,
+                    backgroundColor: colors.primary,
+                    textColor: colors.textInverse,
                 };
         }
     };
@@ -227,7 +232,7 @@ const CustomAlert: React.FC<CustomAlertProps> = ({
     );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     backdrop: {
         flex: 1,
         justifyContent: 'center',
@@ -240,10 +245,10 @@ const styles = StyleSheet.create({
     alertContainer: {
         width: SCREEN_WIDTH - 48,
         maxWidth: 340,
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.xl,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.xl,
         overflow: 'hidden',
-        ...Layout.shadow.xl,
+        ...layout.shadow.xl,
         ...Platform.select({
             android: {
                 elevation: 12,
@@ -269,22 +274,22 @@ const styles = StyleSheet.create({
         paddingBottom: Spacing.l,
     },
     title: {
-        ...Typography.header3,
+        ...typography.header3,
         textAlign: 'center',
         marginBottom: Spacing.s,
     },
     message: {
-        ...Typography.body2,
+        ...typography.body2,
         textAlign: 'center',
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         lineHeight: 22,
     },
     buttonContainer: {
         flexDirection: 'row',
         padding: Spacing.m,
         borderTopWidth: 1,
-        borderTopColor: Colors.border,
-        backgroundColor: Colors.surfaceHighlight,
+        borderTopColor: colors.border,
+        backgroundColor: colors.surfaceHighlight,
     },
     buttonContainerSingle: {
         justifyContent: 'center',
@@ -292,7 +297,7 @@ const styles = StyleSheet.create({
     button: {
         paddingVertical: Spacing.m,
         paddingHorizontal: Spacing.xl,
-        borderRadius: Layout.borderRadius.m,
+        borderRadius: layout.borderRadius.m,
         minWidth: 100,
         alignItems: 'center',
         justifyContent: 'center',
@@ -304,7 +309,7 @@ const styles = StyleSheet.create({
         marginRight: Spacing.s,
     },
     buttonText: {
-        ...Typography.button,
+        ...typography.button,
         fontWeight: '600',
     },
 });

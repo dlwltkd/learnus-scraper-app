@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
     StyleSheet,
     View,
@@ -11,7 +11,9 @@ import {
 } from 'react-native';
 import { getAssignments, getBoards, getVods, watchSingleVod } from './services/api';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { Colors, Spacing, Layout, Typography } from './constants/theme';
+import { Spacing } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -31,9 +33,9 @@ interface SectionHeaderProps {
     count?: number;
 }
 
-const SectionHeader = ({ title, icon, iconColor = Colors.primary, count }: SectionHeaderProps) => (
+const SectionHeader = ({ title, icon, iconColor, count, styles }: SectionHeaderProps & { styles: any }) => (
     <View style={styles.sectionHeader}>
-        <View style={[styles.sectionIconContainer, { backgroundColor: iconColor + '15' }]}>
+        <View style={[styles.sectionIconContainer, { backgroundColor: (iconColor || '#000') + '15' }]}>
             <Ionicons name={icon} size={18} color={iconColor} />
         </View>
         <Text style={styles.sectionTitle}>{title}</Text>
@@ -48,7 +50,7 @@ const SectionHeader = ({ title, icon, iconColor = Colors.primary, count }: Secti
 // ============================================
 // BOARD ITEM
 // ============================================
-const BoardItem = ({ board, onPress, isFirst, isLast }: { board: any; onPress: () => void; isFirst: boolean; isLast: boolean }) => (
+const BoardItem = ({ board, onPress, isFirst, isLast, colors, styles }: { board: any; onPress: () => void; isFirst: boolean; isLast: boolean; colors: ColorScheme; styles: any }) => (
     <TouchableOpacity
         style={[
             styles.boardItem,
@@ -60,12 +62,12 @@ const BoardItem = ({ board, onPress, isFirst, isLast }: { board: any; onPress: (
         activeOpacity={0.7}
     >
         <View style={styles.boardIconContainer}>
-            <Ionicons name="chatbubble-outline" size={18} color={Colors.primary} />
+            <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
         </View>
         <Text style={styles.boardTitle} numberOfLines={1}>
             {board.title}
         </Text>
-        <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
+        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
     </TouchableOpacity>
 );
 
@@ -77,6 +79,8 @@ export default function CourseDetailScreen() {
     const navigation = useNavigation();
     const { course } = route.params as { course: any };
     const { showSuccess, showError } = useToast();
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
 
     const [assignments, setAssignments] = useState<any[]>([]);
     const [boards, setBoards] = useState<any[]>([]);
@@ -90,13 +94,13 @@ export default function CourseDetailScreen() {
         navigation.setOptions({
             title: course.name,
             headerStyle: {
-                backgroundColor: Colors.background,
+                backgroundColor: colors.background,
                 elevation: 0,
                 shadowOpacity: 0,
             },
-            headerTintColor: Colors.textPrimary,
+            headerTintColor: colors.textPrimary,
             headerTitleStyle: {
-                ...Typography.subtitle1,
+                ...typography.subtitle1,
                 fontSize: 16,
             },
         });
@@ -190,7 +194,7 @@ export default function CourseDetailScreen() {
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
@@ -200,7 +204,7 @@ export default function CourseDetailScreen() {
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
 
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
@@ -209,8 +213,8 @@ export default function CourseDetailScreen() {
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
-                        tintColor={Colors.primary}
-                        colors={[Colors.primary]}
+                        tintColor={colors.primary}
+                        colors={[colors.primary]}
                     />
                 }
             >
@@ -243,8 +247,9 @@ export default function CourseDetailScreen() {
                         <SectionHeader
                             title="게시판"
                             icon="chatbubbles"
-                            iconColor={Colors.secondary}
+                            iconColor={colors.secondary}
                             count={boards.length}
+                            styles={styles}
                         />
                         <View style={styles.boardsContainer}>
                             {boards.map((board, index) => (
@@ -254,6 +259,8 @@ export default function CourseDetailScreen() {
                                     onPress={() => (navigation as any).navigate('Board', { board })}
                                     isFirst={index === 0}
                                     isLast={index === boards.length - 1}
+                                    colors={colors}
+                                    styles={styles}
                                 />
                             ))}
                         </View>
@@ -265,8 +272,9 @@ export default function CourseDetailScreen() {
                     <SectionHeader
                         title="동영상 강의"
                         icon="play-circle"
-                        iconColor={Colors.primary}
+                        iconColor={colors.primary}
                         count={vods.length > 0 ? `${completedVods}/${vods.length}` as any : undefined}
+                        styles={styles}
                     />
                     {vods.length === 0 ? (
                         <InlineEmpty message="동영상 강의가 없습니다." />
@@ -290,8 +298,9 @@ export default function CourseDetailScreen() {
                     <SectionHeader
                         title="과제"
                         icon="document-text"
-                        iconColor={Colors.accent}
+                        iconColor={colors.accent}
                         count={assignments.length > 0 ? `${completedAssignments}/${assignments.length}` as any : undefined}
+                        styles={styles}
                     />
                     {assignments.length === 0 ? (
                         <InlineEmpty message="과제가 없습니다." />
@@ -337,16 +346,16 @@ export default function CourseDetailScreen() {
 // ============================================
 // STYLES
 // ============================================
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     scrollContent: {
         paddingHorizontal: Spacing.l,
@@ -355,16 +364,16 @@ const styles = StyleSheet.create({
 
     // Course Header
     courseHeader: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.xl,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.xl,
         padding: Spacing.l,
         marginBottom: Spacing.xl,
         borderWidth: 1,
-        borderColor: Colors.border,
-        ...Layout.shadow.default,
+        borderColor: colors.border,
+        ...layout.shadow.default,
     },
     courseName: {
-        ...Typography.header2,
+        ...typography.header2,
         marginBottom: Spacing.l,
     },
     statsRow: {
@@ -373,23 +382,23 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingTop: Spacing.m,
         borderTopWidth: 1,
-        borderTopColor: Colors.divider,
+        borderTopColor: colors.divider,
     },
     statItem: {
         alignItems: 'center',
     },
     statValue: {
-        ...Typography.number,
+        ...typography.number,
         fontSize: 24,
         marginBottom: 2,
     },
     statLabel: {
-        ...Typography.caption,
+        ...typography.caption,
     },
     statDivider: {
         width: 1,
         height: 32,
-        backgroundColor: Colors.divider,
+        backgroundColor: colors.divider,
     },
 
     // Section
@@ -410,58 +419,58 @@ const styles = StyleSheet.create({
         marginRight: Spacing.s,
     },
     sectionTitle: {
-        ...Typography.header3,
+        ...typography.header3,
         flex: 1,
     },
     countPill: {
-        backgroundColor: Colors.surfaceMuted,
+        backgroundColor: colors.surfaceMuted,
         paddingHorizontal: Spacing.s,
         paddingVertical: 2,
-        borderRadius: Layout.borderRadius.full,
+        borderRadius: layout.borderRadius.full,
     },
     countText: {
-        ...Typography.caption,
+        ...typography.caption,
         fontWeight: '600',
     },
 
     // Boards
     boardsContainer: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.l,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.l,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         overflow: 'hidden',
-        ...Layout.shadow.sm,
+        ...layout.shadow.sm,
     },
     boardItem: {
         flexDirection: 'row',
         alignItems: 'center',
         padding: Spacing.m,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
     },
     boardItemFirst: {
-        borderTopLeftRadius: Layout.borderRadius.l,
-        borderTopRightRadius: Layout.borderRadius.l,
+        borderTopLeftRadius: layout.borderRadius.l,
+        borderTopRightRadius: layout.borderRadius.l,
     },
     boardItemLast: {
-        borderBottomLeftRadius: Layout.borderRadius.l,
-        borderBottomRightRadius: Layout.borderRadius.l,
+        borderBottomLeftRadius: layout.borderRadius.l,
+        borderBottomRightRadius: layout.borderRadius.l,
     },
     boardItemBorder: {
         borderBottomWidth: 1,
-        borderBottomColor: Colors.divider,
+        borderBottomColor: colors.divider,
     },
     boardIconContainer: {
         width: 36,
         height: 36,
         borderRadius: 12,
-        backgroundColor: Colors.primaryLighter,
+        backgroundColor: colors.primaryLighter,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: Spacing.m,
     },
     boardTitle: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         fontSize: 15,
         flex: 1,
         marginRight: Spacing.s,

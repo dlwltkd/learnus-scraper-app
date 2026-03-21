@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Switch, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Colors, Spacing, Layout, Typography } from './constants/theme';
+import { Spacing } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 
 const NOTIFICATION_SETTINGS_KEY = 'notification_settings';
@@ -36,6 +38,9 @@ const OPTIONS = [
 ];
 
 export default function NotificationSettingsScreen() {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const [settings, setSettings] = useState<NotificationSettings>(DEFAULT_SETTINGS);
     const [loading, setLoading] = useState(true);
 
@@ -67,9 +72,9 @@ export default function NotificationSettingsScreen() {
             updateNotificationPreferences({
                 new_assignment: newSettings.newAssignment,
                 new_vod: newSettings.newVod,
-                notice: newSettings.aiSummary // Using aiSummary toggle for general notice push for now? 
-                // Or AI Summary is strictly AI. Let's assume 'notice' on server is tied to AI Summary toggle 
-                // or we add a separate toggle. User asked for 2 things. 
+                notice: newSettings.aiSummary // Using aiSummary toggle for general notice push for now?
+                // Or AI Summary is strictly AI. Let's assume 'notice' on server is tied to AI Summary toggle
+                // or we add a separate toggle. User asked for 2 things.
                 // Let's assume aiSummary controls the "Notice" push aspect as traditionally it was linked.
             }).catch((err: any) => console.log("Failed to sync prefs to server", err));
 
@@ -130,7 +135,7 @@ export default function NotificationSettingsScreen() {
             <Switch
                 value={settings[key] as boolean}
                 onValueChange={(value) => updateSetting(key, value)}
-                trackColor={{ false: Colors.border, true: Colors.primary }}
+                trackColor={{ false: colors.border, true: colors.primary }}
                 thumbColor={'#fff'}
             />
         </View>
@@ -139,7 +144,7 @@ export default function NotificationSettingsScreen() {
     if (loading) {
         return (
             <View style={styles.centered}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
@@ -179,10 +184,10 @@ export default function NotificationSettingsScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     centered: {
         flex: 1,
@@ -194,16 +199,16 @@ const styles = StyleSheet.create({
         paddingBottom: Spacing.xxl,
     },
     groupTitle: {
-        ...Typography.header2,
+        ...typography.header2,
         fontSize: 18,
         marginBottom: Spacing.m,
-        color: Colors.primary,
+        color: colors.primary,
     },
     section: {
         marginBottom: Spacing.l,
     },
     sectionTitle: {
-        ...Typography.body1,
+        ...typography.body1,
         fontWeight: '600',
         marginBottom: Spacing.s,
     },
@@ -217,16 +222,16 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         borderRadius: 20,
         borderWidth: 1,
-        borderColor: Colors.border,
-        backgroundColor: Colors.surface,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
     },
     optionButtonActive: {
-        backgroundColor: Colors.primary,
-        borderColor: Colors.primary,
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
     },
     optionText: {
         fontSize: 14,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
     },
     optionTextActive: {
         color: '#fff',
@@ -237,36 +242,36 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         marginBottom: Spacing.l,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         padding: Spacing.m,
-        borderRadius: Layout.borderRadius.l,
+        borderRadius: layout.borderRadius.l,
         borderWidth: 1,
-        borderColor: Colors.border,
+        borderColor: colors.border,
     },
     toggleTitle: {
-        ...Typography.body1,
+        ...typography.body1,
         fontWeight: '600',
         marginBottom: 4,
     },
     toggleDescription: {
-        ...Typography.caption,
-        color: Colors.textSecondary,
+        ...typography.caption,
+        color: colors.textSecondary,
     },
     divider: {
         height: 1,
-        backgroundColor: Colors.divider,
+        backgroundColor: colors.divider,
         marginVertical: Spacing.l,
     },
     testButton: {
         padding: Spacing.m,
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.m,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.m,
         borderWidth: 1,
-        borderColor: Colors.primary,
+        borderColor: colors.primary,
         alignItems: 'center',
     },
     testButtonText: {
-        color: Colors.primary,
+        color: colors.primary,
         fontWeight: '600',
     },
 });

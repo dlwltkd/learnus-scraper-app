@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useMemo } from 'react';
 import {
     StyleSheet,
     View,
@@ -6,7 +6,9 @@ import {
     TouchableOpacity,
     Animated,
 } from 'react-native';
-import { Colors, Layout, Spacing } from '../constants/theme';
+import { Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 type CardVariant = 'elevated' | 'outlined' | 'filled' | 'glass' | 'flat';
 
@@ -29,6 +31,9 @@ export default function Card({
     padding = 'md',
     animated = true,
 }: CardProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
     const handlePressIn = useCallback(() => {
@@ -55,32 +60,32 @@ export default function Card({
         switch (variant) {
             case 'elevated':
                 return {
-                    backgroundColor: Colors.surface,
+                    backgroundColor: colors.surface,
                     borderWidth: 1,
-                    borderColor: Colors.borderLight,
-                    ...Layout.shadow.default,
+                    borderColor: colors.borderLight,
+                    ...layout.shadow.default,
                 };
             case 'outlined':
                 return {
-                    backgroundColor: Colors.surface,
+                    backgroundColor: colors.surface,
                     borderWidth: 1.5,
-                    borderColor: Colors.border,
+                    borderColor: colors.border,
                 };
             case 'filled':
                 return {
-                    backgroundColor: Colors.surfaceHighlight,
+                    backgroundColor: colors.surfaceHighlight,
                     borderWidth: 0,
                 };
             case 'glass':
                 return {
-                    backgroundColor: Colors.surfaceGlass,
+                    backgroundColor: colors.surfaceGlass,
                     borderWidth: 1,
-                    borderColor: Colors.glassBorder,
-                    ...Layout.shadow.md,
+                    borderColor: colors.glassBorder,
+                    ...layout.shadow.md,
                 };
             case 'flat':
                 return {
-                    backgroundColor: Colors.surface,
+                    backgroundColor: colors.surface,
                     borderWidth: 0,
                 };
             default:
@@ -138,6 +143,9 @@ interface StatCardProps {
 }
 
 export function StatCard({ children, style, accentColor }: StatCardProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     return (
         <View
             style={[
@@ -164,6 +172,9 @@ export function FeatureCard({
     onPress,
     gradient = false,
 }: FeatureCardProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
     const handlePressIn = useCallback(() => {
@@ -227,6 +238,9 @@ export function ListItemCard({
     isFirst = false,
     isLast = false,
 }: ListItemCardProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     return (
         <TouchableOpacity
             style={[
@@ -245,9 +259,9 @@ export function ListItemCard({
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     card: {
-        borderRadius: Layout.borderRadius.l,
+        borderRadius: layout.borderRadius.l,
         marginBottom: Spacing.m,
         overflow: 'hidden',
     },
@@ -255,36 +269,36 @@ const styles = StyleSheet.create({
         opacity: 0.6,
     },
     statCard: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.l,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.l,
         padding: Spacing.cardPadding,
         borderLeftWidth: 4,
-        borderLeftColor: Colors.primary,
+        borderLeftColor: colors.primary,
         borderWidth: 1,
-        borderColor: Colors.borderLight,
-        ...Layout.shadow.sm,
+        borderColor: colors.borderLight,
+        ...layout.shadow.sm,
     },
     featureCard: {
-        backgroundColor: Colors.primary,
-        borderRadius: Layout.borderRadius.xl,
+        backgroundColor: colors.primary,
+        borderRadius: layout.borderRadius.xl,
         padding: Spacing.l,
-        ...Layout.shadow.primary,
+        ...layout.shadow.primary,
     },
     listItemCard: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         paddingHorizontal: Spacing.m,
         paddingVertical: Spacing.m + 2,
     },
     listItemFirst: {
-        borderTopLeftRadius: Layout.borderRadius.l,
-        borderTopRightRadius: Layout.borderRadius.l,
+        borderTopLeftRadius: layout.borderRadius.l,
+        borderTopRightRadius: layout.borderRadius.l,
     },
     listItemLast: {
-        borderBottomLeftRadius: Layout.borderRadius.l,
-        borderBottomRightRadius: Layout.borderRadius.l,
+        borderBottomLeftRadius: layout.borderRadius.l,
+        borderBottomRightRadius: layout.borderRadius.l,
     },
     listItemBorder: {
         borderBottomWidth: 1,
-        borderBottomColor: Colors.divider,
+        borderBottomColor: colors.divider,
     },
 });

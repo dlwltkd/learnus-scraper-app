@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getCourses, syncCourse, syncCoursesList } from './services/api';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { Colors, Typography, Spacing, Layout } from './constants/theme';
+import { Spacing } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import Card from './components/Card';
 import Button from './components/Button';
 
@@ -16,6 +18,9 @@ type RootStackParamList = {
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'CourseDetail'>;
 
 export default function HomeScreen() {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const [courses, setCourses] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState<number | null>(null);
@@ -72,7 +77,7 @@ export default function HomeScreen() {
             <Card style={styles.card}>
                 <View style={styles.cardContent}>
                     <View style={styles.iconContainer}>
-                        <Ionicons name="book-outline" size={24} color={Colors.primary} />
+                        <Ionicons name="book-outline" size={24} color={colors.primary} />
                     </View>
                     <View style={styles.textContainer}>
                         <Text style={styles.courseName} numberOfLines={2}>{item.name}</Text>
@@ -86,7 +91,7 @@ export default function HomeScreen() {
                         loading={syncing === item.id}
                         variant="outline"
                         style={styles.syncButton}
-                        icon={!syncing ? <Ionicons name="refresh" size={16} color={Colors.primary} /> : undefined}
+                        icon={!syncing ? <Ionicons name="refresh" size={16} color={colors.primary} /> : undefined}
                     />
                 </View>
             </Card>
@@ -96,26 +101,26 @@ export default function HomeScreen() {
     if (loading) {
         return (
             <View style={styles.centered}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
             <View style={styles.header}>
                 <Button
                     title="목록 동기화"
                     onPress={handleSyncList}
                     variant="ghost"
-                    icon={<Ionicons name="cloud-download-outline" size={20} color={Colors.primary} />}
+                    icon={<Ionicons name="cloud-download-outline" size={20} color={colors.primary} />}
                 />
                 <Button
                     title="관리"
                     onPress={() => (navigation as any).navigate('ManageCourses')}
                     variant="ghost"
-                    icon={<Ionicons name="settings-outline" size={20} color={Colors.textSecondary} />}
+                    icon={<Ionicons name="settings-outline" size={20} color={colors.textSecondary} />}
                     style={{ marginLeft: Spacing.s }}
                 />
             </View>
@@ -132,16 +137,16 @@ export default function HomeScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     header: {
         padding: Spacing.s,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: Colors.border,
+        borderBottomColor: colors.border,
         flexDirection: 'row',
         justifyContent: 'flex-end',
         alignItems: 'center',
@@ -168,8 +173,8 @@ const styles = StyleSheet.create({
     iconContainer: {
         width: 48,
         height: 48,
-        borderRadius: Layout.borderRadius.full,
-        backgroundColor: Colors.primaryLighter,
+        borderRadius: layout.borderRadius.full,
+        backgroundColor: colors.primaryLighter,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: Spacing.m,
@@ -179,11 +184,11 @@ const styles = StyleSheet.create({
         marginRight: Spacing.s,
     },
     courseName: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         marginBottom: 4,
     },
     courseId: {
-        ...Typography.caption,
+        ...typography.caption,
     },
     actionContainer: {
         justifyContent: 'center',
@@ -191,7 +196,7 @@ const styles = StyleSheet.create({
     syncButton: {
         paddingVertical: 6,
         paddingHorizontal: 12,
-        borderRadius: Layout.borderRadius.s,
+        borderRadius: layout.borderRadius.s,
         minWidth: 80,
     },
 });

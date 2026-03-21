@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Animated, Easing, StyleSheet } from 'react-native';
-import { Colors } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 
 interface TypingDotsProps {
     size?: number;
@@ -8,7 +8,10 @@ interface TypingDotsProps {
     gap?: number;
 }
 
-export default function TypingDots({ size = 8, color = Colors.primary, gap = 6 }: TypingDotsProps) {
+export default function TypingDots({ size = 8, color, gap = 6 }: TypingDotsProps) {
+    const { colors } = useTheme();
+    const dotColor = color ?? colors.primary;
+
     const dots = [
         useRef(new Animated.Value(0)).current,
         useRef(new Animated.Value(0)).current,
@@ -39,7 +42,7 @@ export default function TypingDots({ size = 8, color = Colors.primary, gap = 6 }
                         width: size,
                         height: size,
                         borderRadius: size / 2,
-                        backgroundColor: color,
+                        backgroundColor: dotColor,
                         opacity: dot.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }),
                         transform: [{ scale: dot.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1.2] }) }],
                     }}

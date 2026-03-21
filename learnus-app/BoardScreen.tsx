@@ -1,15 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { StyleSheet, View, Text, FlatList, TouchableOpacity, ActivityIndicator, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getPosts } from './services/api';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { Colors, Typography, Spacing, Layout } from './constants/theme';
+import { Spacing } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import Card from './components/Card';
 
 export default function BoardScreen() {
     const route = useRoute();
     const navigation = useNavigation();
     const { board } = route.params as { board: any };
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
 
     const [posts, setPosts] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -17,8 +21,8 @@ export default function BoardScreen() {
     useEffect(() => {
         navigation.setOptions({
             title: board.title,
-            headerStyle: { backgroundColor: Colors.surface },
-            headerTintColor: Colors.textPrimary,
+            headerStyle: { backgroundColor: colors.surface },
+            headerTintColor: colors.textPrimary,
         });
         loadPosts();
     }, []);
@@ -43,11 +47,11 @@ export default function BoardScreen() {
                 <Text style={styles.postTitle} numberOfLines={2}>{item.title}</Text>
                 <View style={styles.metaRow}>
                     <View style={styles.metaItem}>
-                        <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
+                        <Ionicons name="person-outline" size={14} color={colors.textSecondary} />
                         <Text style={styles.metaText}>{item.writer}</Text>
                     </View>
                     <View style={styles.metaItem}>
-                        <Ionicons name="time-outline" size={14} color={Colors.textSecondary} />
+                        <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
                         <Text style={styles.metaText}>{item.date}</Text>
                     </View>
                 </View>
@@ -58,14 +62,14 @@ export default function BoardScreen() {
     if (loading) {
         return (
             <View style={styles.centered}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+            <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
             <FlatList
                 data={posts}
                 renderItem={renderItem}
@@ -77,10 +81,10 @@ export default function BoardScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     centered: {
         flex: 1,
@@ -94,14 +98,14 @@ const styles = StyleSheet.create({
         marginBottom: Spacing.m,
     },
     postTitle: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         marginBottom: Spacing.s,
     },
     metaRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         borderTopWidth: 1,
-        borderTopColor: Colors.border,
+        borderTopColor: colors.border,
         paddingTop: Spacing.s,
         marginTop: Spacing.xs,
     },
@@ -111,12 +115,12 @@ const styles = StyleSheet.create({
         gap: 4,
     },
     metaText: {
-        ...Typography.caption,
+        ...typography.caption,
     },
     emptyText: {
-        ...Typography.body1,
+        ...typography.body1,
         textAlign: 'center',
         marginTop: 40,
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
     },
 });

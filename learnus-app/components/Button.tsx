@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from 'react';
+import React, { useRef, useCallback, useMemo } from 'react';
 import {
     StyleSheet,
     Text,
@@ -9,7 +9,9 @@ import {
     Animated,
     View,
 } from 'react-native';
-import { Colors, Layout, Typography, Spacing } from '../constants/theme';
+import { Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger' | 'success';
 type ButtonSize = 'sm' | 'md' | 'lg';
@@ -43,6 +45,9 @@ export default function Button({
     fullWidth = false,
     rounded = false,
 }: ButtonProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
     const handlePressIn = useCallback(() => {
@@ -70,7 +75,7 @@ export default function Button({
                     container: {
                         paddingVertical: 10,
                         paddingHorizontal: 16,
-                        borderRadius: rounded ? Layout.borderRadius.full : Layout.borderRadius.s,
+                        borderRadius: rounded ? layout.borderRadius.full : layout.borderRadius.s,
                     },
                     text: {
                         fontSize: 13,
@@ -82,7 +87,7 @@ export default function Button({
                     container: {
                         paddingVertical: 18,
                         paddingHorizontal: 28,
-                        borderRadius: rounded ? Layout.borderRadius.full : Layout.borderRadius.l,
+                        borderRadius: rounded ? layout.borderRadius.full : layout.borderRadius.l,
                     },
                     text: {
                         fontSize: 17,
@@ -94,7 +99,7 @@ export default function Button({
                     container: {
                         paddingVertical: 14,
                         paddingHorizontal: 22,
-                        borderRadius: rounded ? Layout.borderRadius.full : Layout.borderRadius.m,
+                        borderRadius: rounded ? layout.borderRadius.full : layout.borderRadius.m,
                     },
                     text: {
                         fontSize: 15,
@@ -108,10 +113,10 @@ export default function Button({
         if (disabled) {
             return {
                 container: {
-                    backgroundColor: Colors.surfaceMuted,
+                    backgroundColor: colors.surfaceMuted,
                 },
                 text: {
-                    color: Colors.textTertiary,
+                    color: colors.textTertiary,
                 },
             };
         }
@@ -120,32 +125,32 @@ export default function Button({
             case 'primary':
                 return {
                     container: {
-                        backgroundColor: Colors.primary,
+                        backgroundColor: colors.primary,
                     },
                     text: {
-                        color: Colors.textInverse,
+                        color: colors.textInverse,
                     },
-                    shadow: Layout.shadow.primary,
+                    shadow: layout.shadow.primary,
                 };
             case 'secondary':
                 return {
                     container: {
-                        backgroundColor: Colors.primaryLighter,
+                        backgroundColor: colors.primaryLighter,
                     },
                     text: {
-                        color: Colors.primary,
+                        color: colors.primary,
                     },
-                    shadow: Layout.shadow.sm,
+                    shadow: layout.shadow.sm,
                 };
             case 'outline':
                 return {
                     container: {
                         backgroundColor: 'transparent',
                         borderWidth: 1.5,
-                        borderColor: Colors.border,
+                        borderColor: colors.border,
                     },
                     text: {
-                        color: Colors.textPrimary,
+                        color: colors.textPrimary,
                     },
                 };
             case 'ghost':
@@ -154,28 +159,28 @@ export default function Button({
                         backgroundColor: 'transparent',
                     },
                     text: {
-                        color: Colors.textSecondary,
+                        color: colors.textSecondary,
                     },
                 };
             case 'danger':
                 return {
                     container: {
-                        backgroundColor: Colors.error,
+                        backgroundColor: colors.error,
                     },
                     text: {
-                        color: Colors.textInverse,
+                        color: colors.textInverse,
                     },
-                    shadow: Layout.shadow.error,
+                    shadow: layout.shadow.error,
                 };
             case 'success':
                 return {
                     container: {
-                        backgroundColor: Colors.success,
+                        backgroundColor: colors.success,
                     },
                     text: {
-                        color: Colors.textInverse,
+                        color: colors.textInverse,
                     },
-                    shadow: Layout.shadow.sm,
+                    shadow: layout.shadow.sm,
                 };
             default:
                 return {
@@ -266,6 +271,9 @@ export function IconButton({
     disabled = false,
     style,
 }: IconButtonProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const scaleAnim = useRef(new Animated.Value(1)).current;
 
     const handlePressIn = useCallback(() => {
@@ -299,21 +307,21 @@ export function IconButton({
 
     const getVariantStyles = () => {
         if (disabled) {
-            return { backgroundColor: Colors.surfaceMuted };
+            return { backgroundColor: colors.surfaceMuted };
         }
         switch (variant) {
             case 'primary':
-                return { backgroundColor: Colors.primary };
+                return { backgroundColor: colors.primary };
             case 'secondary':
-                return { backgroundColor: Colors.primaryLighter };
+                return { backgroundColor: colors.primaryLighter };
             case 'outline':
                 return {
                     backgroundColor: 'transparent',
                     borderWidth: 1.5,
-                    borderColor: Colors.border,
+                    borderColor: colors.border,
                 };
             default:
-                return { backgroundColor: Colors.surfaceHighlight };
+                return { backgroundColor: colors.surfaceHighlight };
         }
     };
 
@@ -324,7 +332,7 @@ export function IconButton({
                     styles.iconButton,
                     getSizeStyles(),
                     getVariantStyles(),
-                    !disabled && variant === 'primary' && Layout.shadow.primary,
+                    !disabled && variant === 'primary' && layout.shadow.primary,
                     style,
                 ]}
                 onPress={onPress}
@@ -339,7 +347,7 @@ export function IconButton({
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     button: {
         flexDirection: 'row',
         alignItems: 'center',

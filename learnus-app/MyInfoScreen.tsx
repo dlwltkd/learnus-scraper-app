@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
     View,
     Text,
@@ -12,11 +12,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { Colors, Spacing, Layout, Typography } from './constants/theme';
+import { Spacing } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import { useUser } from './context/UserContext';
 import { useToast } from './context/ToastContext';
 
 export default function MyInfoScreen() {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const navigation = useNavigation();
     const { profile, updateName } = useUser();
     const { showSuccess, showError } = useToast();
@@ -80,7 +85,7 @@ export default function MyInfoScreen() {
                                         {name.charAt(0).toUpperCase()}
                                     </Text>
                                 ) : (
-                                    <Ionicons name="person" size={40} color={Colors.primary} />
+                                    <Ionicons name="person" size={40} color={colors.primary} />
                                 )}
                             </View>
                             <View style={styles.avatarGlow} />
@@ -106,7 +111,7 @@ export default function MyInfoScreen() {
                                 <Ionicons
                                     name="person-outline"
                                     size={20}
-                                    color={isFocused ? Colors.primary : Colors.textTertiary}
+                                    color={isFocused ? colors.primary : colors.textTertiary}
                                 />
                             </View>
                             <TextInput
@@ -114,7 +119,7 @@ export default function MyInfoScreen() {
                                 value={name}
                                 onChangeText={setName}
                                 placeholder="이름을 입력하세요"
-                                placeholderTextColor={Colors.textTertiary}
+                                placeholderTextColor={colors.textTertiary}
                                 onFocus={handleFocus}
                                 onBlur={handleBlur}
                                 maxLength={20}
@@ -128,7 +133,7 @@ export default function MyInfoScreen() {
                                     style={styles.clearButton}
                                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                 >
-                                    <Ionicons name="close-circle" size={20} color={Colors.textTertiary} />
+                                    <Ionicons name="close-circle" size={20} color={colors.textTertiary} />
                                 </TouchableOpacity>
                             )}
                         </Animated.View>
@@ -139,7 +144,7 @@ export default function MyInfoScreen() {
                     {/* Info Card */}
                     <View style={styles.infoCard}>
                         <View style={styles.infoIcon}>
-                            <Ionicons name="information-circle" size={20} color={Colors.primary} />
+                            <Ionicons name="information-circle" size={20} color={colors.primary} />
                         </View>
                         <Text style={styles.infoText}>
                             이름은 기기에만 저장되며 외부로 전송되지 않습니다.
@@ -170,10 +175,10 @@ export default function MyInfoScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     keyboardView: {
         flex: 1,
@@ -197,17 +202,17 @@ const styles = StyleSheet.create({
         width: 100,
         height: 100,
         borderRadius: 32,
-        backgroundColor: Colors.primaryLighter,
+        backgroundColor: colors.primaryLighter,
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 3,
-        borderColor: Colors.surface,
-        ...Layout.shadow.md,
+        borderColor: colors.surface,
+        ...layout.shadow.md,
     },
     avatarText: {
         fontSize: 42,
         fontWeight: '700',
-        color: Colors.primary,
+        color: colors.primary,
     },
     avatarGlow: {
         position: 'absolute',
@@ -216,12 +221,12 @@ const styles = StyleSheet.create({
         right: -4,
         bottom: -4,
         borderRadius: 36,
-        backgroundColor: Colors.primaryGlow,
+        backgroundColor: colors.primaryGlow,
         zIndex: -1,
     },
     avatarHint: {
-        ...Typography.body1,
-        color: Colors.textSecondary,
+        ...typography.body1,
+        color: colors.textSecondary,
         textAlign: 'center',
     },
 
@@ -230,44 +235,44 @@ const styles = StyleSheet.create({
         marginBottom: Spacing.xl,
     },
     label: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         marginBottom: 4,
     },
     labelHint: {
-        ...Typography.caption,
-        color: Colors.textTertiary,
+        ...typography.caption,
+        color: colors.textTertiary,
         marginBottom: Spacing.m,
     },
     inputContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.l,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.l,
         borderWidth: 2,
-        borderColor: Colors.border,
+        borderColor: colors.border,
         paddingHorizontal: Spacing.m,
-        ...Layout.shadow.sm,
+        ...layout.shadow.sm,
     },
     inputContainerFocused: {
-        borderColor: Colors.primary,
-        backgroundColor: Colors.surface,
-        ...Layout.shadow.primary,
+        borderColor: colors.primary,
+        backgroundColor: colors.surface,
+        ...layout.shadow.primary,
     },
     inputIcon: {
         marginRight: Spacing.s,
     },
     input: {
         flex: 1,
-        ...Typography.body1,
+        ...typography.body1,
         paddingVertical: Spacing.m,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     clearButton: {
         padding: Spacing.xs,
     },
     charCount: {
-        ...Typography.caption,
-        color: Colors.textTertiary,
+        ...typography.caption,
+        color: colors.textTertiary,
         textAlign: 'right',
         marginTop: Spacing.s,
     },
@@ -276,8 +281,8 @@ const styles = StyleSheet.create({
     infoCard: {
         flexDirection: 'row',
         alignItems: 'flex-start',
-        backgroundColor: Colors.primaryLighter,
-        borderRadius: Layout.borderRadius.m,
+        backgroundColor: colors.primaryLighter,
+        borderRadius: layout.borderRadius.m,
         padding: Spacing.m,
         marginBottom: Spacing.xxl,
     },
@@ -287,32 +292,32 @@ const styles = StyleSheet.create({
     },
     infoText: {
         flex: 1,
-        ...Typography.body2,
-        color: Colors.textSecondary,
+        ...typography.body2,
+        color: colors.textSecondary,
         lineHeight: 20,
     },
 
     // Save Button
     saveButton: {
-        backgroundColor: Colors.primary,
-        borderRadius: Layout.borderRadius.l,
+        backgroundColor: colors.primary,
+        borderRadius: layout.borderRadius.l,
         paddingVertical: Spacing.m,
         alignItems: 'center',
         justifyContent: 'center',
-        ...Layout.shadow.primary,
+        ...layout.shadow.primary,
     },
     saveButtonDisabled: {
-        backgroundColor: Colors.surfaceMuted,
-        ...Layout.shadow.sm,
+        backgroundColor: colors.surfaceMuted,
+        ...layout.shadow.sm,
     },
     saveButtonLoading: {
         opacity: 0.8,
     },
     saveButtonText: {
-        ...Typography.button,
-        color: Colors.textInverse,
+        ...typography.button,
+        color: colors.textInverse,
     },
     saveButtonTextDisabled: {
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
     },
 });

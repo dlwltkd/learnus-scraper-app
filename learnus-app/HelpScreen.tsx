@@ -1,19 +1,21 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Spacing, Layout } from './constants/theme';
+import { Spacing } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import { APP_VERSION } from './constants/version';
 import { Ionicons } from '@expo/vector-icons';
 
-const SectionHeader = ({ title }: { title: string }) => (
+const SectionHeader = ({ title, styles }: { title: string; styles: ReturnType<typeof createStyles> }) => (
     <Text style={styles.sectionHeader}>{title}</Text>
 );
 
-const InfoRow = ({ icon, label, value, isLast = false }: any) => (
+const InfoRow = ({ icon, label, value, isLast = false, styles, colors }: any) => (
     <View style={styles.row}>
         <View style={styles.rowLeft}>
             <View style={styles.iconContainer}>
-                <Ionicons name={icon} size={20} color={Colors.primary} />
+                <Ionicons name={icon} size={20} color={colors.primary} />
             </View>
             <Text style={styles.rowLabel}>{label}</Text>
         </View>
@@ -22,7 +24,7 @@ const InfoRow = ({ icon, label, value, isLast = false }: any) => (
     </View>
 );
 
-const ActionRow = ({ icon, label, onPress, isDestructive = false, isLast = false }: any) => (
+const ActionRow = ({ icon, label, onPress, isDestructive = false, isLast = false, styles, colors }: any) => (
     <TouchableOpacity
         style={styles.row}
         onPress={onPress}
@@ -33,19 +35,22 @@ const ActionRow = ({ icon, label, onPress, isDestructive = false, isLast = false
                 <Ionicons
                     name={icon}
                     size={20}
-                    color={isDestructive ? Colors.error : Colors.primary}
+                    color={isDestructive ? colors.error : colors.primary}
                 />
             </View>
-            <Text style={[styles.rowLabel, isDestructive && { color: Colors.error }]}>
+            <Text style={[styles.rowLabel, isDestructive && { color: colors.error }]}>
                 {label}
             </Text>
         </View>
-        <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
         {!isLast && <View style={styles.separator} />}
     </TouchableOpacity>
 );
 
 export default function HelpScreen() {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const handleContact = () => {
         Linking.openURL('mailto:dlwltkd@yonsei.ac.kr').catch(() => { });
     };
@@ -68,7 +73,7 @@ export default function HelpScreen() {
                 </View>
 
                 {/* Service Info */}
-                <SectionHeader title="서비스 소개" />
+                <SectionHeader title="서비스 소개" styles={styles} />
                 <View style={styles.group}>
                     <View style={styles.textBox}>
                         <Text style={styles.text}>
@@ -80,17 +85,17 @@ export default function HelpScreen() {
                 </View>
 
                 {/* Disclaimer - Styled as Important Note */}
-                <SectionHeader title="주의사항 (Disclaimer)" />
+                <SectionHeader title="주의사항 (Disclaimer)" styles={styles} />
                 <View style={styles.group}>
                     <View style={styles.textBox}>
                         <View style={styles.disclaimerItem}>
-                            <Ionicons name="alert-circle" size={16} color={Colors.textSecondary} style={{ marginTop: 2 }} />
+                            <Ionicons name="alert-circle" size={16} color={colors.textSecondary} style={{ marginTop: 2 }} />
                             <Text style={styles.disclaimerText}>
                                 본 서비스는 연세대학교 공식 앱이 아니며, 학교 측의 공식적인 지원을 받지 않습니다.
                             </Text>
                         </View>
                         <View style={[styles.disclaimerItem, { marginTop: 8 }]}>
-                            <Ionicons name="shield-checkmark" size={16} color={Colors.textSecondary} style={{ marginTop: 2 }} />
+                            <Ionicons name="shield-checkmark" size={16} color={colors.textSecondary} style={{ marginTop: 2 }} />
                             <Text style={styles.disclaimerText}>
                                 사용자의 비밀번호는 저장되지 않으며, 로그인 후 발급된 세션 쿠키만을 사용하여 서비스를 제공합니다.
                             </Text>
@@ -99,18 +104,22 @@ export default function HelpScreen() {
                 </View>
 
                 {/* Links */}
-                <SectionHeader title="더 보기" />
+                <SectionHeader title="더 보기" styles={styles} />
                 <View style={styles.group}>
                     <ActionRow
                         icon="logo-github"
                         label="오픈소스 라이선스 확인"
                         onPress={handleGithub}
+                        styles={styles}
+                        colors={colors}
                     />
                     <ActionRow
                         icon="mail"
                         label="개발자에게 문의하기"
                         onPress={handleContact}
                         isLast
+                        styles={styles}
+                        colors={colors}
                     />
                 </View>
 
@@ -125,10 +134,10 @@ export default function HelpScreen() {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F2F4F6',
+        backgroundColor: colors.background,
     },
     content: {
         paddingHorizontal: Spacing.l,
@@ -143,11 +152,11 @@ const styles = StyleSheet.create({
         width: 80,
         height: 80,
         borderRadius: 22,
-        backgroundColor: Colors.primary,
+        backgroundColor: colors.primary,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: Spacing.m,
-        shadowColor: Colors.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 8 },
         shadowOpacity: 0.3,
         shadowRadius: 12,
@@ -156,19 +165,19 @@ const styles = StyleSheet.create({
     appName: {
         fontSize: 24,
         fontWeight: '700',
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         marginBottom: 4,
         letterSpacing: -0.5,
     },
     version: {
         fontSize: 14,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         fontWeight: '500',
     },
     sectionHeader: {
         fontSize: 13,
         fontWeight: '600',
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         marginBottom: Spacing.s,
         marginLeft: Spacing.xs,
         marginTop: Spacing.m,
@@ -176,12 +185,12 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
     },
     group: {
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         borderRadius: 16,
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.02)',
-        ...Layout.shadow.sm,
+        ...layout.shadow.sm,
     },
     textBox: {
         padding: Spacing.m,
@@ -189,7 +198,7 @@ const styles = StyleSheet.create({
     text: {
         fontSize: 15,
         lineHeight: 24,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
     },
     disclaimerItem: {
         flexDirection: 'row',
@@ -199,7 +208,7 @@ const styles = StyleSheet.create({
     disclaimerText: {
         fontSize: 14,
         lineHeight: 20,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
         flex: 1,
     },
     row: {
@@ -207,7 +216,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: 16,
-        backgroundColor: Colors.surface,
+        backgroundColor: colors.surface,
         position: 'relative',
     },
     separator: {
@@ -216,7 +225,7 @@ const styles = StyleSheet.create({
         left: 52, // Indent divider to line up with text (Icon width 32 + gap 12 + extra padding)
         right: 0,
         height: 1,
-        backgroundColor: Colors.border,
+        backgroundColor: colors.border,
     },
     rowLeft: {
         flexDirection: 'row',
@@ -227,7 +236,7 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 8,
-        backgroundColor: Colors.surfaceHighlight,
+        backgroundColor: colors.surfaceHighlight,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -236,12 +245,12 @@ const styles = StyleSheet.create({
     },
     rowLabel: {
         fontSize: 16,
-        color: Colors.textPrimary,
+        color: colors.textPrimary,
         fontWeight: '500',
     },
     rowValue: {
         fontSize: 15,
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
     },
     footer: {
         marginTop: Spacing.xl,
@@ -251,11 +260,11 @@ const styles = StyleSheet.create({
     footerText: {
         fontSize: 13,
         fontWeight: '600',
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
         marginBottom: 4,
     },
     footerCopyright: {
         fontSize: 11,
-        color: Colors.textTertiary,
+        color: colors.textTertiary,
     },
 });

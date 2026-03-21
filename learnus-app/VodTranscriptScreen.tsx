@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, TouchableOpacity,
     Clipboard, Animated,
@@ -6,7 +6,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { Colors, Spacing, Layout, Typography } from './constants/theme';
+import { Spacing } from './constants/theme';
+import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
+import { useTheme } from './context/ThemeContext';
 import { useToast } from './context/ToastContext';
 import { transcribeVod, getVodTranscript, summarizeVod } from './services/api';
 import AIChatModal from './AIChatModal';
@@ -14,7 +16,9 @@ import TypingDots from './TypingDots';
 
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
-const SummaryCard = ({ vodMoodleId }: { vodMoodleId: number }) => {
+type Styles = ReturnType<typeof createStyles>;
+
+const SummaryCard = ({ vodMoodleId, styles, colors }: { vodMoodleId: number; styles: Styles; colors: ColorScheme }) => {
     const { showError } = useToast();
     const [loading, setLoading] = useState(false);
     const [summary, setSummary] = useState<{ tldr: string; points: string[] } | null>(null);
@@ -40,7 +44,7 @@ const SummaryCard = ({ vodMoodleId }: { vodMoodleId: number }) => {
             <Animated.View style={[styles.summaryCard, { opacity: fadeIn }]}>
                 <View style={styles.summaryHeader}>
                     <View style={styles.summaryIconWrap}>
-                        <Ionicons name="sparkles" size={16} color={Colors.primary} />
+                        <Ionicons name="sparkles" size={16} color={colors.primary} />
                     </View>
                     <Text style={styles.summaryTitle}>AI 요약</Text>
                 </View>
@@ -61,7 +65,7 @@ const SummaryCard = ({ vodMoodleId }: { vodMoodleId: number }) => {
             {loading ? (
                 <TypingDots size={7} />
             ) : (
-                <Ionicons name="sparkles" size={18} color={Colors.primary} />
+                <Ionicons name="sparkles" size={18} color={colors.primary} />
             )}
             <Text style={styles.summaryBtnText}>
                 {loading ? 'AI가 요약하는 중...' : 'AI 요약 보기'}
@@ -73,6 +77,9 @@ const SummaryCard = ({ vodMoodleId }: { vodMoodleId: number }) => {
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function VodTranscriptScreen() {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
     const insets = useSafeAreaInsets();
@@ -149,7 +156,7 @@ export default function VodTranscriptScreen() {
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
-                    <Ionicons name="chevron-back" size={24} color={Colors.textPrimary} />
+                    <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
                     <Text style={styles.headerSub} numberOfLines={1}>{courseName}</Text>
@@ -169,7 +176,7 @@ export default function VodTranscriptScreen() {
                 </View>
             ) : error ? (
                 <View style={styles.centered}>
-                    <Ionicons name="alert-circle-outline" size={48} color={Colors.error} />
+                    <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
                     <Text style={styles.errorText}>불러오기 실패</Text>
                     <TouchableOpacity style={styles.retryBtn} onPress={load} activeOpacity={0.8}>
                         <Text style={styles.retryText}>다시 시도</Text>
@@ -181,12 +188,12 @@ export default function VodTranscriptScreen() {
                     showsVerticalScrollIndicator={false}
                 >
                     {/* Summary */}
-                    <SummaryCard vodMoodleId={vodMoodleId} />
+                    <SummaryCard vodMoodleId={vodMoodleId} styles={styles} colors={colors} />
 
                     {/* Transcript */}
                     <View style={styles.transcriptCard}>
                         <View style={styles.transcriptHeader}>
-                            <Ionicons name="document-text-outline" size={16} color={Colors.textTertiary} />
+                            <Ionicons name="document-text-outline" size={16} color={colors.textTertiary} />
                             <Text style={styles.transcriptLabel}>전체 텍스트</Text>
                         </View>
                         <Text style={styles.transcriptText}>{transcript}</Text>
@@ -198,13 +205,13 @@ export default function VodTranscriptScreen() {
             {!loading && !error && (
                 <View style={[styles.bottomBar, { paddingBottom: insets.bottom || Spacing.m }]}>
                     <TouchableOpacity style={styles.bottomBtn} onPress={handleCopy} activeOpacity={0.8}>
-                        <Ionicons name="copy-outline" size={18} color={Colors.primary} />
+                        <Ionicons name="copy-outline" size={18} color={colors.primary} />
                         <Text style={styles.bottomBtnText}>전체 복사</Text>
                     </TouchableOpacity>
                     <View style={styles.bottomDivider} />
                     <TouchableOpacity style={styles.bottomBtn} onPress={handleChat} activeOpacity={0.8}>
-                        <Ionicons name="chatbubble-outline" size={18} color={Colors.primary} />
-                        <Text style={[styles.bottomBtnText, { color: Colors.primary }]}>AI 질문</Text>
+                        <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
+                        <Text style={[styles.bottomBtnText, { color: colors.primary }]}>AI 질문</Text>
                     </TouchableOpacity>
                 </View>
             )}
@@ -219,34 +226,34 @@ export default function VodTranscriptScreen() {
     );
 }
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: Colors.background },
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
     centered: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.xl },
 
     // Header
     header: {
         flexDirection: 'row', alignItems: 'center',
         paddingHorizontal: Spacing.l, paddingVertical: Spacing.m,
-        backgroundColor: Colors.background,
+        backgroundColor: colors.background,
     },
     backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', marginRight: Spacing.s },
     headerCenter: { flex: 1 },
-    headerTitle: { ...Typography.header3, fontSize: 18 },
-    headerSub: { ...Typography.caption, marginBottom: 2 },
+    headerTitle: { ...typography.header3, fontSize: 18 },
+    headerSub: { ...typography.caption, marginBottom: 2 },
 
     // Loading / Error
     loadingIconWrap: {
         width: 72, height: 72, borderRadius: 36,
-        backgroundColor: Colors.primaryLighter,
+        backgroundColor: colors.primaryLighter,
         alignItems: 'center', justifyContent: 'center',
     },
-    loadingText: { fontSize: 17, fontWeight: '700', color: Colors.textPrimary, marginTop: Spacing.l, marginBottom: Spacing.s, textAlign: 'center' },
-    loadingSubText: { ...Typography.body2, color: Colors.textSecondary, textAlign: 'center', maxWidth: 280, lineHeight: 20 },
-    loadingHintInline: { ...Typography.caption, color: Colors.textTertiary, marginTop: Spacing.xl, textAlign: 'center' },
-    errorText: { ...Typography.subtitle2, color: Colors.error },
+    loadingText: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginTop: Spacing.l, marginBottom: Spacing.s, textAlign: 'center' },
+    loadingSubText: { ...typography.body2, color: colors.textSecondary, textAlign: 'center', maxWidth: 280, lineHeight: 20 },
+    loadingHintInline: { ...typography.caption, color: colors.textTertiary, marginTop: Spacing.xl, textAlign: 'center' },
+    errorText: { ...typography.subtitle2, color: colors.error },
     retryBtn: {
         paddingHorizontal: Spacing.l, paddingVertical: Spacing.s,
-        backgroundColor: Colors.primary, borderRadius: Layout.borderRadius.full,
+        backgroundColor: colors.primary, borderRadius: layout.borderRadius.full,
     },
     retryText: { color: '#fff', fontWeight: '600', fontSize: 14 },
 
@@ -256,56 +263,56 @@ const styles = StyleSheet.create({
     // Summary button
     summaryBtn: {
         flexDirection: 'row', alignItems: 'center', gap: Spacing.s,
-        backgroundColor: Colors.primaryLighter,
-        borderRadius: Layout.borderRadius.l,
+        backgroundColor: colors.primaryLighter,
+        borderRadius: layout.borderRadius.l,
         paddingVertical: Spacing.m, paddingHorizontal: Spacing.l,
         borderWidth: 1, borderColor: 'rgba(49, 130, 246, 0.15)',
     },
-    summaryBtnText: { fontSize: 15, fontWeight: '600', color: Colors.primary },
+    summaryBtnText: { fontSize: 15, fontWeight: '600', color: colors.primary },
 
     // Summary card
     summaryCard: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.l,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.l,
         padding: Spacing.l,
-        borderWidth: 1, borderColor: Colors.border,
-        ...Layout.shadow.sm,
+        borderWidth: 1, borderColor: colors.border,
+        ...layout.shadow.sm,
     },
     summaryHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.s, marginBottom: Spacing.m },
     summaryIconWrap: {
         width: 28, height: 28, borderRadius: 8,
-        backgroundColor: Colors.primaryLighter,
+        backgroundColor: colors.primaryLighter,
         alignItems: 'center', justifyContent: 'center',
     },
-    summaryTitle: { ...Typography.subtitle2, color: Colors.primary, fontWeight: '700' },
-    courseDesc: { ...Typography.caption, color: Colors.textSecondary, lineHeight: 18, marginBottom: Spacing.m, fontStyle: 'italic' },
-    divider: { height: 1, backgroundColor: Colors.divider, marginBottom: Spacing.m },
-    lectureDesc: { ...Typography.body2, lineHeight: 22, color: Colors.textPrimary },
+    summaryTitle: { ...typography.subtitle2, color: colors.primary, fontWeight: '700' },
+    courseDesc: { ...typography.caption, color: colors.textSecondary, lineHeight: 18, marginBottom: Spacing.m, fontStyle: 'italic' },
+    divider: { height: 1, backgroundColor: colors.divider, marginBottom: Spacing.m },
+    lectureDesc: { ...typography.body2, lineHeight: 22, color: colors.textPrimary },
 
     // Transcript
     transcriptCard: {
-        backgroundColor: Colors.surface,
-        borderRadius: Layout.borderRadius.l,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.l,
         padding: Spacing.l,
-        borderWidth: 1, borderColor: Colors.border,
-        ...Layout.shadow.sm,
+        borderWidth: 1, borderColor: colors.border,
+        ...layout.shadow.sm,
     },
     transcriptHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.s, marginBottom: Spacing.m },
-    transcriptLabel: { ...Typography.caption, fontWeight: '600' },
-    transcriptText: { ...Typography.body2, lineHeight: 24, color: Colors.textPrimary },
+    transcriptLabel: { ...typography.caption, fontWeight: '600' },
+    transcriptText: { ...typography.body2, lineHeight: 24, color: colors.textPrimary },
 
     // Bottom bar
     bottomBar: {
         position: 'absolute', bottom: 0, left: 0, right: 0,
         flexDirection: 'row',
-        backgroundColor: Colors.surface,
-        borderTopWidth: 1, borderTopColor: Colors.border,
-        ...Layout.shadow.md,
+        backgroundColor: colors.surface,
+        borderTopWidth: 1, borderTopColor: colors.border,
+        ...layout.shadow.md,
     },
     bottomBtn: {
         flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
         gap: Spacing.s, paddingVertical: Spacing.m,
     },
-    bottomBtnText: { fontSize: 15, fontWeight: '600', color: Colors.primary },
-    bottomDivider: { width: 1, backgroundColor: Colors.border, marginVertical: Spacing.s },
+    bottomBtnText: { fontSize: 15, fontWeight: '600', color: colors.primary },
+    bottomDivider: { width: 1, backgroundColor: colors.border, marginVertical: Spacing.s },
 });

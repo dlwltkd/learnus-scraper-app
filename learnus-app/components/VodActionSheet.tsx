@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, Spacing, Layout, Typography } from '../constants/theme';
+import { Spacing } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
+import { type ColorScheme, type TypographyType, type LayoutType } from '../constants/theme';
 
 interface VodActionSheetProps {
     item: any;
@@ -15,6 +17,9 @@ interface VodActionSheetProps {
 }
 
 export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatch, onClose, tourRef, tourActive }: VodActionSheetProps) {
+    const { colors, typography, layout, isDark } = useTheme();
+    const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+
     const backdropOpacity = useRef(new Animated.Value(0)).current;
     const slideY = useRef(new Animated.Value(300)).current;
     const insets = useSafeAreaInsets();
@@ -43,34 +48,34 @@ export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatc
             )}
             <View style={styles.divider} />
             <TouchableOpacity style={styles.action} onPress={onWatch} activeOpacity={0.7}>
-                <View style={[styles.actionIcon, { backgroundColor: Colors.primaryLighter }]}>
-                    <Ionicons name="play-circle" size={22} color={Colors.primary} />
+                <View style={[styles.actionIcon, { backgroundColor: colors.primaryLighter }]}>
+                    <Ionicons name="play-circle" size={22} color={colors.primary} />
                 </View>
                 <View style={styles.actionText}>
                     <Text style={styles.actionLabel}>강의 시청</Text>
                     <Text style={styles.actionSub}>브라우저에서 열기</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </TouchableOpacity>
             <TouchableOpacity style={styles.action} onPress={onTranscribe} activeOpacity={0.7}>
-                <View style={[styles.actionIcon, { backgroundColor: Colors.primaryLighter }]}>
-                    <Ionicons name="text" size={22} color={Colors.primary} />
+                <View style={[styles.actionIcon, { backgroundColor: colors.primaryLighter }]}>
+                    <Ionicons name="text" size={22} color={colors.primary} />
                 </View>
                 <View style={styles.actionText}>
                     <Text style={styles.actionLabel}>텍스트 추출</Text>
                     <Text style={styles.actionSub}>AI로 강의 내용 변환</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
+                <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </TouchableOpacity>
             <TouchableOpacity style={[styles.action, item.is_completed && styles.actionDisabled]} onPress={onAutoWatch} activeOpacity={0.7}>
-                <View style={[styles.actionIcon, { backgroundColor: item.is_completed ? Colors.surfaceAlt : Colors.successLight }]}>
-                    <Ionicons name="checkmark-circle-outline" size={22} color={item.is_completed ? Colors.textTertiary : Colors.success} />
+                <View style={[styles.actionIcon, { backgroundColor: item.is_completed ? colors.surfaceAlt : colors.successLight }]}>
+                    <Ionicons name="checkmark-circle-outline" size={22} color={item.is_completed ? colors.textTertiary : colors.success} />
                 </View>
                 <View style={styles.actionText}>
-                    <Text style={[styles.actionLabel, item.is_completed && { color: Colors.textTertiary }]}>자동 시청</Text>
+                    <Text style={[styles.actionLabel, item.is_completed && { color: colors.textTertiary }]}>자동 시청</Text>
                     <Text style={styles.actionSub}>{item.is_completed ? '이미 시청 완료된 강의예요' : '백그라운드에서 자동으로 시청'}</Text>
                 </View>
-                {!item.is_completed && <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />}
+                {!item.is_completed && <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />}
             </TouchableOpacity>
             <TouchableOpacity style={styles.cancelBtn} onPress={dismiss} activeOpacity={0.7}>
                 <Text style={styles.cancelText}>취소</Text>
@@ -117,42 +122,42 @@ export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatc
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     backdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: Colors.overlay,
+        backgroundColor: colors.overlay,
     },
     sheet: {
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: Colors.surface,
-        borderTopLeftRadius: Layout.borderRadius.xl,
-        borderTopRightRadius: Layout.borderRadius.xl,
+        backgroundColor: colors.surface,
+        borderTopLeftRadius: layout.borderRadius.xl,
+        borderTopRightRadius: layout.borderRadius.xl,
         paddingHorizontal: Spacing.l,
         paddingTop: Spacing.m,
-        ...Layout.shadow.lg,
+        ...layout.shadow.lg,
     },
     handle: {
         width: 40,
         height: 4,
         borderRadius: 2,
-        backgroundColor: Colors.border,
+        backgroundColor: colors.border,
         alignSelf: 'center',
         marginBottom: Spacing.m,
     },
     vodTitle: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         marginBottom: 4,
     },
     vodCourse: {
-        ...Typography.caption,
+        ...typography.caption,
         marginBottom: Spacing.m,
     },
     divider: {
         height: 1,
-        backgroundColor: Colors.divider,
+        backgroundColor: colors.divider,
         marginBottom: Spacing.m,
     },
     action: {
@@ -173,24 +178,24 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     actionLabel: {
-        ...Typography.subtitle1,
+        ...typography.subtitle1,
         fontSize: 15,
         marginBottom: 2,
     },
     actionSub: {
-        ...Typography.caption,
+        ...typography.caption,
     },
     cancelBtn: {
         marginTop: Spacing.s,
         paddingVertical: Spacing.m,
         alignItems: 'center',
-        backgroundColor: Colors.surfaceAlt,
-        borderRadius: Layout.borderRadius.l,
+        backgroundColor: colors.surfaceAlt,
+        borderRadius: layout.borderRadius.l,
     },
     cancelText: {
         fontSize: 16,
         fontWeight: '600',
-        color: Colors.textSecondary,
+        color: colors.textSecondary,
     },
     measureView: {
         opacity: 0,
