@@ -21,6 +21,7 @@ import { useToast } from './context/ToastContext';
 import { ScreenHeader } from './components/Header';
 import Badge from './components/Badge';
 import EmptyState from './components/EmptyState';
+import { useTourRef } from './hooks/useTourRef';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -172,6 +173,9 @@ export default function CoursesScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [syncingId, setSyncingId] = useState<number | null>(null);
 
+    // Tour ref
+    const firstCardRef = useTourRef('courses-first-card');
+
     useEffect(() => { loadCourses(); }, []);
 
     const loadCourses = async () => {
@@ -206,15 +210,21 @@ export default function CoursesScreen() {
 
     const activeCourses = courses.filter(c => c.is_active !== false);
 
-    const renderCourseCard = ({ item, index }: { item: any; index: number }) => (
-        <CourseCard
-            item={item}
-            index={index}
-            onPress={() => (navigation as any).navigate('CourseDetail', { course: item })}
-            onSync={() => handleSync(item.id)}
-            syncing={syncingId === item.id}
-        />
-    );
+    const renderCourseCard = ({ item, index }: { item: any; index: number }) => {
+        const card = (
+            <CourseCard
+                item={item}
+                index={index}
+                onPress={() => (navigation as any).navigate('CourseDetail', { course: item })}
+                onSync={() => handleSync(item.id)}
+                syncing={syncingId === item.id}
+            />
+        );
+        if (index === 0) {
+            return <View ref={firstCardRef} collapsable={false}>{card}</View>;
+        }
+        return card;
+    };
 
     const renderHeader = () => (
         <View style={styles.headerContainer}>

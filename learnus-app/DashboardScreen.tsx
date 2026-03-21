@@ -30,6 +30,7 @@ import TypingDots from './TypingDots';
 import Badge, { StatusBadge } from './components/Badge';
 import Button, { IconButton } from './components/Button';
 import ItemRow from './components/ItemRow';
+import { useTourRef } from './hooks/useTourRef';
 
 if (Platform.OS === 'android') {
     if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -474,6 +475,10 @@ const DashboardScreen = () => {
     const [syncing, setSyncing] = useState(false);
     const [unreadNotifications, setUnreadNotifications] = useState(0);
 
+    // Tour refs
+    const statsRef = useTourRef('dashboard-stats');
+    const aiSectionRef = useTourRef('dashboard-ai-section');
+
     // Collapsible state
     const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
         missedAssignments: false,
@@ -665,7 +670,7 @@ const DashboardScreen = () => {
                 </Animated.View>
 
                 {/* Stats Card */}
-                <View style={styles.statsCard}>
+                <View ref={statsRef} style={styles.statsCard} collapsable={false}>
                     <Text style={styles.statsTitle}>이번 주 학습 현황</Text>
                     <View style={styles.statsGrid}>
                         <StatItem
@@ -694,6 +699,7 @@ const DashboardScreen = () => {
 
                 {/* AI Briefing Section */}
                 <View style={styles.section}>
+                    <View ref={aiSectionRef} collapsable={false}>
                     <SectionHeader
                         title="AI 브리핑"
                         icon="sparkles"
@@ -710,6 +716,7 @@ const DashboardScreen = () => {
                             ) : null
                         }
                     />
+                    </View>
 
                     {!loadingAI && aiSummaries.length === 0 && (
                         <Button

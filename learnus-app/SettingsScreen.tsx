@@ -16,6 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useAuth } from './context/AuthContext';
 import { useUser } from './context/UserContext';
 import { useToast } from './context/ToastContext';
+import { useTour, resetTour } from './context/TourContext';
 import { ScreenHeader } from './components/Header';
 
 // ============================================
@@ -121,7 +122,13 @@ export default function SettingsScreen() {
     const navigation = useNavigation();
     const { logout } = useAuth();
     const { profile } = useUser();
-    const { showConfirm, showInfo } = useToast();
+    const { showConfirm, showInfo, showSuccess } = useToast();
+    const { startTour } = useTour();
+
+    const handleReplayTour = async () => {
+        await resetTour();
+        startTour();
+    };
 
     const handleLogout = () => {
         showConfirm(
@@ -202,6 +209,13 @@ export default function SettingsScreen() {
                         title="언어"
                         subtitle="한국어"
                         onPress={() => handleComingSoon('언어')}
+                    />
+                    <SettingItem
+                        icon="map-outline"
+                        iconColor={Colors.accent}
+                        title="앱 둘러보기"
+                        subtitle="주요 기능 가이드 다시 보기"
+                        onPress={handleReplayTour}
                         isLast
                     />
                 </SettingSection>

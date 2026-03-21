@@ -16,6 +16,8 @@ import { useToast } from './context/ToastContext';
 import ItemRow from './components/ItemRow';
 import VodActionSheet from './components/VodActionSheet';
 import VodWebViewer from './components/VodWebViewer';
+import { useTourRef } from './hooks/useTourRef';
+import { useTour } from './context/TourContext';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -51,6 +53,7 @@ const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollaps
 
 const VideoLecturesScreen = () => {
     const { showSuccess, showError } = useToast();
+    const { notifyInteraction, isActive: tourActive } = useTour();
     const navigation = useNavigation<any>();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
@@ -58,6 +61,12 @@ const VideoLecturesScreen = () => {
     const [collapsed, setCollapsed] = useState<{ [k: string]: boolean }>({ missed: false });
     const [webViewer, setWebViewer] = useState<{ url: string; title: string; cookies: string } | null>(null);
     const [actionSheet, setActionSheet] = useState<any | null>(null);
+
+    // Tour refs
+    const watchAllRef = useTourRef('vod-watch-all-btn');
+    const availableSectionRef = useTourRef('vod-available-section');
+    const firstItemMenuRef = useTourRef('vod-first-item-menu');
+    const actionSheetRef = useTourRef('vod-action-sheet-area');
 
     useEffect(() => { loadData(); }, []);
 
@@ -73,7 +82,12 @@ const VideoLecturesScreen = () => {
         setWebViewer(null);
     };
 
-    const openActionSheet = (item: any) => setActionSheet(item);
+    const openActionSheet = (item: any) => {
+        setActionSheet(item);
+        if (tourActive) {
+            notifyInteraction('vod-tap-item');
+        }
+    };
 
     const handleWatch = async () => {
         const item = actionSheet;
@@ -148,6 +162,7 @@ const VideoLecturesScreen = () => {
             <View style={styles.header}>
                 <Text style={styles.headerTitle} numberOfLines={1}>동영상 강의</Text>
                 {unwatchedCount > 0 && (
+                    <View ref={watchAllRef} collapsable={false}>
                     <TouchableOpacity
                         style={[styles.watchAllBtn, watching && { opacity: 0.6 }]}
                         onPress={handleWatchAll}
@@ -161,6 +176,7 @@ const VideoLecturesScreen = () => {
                             {watching ? '시작 중...' : `모두 시청 (${unwatchedCount})`}
                         </Text>
                     </TouchableOpacity>
+                    </View>
                 )}
             </View>
 
@@ -194,19 +210,34 @@ const VideoLecturesScreen = () => {
                 {/* Available */}
                 {data?.available_vods?.length > 0 && (
                     <View style={styles.section}>
-                        <SectionHeader
-                            title="시청 가능 강의" icon="play-circle-outline"
-                        />
-                        {data.available_vods.map((item: any) => (
-                            <ItemRow
-                                key={item.id}
-                                title={item.title}
-                                courseName={item.course_name}
-                                meta={item.end_date ? `~ ${new Date(item.end_date).toLocaleDateString()} 마감` : undefined}
-                                state={item.is_completed ? 'completed' : 'pending'}
-                                type="vod"
-                                onMenuPress={() => openActionSheet(item)}
+                        <View ref={availableSectionRef} collapsable={false}>
+                            <SectionHeader
+                                title="시청 가능 강의" icon="play-circle-outline"
                             />
+                        </View>
+                        {data.available_vods.map((item: any, index: number) => (
+                            index === 0 ? (
+                                <View key={item.id} ref={firstItemMenuRef} collapsable={false}>
+                                    <ItemRow
+                                        title={item.title}
+                                        courseName={item.course_name}
+                                        meta={item.end_date ? `~ ${new Date(item.end_date).toLocaleDateString()} 마감` : undefined}
+                                        state={item.is_completed ? 'completed' : 'pending'}
+                                        type="vod"
+                                        onMenuPress={() => openActionSheet(item)}
+                                    />
+                                </View>
+                            ) : (
+                                <ItemRow
+                                    key={item.id}
+                                    title={item.title}
+                                    courseName={item.course_name}
+                                    meta={item.end_date ? `~ ${new Date(item.end_date).toLocaleDateString()} 마감` : undefined}
+                                    state={item.is_completed ? 'completed' : 'pending'}
+                                    type="vod"
+                                    onMenuPress={() => openActionSheet(item)}
+                                />
+                            )
                         ))}
                     </View>
                 )}
@@ -263,6 +294,8 @@ const VideoLecturesScreen = () => {
                     onTranscribe={handleTranscribe}
                     onAutoWatch={handleAutoWatch}
                     onClose={() => setActionSheet(null)}
+                    tourRef={actionSheetRef}
+                    tourActive={tourActive}
                 />
             )}
         </SafeAreaView>

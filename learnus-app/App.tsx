@@ -31,6 +31,8 @@ import { Colors, Layout, Typography } from './constants/theme';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserProvider } from './context/UserContext';
 import { ToastProvider } from './context/ToastContext';
+import { TourProvider, TourProviderHandle, hasTourCompleted } from './context/TourContext';
+import TourOverlay from './components/TourOverlay';
 
 import { getDashboardOverview, registerPushToken, checkAppVersion } from './services/api';
 import { APP_VERSION } from './constants/version';
@@ -110,6 +112,7 @@ function TabNavigator() {
 // ============================================
 function AppContent() {
   const { isLoggedIn, login, autoLogout, resetAutoLogout, isLoading } = useAuth();
+  const tourRef = React.useRef<TourProviderHandle>(null);
 
   React.useEffect(() => {
     if (isLoggedIn) {
@@ -118,6 +121,13 @@ function AppContent() {
           registerPushToken(token)
             .then(() => console.log('Push Token Registered with Backend'))
             .catch(e => console.log('Failed to register token with backend:', e));
+        }
+      });
+
+      // Check if first-time user and start tour
+      hasTourCompleted().then(completed => {
+        if (!completed) {
+          setTimeout(() => tourRef.current?.startTour(), 1500);
         }
       });
     }
@@ -185,122 +195,125 @@ function AppContent() {
 
   return (
     <NavigationContainer ref={navigationRef}>
-      <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
-      <Stack.Navigator
-        screenOptions={{
-          headerStyle: {
-            backgroundColor: Colors.background,
-            elevation: 0,
-            shadowOpacity: 0,
-            borderBottomWidth: 0,
-          },
-          headerTintColor: Colors.textPrimary,
-          headerTitleStyle: {
-            ...Typography.subtitle1,
-            fontSize: 17,
-          },
-          cardStyle: {
-            backgroundColor: Colors.background,
-          },
-        }}
-      >
-        {!isLoggedIn ? (
-          <Stack.Screen name="Login" options={{ headerShown: false }}>
-            {props => (
-              <LoginScreen
-                {...props}
-                onLoginSuccess={handleLoginSuccess}
-                autoLogout={autoLogout}
-                onAutoLogoutComplete={resetAutoLogout}
+      <TourProvider navigationRef={navigationRef} ref={tourRef}>
+        <StatusBar barStyle="dark-content" backgroundColor={Colors.background} />
+        <Stack.Navigator
+          screenOptions={{
+            headerStyle: {
+              backgroundColor: Colors.background,
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 0,
+            },
+            headerTintColor: Colors.textPrimary,
+            headerTitleStyle: {
+              ...Typography.subtitle1,
+              fontSize: 17,
+            },
+            cardStyle: {
+              backgroundColor: Colors.background,
+            },
+          }}
+        >
+          {!isLoggedIn ? (
+            <Stack.Screen name="Login" options={{ headerShown: false }}>
+              {props => (
+                <LoginScreen
+                  {...props}
+                  onLoginSuccess={handleLoginSuccess}
+                  autoLogout={autoLogout}
+                  onAutoLogoutComplete={resetAutoLogout}
+                />
+              )}
+            </Stack.Screen>
+          ) : (
+            <>
+              <Stack.Screen
+                name="Main"
+                component={TabNavigator}
+                options={{ headerShown: false }}
               />
-            )}
-          </Stack.Screen>
-        ) : (
-          <>
-            <Stack.Screen
-              name="Main"
-              component={TabNavigator}
-              options={{ headerShown: false }}
-            />
-            <Stack.Screen
-              name="CourseDetail"
-              component={CourseDetailScreen}
-              options={{
-                title: '',
-                headerBackTitle: '뒤로',
-              }}
-            />
-            <Stack.Screen
-              name="Board"
-              component={BoardScreen}
-              options={{
-                title: '게시판',
-              }}
-            />
-            <Stack.Screen
-              name="PostDetail"
-              component={PostDetailScreen}
-              options={{
-                title: '게시물',
-              }}
-            />
-            <Stack.Screen
-              name="ManageCourses"
-              component={ManageCoursesScreen}
-              options={{
-                title: '강의 관리',
-              }}
-            />
-            <Stack.Screen
-              name="NotificationSettings"
-              component={NotificationSettingsScreen}
-              options={{
-                title: '알림 설정',
-              }}
-            />
-            <Stack.Screen
-              name="MyInfo"
-              component={MyInfoScreen}
-              options={{
-                title: '내 정보',
-              }}
-            />
-            <Stack.Screen
-              name="Help"
-              component={HelpScreen}
-              options={{
-                title: '도움말',
-              }}
-            />
-            <Stack.Screen
-              name="PrivacyPolicy"
-              component={PrivacyPolicyScreen}
-              options={{
-                title: '개인정보 처리방침',
-              }}
-            />
-            <Stack.Screen
-              name="TermsOfService"
-              component={TermsOfServiceScreen}
-              options={{
-                title: '이용약관',
-              }}
-            />
-            <Stack.Screen
-              name="NotificationHistory"
-              component={NotificationHistoryScreen}
-              options={{
-                title: '알림 기록',
-              }}
-            />
-            <Stack.Screen
-              name="VodTranscript"
-              component={VodTranscriptScreen}
-              options={{ headerShown: false }}
-            />
-          </>
-        )}
-      </Stack.Navigator>
+              <Stack.Screen
+                name="CourseDetail"
+                component={CourseDetailScreen}
+                options={{
+                  title: '',
+                  headerBackTitle: '뒤로',
+                }}
+              />
+              <Stack.Screen
+                name="Board"
+                component={BoardScreen}
+                options={{
+                  title: '게시판',
+                }}
+              />
+              <Stack.Screen
+                name="PostDetail"
+                component={PostDetailScreen}
+                options={{
+                  title: '게시물',
+                }}
+              />
+              <Stack.Screen
+                name="ManageCourses"
+                component={ManageCoursesScreen}
+                options={{
+                  title: '강의 관리',
+                }}
+              />
+              <Stack.Screen
+                name="NotificationSettings"
+                component={NotificationSettingsScreen}
+                options={{
+                  title: '알림 설정',
+                }}
+              />
+              <Stack.Screen
+                name="MyInfo"
+                component={MyInfoScreen}
+                options={{
+                  title: '내 정보',
+                }}
+              />
+              <Stack.Screen
+                name="Help"
+                component={HelpScreen}
+                options={{
+                  title: '도움말',
+                }}
+              />
+              <Stack.Screen
+                name="PrivacyPolicy"
+                component={PrivacyPolicyScreen}
+                options={{
+                  title: '개인정보 처리방침',
+                }}
+              />
+              <Stack.Screen
+                name="TermsOfService"
+                component={TermsOfServiceScreen}
+                options={{
+                  title: '이용약관',
+                }}
+              />
+              <Stack.Screen
+                name="NotificationHistory"
+                component={NotificationHistoryScreen}
+                options={{
+                  title: '알림 기록',
+                }}
+              />
+              <Stack.Screen
+                name="VodTranscript"
+                component={VodTranscriptScreen}
+                options={{ headerShown: false }}
+              />
+            </>
+          )}
+        </Stack.Navigator>
+        <TourOverlay />
+      </TourProvider>
     </NavigationContainer>
   );
 }
