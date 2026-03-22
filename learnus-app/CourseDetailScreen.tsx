@@ -279,7 +279,7 @@ export default function CourseDetailScreen() {
                     {vods.length === 0 ? (
                         <InlineEmpty message="동영상 강의가 없습니다." />
                     ) : (
-                        vods.map((vod) => (
+                        [...vods].sort((a, b) => (a.end_date ? new Date(a.end_date).getTime() : Infinity) - (b.end_date ? new Date(b.end_date).getTime() : Infinity)).map((vod) => (
                             <ItemRow
                                 key={vod.id}
                                 title={vod.title}
@@ -305,7 +305,7 @@ export default function CourseDetailScreen() {
                     {assignments.length === 0 ? (
                         <InlineEmpty message="과제가 없습니다." />
                     ) : (
-                        assignments.map((a) => (
+                        [...assignments].sort((a, b) => (a.due_date ? new Date(a.due_date).getTime() : Infinity) - (b.due_date ? new Date(b.due_date).getTime() : Infinity)).map((a) => (
                             <ItemRow
                                 key={a.id}
                                 title={a.title}

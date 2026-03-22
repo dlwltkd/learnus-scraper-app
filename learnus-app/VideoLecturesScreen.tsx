@@ -221,7 +221,7 @@ const VideoLecturesScreen = () => {
                             isCollapsible isCollapsed={collapsed.missed}
                             onToggle={() => toggleSection('missed')}
                         />
-                        {!collapsed.missed && data.missed_vods.map((item: any) => (
+                        {!collapsed.missed && [...data.missed_vods].sort((a: any, b: any) => (a.end_date ? new Date(a.end_date).getTime() : Infinity) - (b.end_date ? new Date(b.end_date).getTime() : Infinity)).map((item: any) => (
                             <ItemRow
                                 key={item.id}
                                 title={item.title}
@@ -240,7 +240,7 @@ const VideoLecturesScreen = () => {
                         <SectionHeader
                             title="시청 가능 강의" icon="play-circle-outline"
                         />
-                        {data.available_vods.map((item: any, index: number) => (
+                        {[...data.available_vods].sort((a: any, b: any) => (a.end_date ? new Date(a.end_date).getTime() : Infinity) - (b.end_date ? new Date(b.end_date).getTime() : Infinity)).map((item: any, index: number) => (
                             index === 0 ? (
                                 <View key={item.id} ref={firstItemMenuRef} collapsable={false}>
                                     <ItemRow
@@ -272,7 +272,7 @@ const VideoLecturesScreen = () => {
                 {data?.upcoming_vods?.length > 0 && (
                     <View style={styles.section}>
                         <SectionHeader title="예정 오픈 강의" icon="time-outline" />
-                        {data.upcoming_vods.map((item: any) => (
+                        {[...data.upcoming_vods].sort((a: any, b: any) => (a.start_date ? new Date(a.start_date).getTime() : Infinity) - (b.start_date ? new Date(b.start_date).getTime() : Infinity)).map((item: any) => (
                             <ItemRow
                                 key={item.id}
                                 title={item.title}
@@ -289,7 +289,7 @@ const VideoLecturesScreen = () => {
                 {data?.unchecked_vods?.length > 0 && (
                     <View style={styles.section}>
                         <SectionHeader title="출석 미반영 강의" icon="help-circle-outline" />
-                        {data.unchecked_vods.map((item: any) => (
+                        {[...data.unchecked_vods].sort((a: any, b: any) => (a.end_date ? new Date(a.end_date).getTime() : Infinity) - (b.end_date ? new Date(b.end_date).getTime() : Infinity)).map((item: any) => (
                             <ItemRow
                                 key={item.id}
                                 title={item.title}

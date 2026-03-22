@@ -812,7 +812,7 @@ const DashboardScreen = () => {
                             onToggle={() => toggleSection('missedAssignments')}
                         />
                         {!collapsedSections.missedAssignments &&
-                            data.missed_assignments.map((item: any) => (
+                            [...data.missed_assignments].sort((a: any, b: any) => (a.due_date ? new Date(a.due_date).getTime() : Infinity) - (b.due_date ? new Date(b.due_date).getTime() : Infinity)).map((item: any) => (
                                 <ItemRow
                                     key={item.id}
                                     title={item.title}
@@ -833,7 +833,7 @@ const DashboardScreen = () => {
                             icon="calendar"
                             iconColor={colors.primary}
                         />
-                        {data.upcoming_assignments.map((item: any) => (
+                        {[...data.upcoming_assignments].sort((a: any, b: any) => (a.due_date ? new Date(a.due_date).getTime() : Infinity) - (b.due_date ? new Date(b.due_date).getTime() : Infinity)).map((item: any) => (
                             <ItemRow
                                 key={item.id}
                                 title={item.title}
