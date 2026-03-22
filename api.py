@@ -35,8 +35,6 @@ def _read_app_version() -> str:
     except Exception:
         return '0.0.0'
 
-LATEST_VERSION = _read_app_version()
-
 app = FastAPI(title="LearnUs Connect API (Beta)")
 
 ENABLE_DEBUG = os.getenv("ENABLE_DEBUG", "false").lower() == "true"
@@ -47,7 +45,7 @@ FORCE_UPDATE_MIN_VERSION = "0.4.1"
 @app.get("/version")
 def get_version():
     return {
-        "version": LATEST_VERSION,
+        "version": _read_app_version(),
         "force_update_min": FORCE_UPDATE_MIN_VERSION or None,
     }
 
