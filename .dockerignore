@@ -1,4 +1,11 @@
-learnus-app/*
+learnus-app/node_modules/
+learnus-app/.expo/
+learnus-app/dist/
+learnus-app/android/
+learnus-app/ios/
+learnus-app/assets/
+learnus-app/**/*.tsx
+learnus-app/**/*.ts
 !learnus-app/app.json
 .git/
 .env

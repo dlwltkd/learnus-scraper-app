@@ -28,12 +28,21 @@ SessionLocal = None if os.getenv("TESTING") else init_db()
 # To release a new version: update "version" in app.json only.
 # ============================================================
 def _read_app_version() -> str:
-    try:
-        with open('./learnus-app/app.json', 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data['expo']['version']
-    except Exception:
-        return '0.0.0'
+    # Check paths relative to this file, then CWD
+    import pathlib
+    this_dir = pathlib.Path(__file__).resolve().parent
+    candidates = [
+        this_dir / 'learnus-app' / 'app.json',
+        pathlib.Path('./learnus-app/app.json'),
+    ]
+    for path in candidates:
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data['expo']['version']
+        except Exception:
+            continue
+    return '0.0.0'
 
 app = FastAPI(title="LearnUs Connect API (Beta)")
 
