@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport, Job
+from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport, Job, PushToken, NotificationHistory
 from moodle_client import MoodleClient
 import logging
 import uuid
@@ -155,6 +155,7 @@ class SessionSyncRequest(BaseModel):
 
 class PushTokenRequest(BaseModel):
     token: str
+    device_name: Optional[str] = None
 
 class PreferencesRequest(BaseModel):
     new_assignment: bool = True
@@ -258,7 +259,16 @@ def validate_session(user: User = Depends(get_current_user)):
 @app.post("/auth/push-token")
 def register_push_token(req: PushTokenRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not req.token: raise HTTPException(400, "Token required")
+    # Keep legacy field in sync for backwards compatibility
     user.push_token = req.token
+    # Upsert into multi-device push_tokens table
+    existing = db.query(PushToken).filter(PushToken.token == req.token).first()
+    if existing:
+        # Token already registered — reassign to current user if needed
+        existing.user_id = user.id
+        existing.device_name = req.device_name
+    else:
+        db.add(PushToken(user_id=user.id, token=req.token, device_name=req.device_name))
     db.commit()
     logger.info(f"Registered push token for {user.username}: {req.token[:15]}...")
     return {"status": "success"}
@@ -285,6 +295,69 @@ def update_preferences(req: PreferencesRequest, user: User = Depends(get_current
     db.commit()
     logger.info(f"Updated preferences for {user.username}: {user.notification_preferences}")
     return {"status": "success", "preferences": user.notification_preferences}
+
+# ============================================================
+# Notification History
+# ============================================================
+
+@app.get("/notifications")
+def get_notifications(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get notification history for the current user, newest first."""
+    items = (
+        db.query(NotificationHistory)
+        .filter(NotificationHistory.user_id == user.id)
+        .order_by(NotificationHistory.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    return [
+        {
+            "id": n.id,
+            "title": n.title,
+            "body": n.body,
+            "type": n.type,
+            "data": n.data,
+            "read": n.read,
+            "timestamp": int(n.created_at.timestamp() * 1000) if n.created_at else 0,
+        }
+        for n in items
+    ]
+
+@app.put("/notifications/{notif_id}/read")
+def mark_notification_read(notif_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    notif = db.query(NotificationHistory).filter(
+        NotificationHistory.id == notif_id, NotificationHistory.user_id == user.id
+    ).first()
+    if not notif:
+        raise HTTPException(404, "Notification not found")
+    notif.read = True
+    db.commit()
+    return {"status": "success"}
+
+@app.put("/notifications/read-all")
+def mark_all_notifications_read(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.query(NotificationHistory).filter(
+        NotificationHistory.user_id == user.id, NotificationHistory.read == False
+    ).update({"read": True})
+    db.commit()
+    return {"status": "success"}
+
+@app.delete("/notifications/{notif_id}")
+def delete_notification(notif_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    notif = db.query(NotificationHistory).filter(
+        NotificationHistory.id == notif_id, NotificationHistory.user_id == user.id
+    ).first()
+    if not notif:
+        raise HTTPException(404, "Notification not found")
+    db.delete(notif)
+    db.commit()
+    return {"status": "success"}
+
+@app.delete("/notifications")
+def clear_notifications(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.query(NotificationHistory).filter(NotificationHistory.user_id == user.id).delete()
+    db.commit()
+    return {"status": "success"}
 
 @app.post("/auth/sync-session")
 def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
@@ -1024,31 +1097,36 @@ def delete_test_vods(user: User = Depends(get_current_user), db: Session = Depen
 def send_push_direct(
     payload: dict,
     user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    """Send a push notification directly to the authenticated user's device."""
+    """Send a push notification directly to all of the authenticated user's devices."""
     import requests as req_lib
     import json as json_lib
 
-    if not user.push_token:
+    tokens = [pt.token for pt in db.query(PushToken).filter(PushToken.user_id == user.id).all()]
+    if not tokens and user.push_token:
+        tokens = [user.push_token]
+    if not tokens:
         return {"status": "error", "message": "No push token registered for this user."}
 
-    message = {
-        "to": user.push_token,
-        "sound": "default",
-        "title": payload.get("title", "알림"),
-        "body": payload.get("body", ""),
-        "data": {**payload.get("data", {}), "saveToHistory": True},
-    }
+    title = payload.get("title", "알림")
+    body = payload.get("body", "")
+    data = {**payload.get("data", {}), "saveToHistory": True}
 
-    try:
-        res = req_lib.post(
-            "https://exp.host/--/api/v2/push/send",
-            data=json_lib.dumps(message, ensure_ascii=False).encode("utf-8"),
-            headers={"Content-Type": "application/json; charset=utf-8", "Accept": "application/json"},
-        )
-        return {"status": "success", "expo_response": res.json()}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+    results = []
+    for token in tokens:
+        message = {"to": token, "sound": "default", "title": title, "body": body, "data": data}
+        try:
+            res = req_lib.post(
+                "https://exp.host/--/api/v2/push/send",
+                data=json_lib.dumps(message, ensure_ascii=False).encode("utf-8"),
+                headers={"Content-Type": "application/json; charset=utf-8", "Accept": "application/json"},
+            )
+            results.append({"token": token[:15] + "...", "response": res.json()})
+        except Exception as e:
+            results.append({"token": token[:15] + "...", "error": str(e)})
+
+    return {"status": "success", "devices": len(tokens), "results": results}
 
 
 @app.get("/debug/login-reports", dependencies=[Depends(require_debug)])

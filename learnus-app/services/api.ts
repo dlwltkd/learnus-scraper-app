@@ -252,8 +252,34 @@ export const fetchAISummary = async () => {
     }
 };
 
-export const registerPushToken = async (token: string) => {
-    const response = await api.post('/auth/push-token', { token });
+export const registerPushToken = async (token: string, deviceName?: string) => {
+    const response = await api.post('/auth/push-token', { token, device_name: deviceName });
+    return response.data;
+};
+
+// Notification History (server-side)
+export const getNotificationHistoryFromServer = async () => {
+    const response = await api.get('/notifications');
+    return response.data;
+};
+
+export const markNotificationReadOnServer = async (id: number) => {
+    const response = await api.put(`/notifications/${id}/read`);
+    return response.data;
+};
+
+export const markAllNotificationsReadOnServer = async () => {
+    const response = await api.put('/notifications/read-all');
+    return response.data;
+};
+
+export const deleteNotificationOnServer = async (id: number) => {
+    const response = await api.delete(`/notifications/${id}`);
+    return response.data;
+};
+
+export const clearNotificationsOnServer = async () => {
+    const response = await api.delete('/notifications');
     return response.data;
 };
 
