@@ -6,7 +6,7 @@ from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy.orm import Session
-from database import init_db, User, Course, Board, Post, Assignment, VOD
+from database import init_db, User, Course, Board, Post, Assignment, VOD, PushToken, NotificationHistory
 from moodle_client import MoodleClient
 from ai_service import AIService
 
@@ -62,38 +62,76 @@ def get_client(user: User):
 
     return client
 
-def send_push_notification(user: User, course: Course, post: Post):
+def _get_user_push_tokens(user: User, db: Session = None) -> list[str]:
+    """Return all Expo push tokens for a user (multi-device support)."""
+    if db:
+        tokens = db.query(PushToken.token).filter(PushToken.user_id == user.id).all()
+        result = [t[0] for t in tokens]
+    else:
+        result = [pt.token for pt in user.push_tokens] if hasattr(user, 'push_tokens') and user.push_tokens else []
+    # Fallback to legacy single token
+    if not result and user.push_token:
+        result = [user.push_token]
+    return result
+
+
+def _save_notification_history(db: Session, user: User, title: str, body: str, notif_type: str, data: dict = None):
+    """Persist a notification to the server-side history. Uses flush so the caller controls the commit."""
+    notif = NotificationHistory(
+        user_id=user.id,
+        title=title,
+        body=body,
+        type=notif_type,
+        data=data,
+    )
+    db.add(notif)
+    db.flush()
+
+
+def _broadcast_push(tokens: list[str], title: str, body: str, data: dict):
+    """Send push notification to all tokens (all devices)."""
+    client = PushClient()
+    for token in tokens:
+        try:
+            res = client.publish(
+                PushMessage(
+                    to=token,
+                    sound="default",
+                    title=title,
+                    body=body,
+                    data=data,
+                )
+            )
+            logger.info(f"Push sent to {token[:15]}...: {res}")
+        except Exception as exc:
+            logger.error(f"Expo Send Error for {token[:15]}...: {exc}")
+
+
+def send_push_notification(user: User, course: Course, post: Post, db: Session = None):
     try:
         # Use AI to summarize the post content
         ai = AIService()
         msg_body = ai.summarize_text(post.content or post.title)
-
-        # Fallback if AI fails or returns empty/too long (though logic inside handles it)
         if not msg_body:
             msg_body = post.title
 
-        try:
-             res = PushClient().publish(
-                PushMessage(
-                    to=user.push_token,
-                    sound="default",
-                    title=f"📢 {course.name}",
-                    body=msg_body,
-                    data={
-                        "type": "announcement",
-                        "postId": post.id,
-                        "postUrl": post.url,
-                        "postTitle": post.title,
-                        "courseId": course.id,
-                        "courseName": course.name,
-                        "saveToHistory": True
-                    }
-                )
-             )
-             print(f"✅ Expo Response: {res}") # DEBUG PRINT
-        except Exception as exc:
-            logger.error(f"Expo Send Error: {exc}")
-            print(f"❌ Expo Send Error: {exc}") # DEBUG PRINT
+        title = f"📢 {course.name}"
+        data = {
+            "type": "announcement",
+            "postId": post.id,
+            "postUrl": post.url,
+            "postTitle": post.title,
+            "courseId": course.id,
+            "courseName": course.name,
+            "saveToHistory": True,
+        }
+
+        tokens = _get_user_push_tokens(user, db)
+        _broadcast_push(tokens, title, msg_body, data)
+
+        # Save to server-side history
+        if db:
+            _save_notification_history(db, user, title, msg_body, "announcement", data)
 
         logger.info(f"Sent push to {user.username} for post {post.id}")
     except Exception as e:
@@ -158,7 +196,7 @@ def process_user_updates(user: User, db: Session):
                         db.commit()
 
                         if notify_assignment:
-                            send_simple_push(user, f"[{course.name}] 새로운 과제 등장!", f"{item['name']}", "assignment", course.name)
+                            send_simple_push(user, f"[{course.name}] 새로운 과제 등장!", f"{item['name']}", "assignment", course.name, db)
 
                     else:
                         # Update existing
@@ -185,7 +223,7 @@ def process_user_updates(user: User, db: Session):
 
                         if notify_vod:
                             body = f"새로운 동영상 강의\n시청 기한: {item.get('start_date', '?')} ~ {item.get('end_date', '?')}"
-                            send_simple_push(user, f"[{course.name}] {item['name']}", body, "vod", course.name)
+                            send_simple_push(user, f"[{course.name}] {item['name']}", body, "vod", course.name, db)
                     else:
                         vod.is_completed = item['is_completed']
 
@@ -221,7 +259,7 @@ def process_user_updates(user: User, db: Session):
                             db.commit()
 
                             if notify_notice:
-                                send_push_notification(user, course, new_post)
+                                send_push_notification(user, course, new_post, db)
 
                 # Mark this course as initialized after its first successful sync
                 if course_is_first:
@@ -242,24 +280,20 @@ def process_user_updates(user: User, db: Session):
         logger.error(f"Error updating user {user.username}: {e}")
         pass
 
-def send_simple_push(user: User, title: str, body: str, notif_type: str = "general", course_name: str = None):
-    try:
-         res = PushClient().publish(
-            PushMessage(
-                to=user.push_token,
-                sound="default",
-                title=title,
-                body=body,
-                data={
-                    "type": notif_type,
-                    "courseName": course_name,
-                    "saveToHistory": True
-                }
-            )
-         )
-         logger.info(f"Sent simple push to {user.username}: {title}")
-    except Exception as exc:
-        logger.error(f"Simple Expo Send Error: {exc}")
+def send_simple_push(user: User, title: str, body: str, notif_type: str = "general", course_name: str = None, db: Session = None):
+    data = {
+        "type": notif_type,
+        "courseName": course_name,
+        "saveToHistory": True,
+    }
+    tokens = _get_user_push_tokens(user, db)
+    _broadcast_push(tokens, title, body, data)
+
+    # Save to server-side history
+    if db:
+        _save_notification_history(db, user, title, body, notif_type, data)
+
+    logger.info(f"Sent simple push to {user.username}: {title}")
 
 
 _watch_running = set()  # track which user IDs are currently being watched
@@ -408,6 +442,7 @@ def check_session_health_job(SessionLocal):
                     "세션 만료",
                     "로그인 세션이 만료되었습니다. 앱을 열어 다시 로그인해주세요.",
                     notif_type="session_expired",
+                    db=db,
                 )
                 user.session_expired_notified = True
                 db.commit()

@@ -1,7 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const NOTIFICATION_HISTORY_KEY = 'notification_history';
-const MAX_NOTIFICATIONS = 50;
+import {
+    getNotificationHistoryFromServer,
+    markNotificationReadOnServer,
+    markAllNotificationsReadOnServer,
+    deleteNotificationOnServer,
+    clearNotificationsOnServer,
+} from './api';
 
 export interface NotificationHistoryItem {
     id: string;
@@ -24,9 +27,16 @@ export interface NotificationHistoryItem {
 
 export async function getNotificationHistory(): Promise<NotificationHistoryItem[]> {
     try {
-        const stored = await AsyncStorage.getItem(NOTIFICATION_HISTORY_KEY);
-        if (!stored) return [];
-        return JSON.parse(stored);
+        const items = await getNotificationHistoryFromServer();
+        return items.map((item: any) => ({
+            id: String(item.id),
+            title: item.title,
+            body: item.body || '',
+            timestamp: item.timestamp,
+            read: item.read,
+            type: item.type || 'general',
+            data: item.data,
+        }));
     } catch (e) {
         console.error('Failed to get notification history:', e);
         return [];
@@ -34,44 +44,21 @@ export async function getNotificationHistory(): Promise<NotificationHistoryItem[
 }
 
 export async function addNotification(
-    title: string,
-    body: string,
-    type: NotificationHistoryItem['type'] = 'general',
-    data?: NotificationHistoryItem['data'],
-    notificationId?: string
+    _title: string,
+    _body: string,
+    _type: NotificationHistoryItem['type'] = 'general',
+    _data?: NotificationHistoryItem['data'],
+    _notificationId?: string
 ): Promise<void> {
-    try {
-        const history = await getNotificationHistory();
-
-        // Deduplicate: if we already have this notification (e.g. received while foreground,
-        // then user taps it), don't add it again.
-        if (notificationId && history.some(item => item.id === notificationId)) return;
-
-        const newNotification: NotificationHistoryItem = {
-            id: notificationId ?? `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            title,
-            body,
-            timestamp: Date.now(),
-            read: false,
-            type,
-            data,
-        };
-
-        // Add to beginning, limit to max
-        const updated = [newNotification, ...history].slice(0, MAX_NOTIFICATIONS);
-        await AsyncStorage.setItem(NOTIFICATION_HISTORY_KEY, JSON.stringify(updated));
-    } catch (e) {
-        console.error('Failed to add notification:', e);
-    }
+    // Notifications are now saved server-side when the backend sends them.
+    // This function is kept for local notifications (scheduled reminders) — they
+    // will still appear on the device that fired them but won't persist to server.
+    // No-op: server handles persistence.
 }
 
 export async function markAsRead(id: string): Promise<void> {
     try {
-        const history = await getNotificationHistory();
-        const updated = history.map(item =>
-            item.id === id ? { ...item, read: true } : item
-        );
-        await AsyncStorage.setItem(NOTIFICATION_HISTORY_KEY, JSON.stringify(updated));
+        await markNotificationReadOnServer(Number(id));
     } catch (e) {
         console.error('Failed to mark notification as read:', e);
     }
@@ -79,9 +66,7 @@ export async function markAsRead(id: string): Promise<void> {
 
 export async function markAllAsRead(): Promise<void> {
     try {
-        const history = await getNotificationHistory();
-        const updated = history.map(item => ({ ...item, read: true }));
-        await AsyncStorage.setItem(NOTIFICATION_HISTORY_KEY, JSON.stringify(updated));
+        await markAllNotificationsReadOnServer();
     } catch (e) {
         console.error('Failed to mark all notifications as read:', e);
     }
@@ -99,7 +84,7 @@ export async function getUnreadCount(): Promise<number> {
 
 export async function clearNotificationHistory(): Promise<void> {
     try {
-        await AsyncStorage.removeItem(NOTIFICATION_HISTORY_KEY);
+        await clearNotificationsOnServer();
     } catch (e) {
         console.error('Failed to clear notification history:', e);
     }
@@ -107,9 +92,7 @@ export async function clearNotificationHistory(): Promise<void> {
 
 export async function deleteNotification(id: string): Promise<void> {
     try {
-        const history = await getNotificationHistory();
-        const updated = history.filter(item => item.id !== id);
-        await AsyncStorage.setItem(NOTIFICATION_HISTORY_KEY, JSON.stringify(updated));
+        await deleteNotificationOnServer(Number(id));
     } catch (e) {
         console.error('Failed to delete notification:', e);
     }

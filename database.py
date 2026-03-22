@@ -38,6 +38,38 @@ class User(Base):
     chat_count_date = Column(String, nullable=True)  # ISO date "2026-03-16"
     
     courses = relationship("Course", back_populates="owner", cascade="all, delete-orphan")
+    push_tokens = relationship("PushToken", back_populates="owner", cascade="all, delete-orphan")
+    notification_history = relationship("NotificationHistory", back_populates="owner", cascade="all, delete-orphan")
+
+class PushToken(Base):
+    """One user can have multiple devices, each with its own Expo push token."""
+    __tablename__ = 'push_tokens'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    token = Column(String, nullable=False, index=True)
+    device_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    owner = relationship("User", back_populates="push_tokens")
+
+    __table_args__ = (UniqueConstraint('token', name='_push_token_uc'),)
+
+
+class NotificationHistory(Base):
+    __tablename__ = 'notification_history'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    title = Column(String, nullable=False)
+    body = Column(Text, nullable=True)
+    type = Column(String, default='general')  # assignment, vod, announcement, ai_summary, etc.
+    data = Column(JSON, nullable=True)
+    read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+    owner = relationship("User", back_populates="notification_history")
+
 
 class Course(Base):
     __tablename__ = 'courses'
@@ -170,12 +202,37 @@ def init_db(db_url=None):
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
     engine = create_engine(db_url)
+
+    # Inspect BEFORE create_all so we can detect which tables/columns are missing
+    from sqlalchemy import text, inspect as sa_inspect
+    inspector = sa_inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    # Migration: migrate existing push_token data BEFORE create_all creates the new table
+    needs_push_token_migration = 'push_tokens' not in existing_tables and 'users' in existing_tables
+    needs_notif_history_table = 'notification_history' not in existing_tables
+
     Base.metadata.create_all(engine)
+
+    if needs_push_token_migration:
+        logger.info("Migrating existing push tokens to push_tokens table...")
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT id, push_token FROM users WHERE push_token IS NOT NULL AND push_token != ''")).fetchall()
+            for row in rows:
+                conn.execute(text("INSERT INTO push_tokens (user_id, token) VALUES (:uid, :tok)"), {"uid": row[0], "tok": row[1]})
+            if rows:
+                conn.commit()
+                logger.info(f"Migrated {len(rows)} push tokens to push_tokens table")
+
+    if needs_notif_history_table:
+        logger.info("Created notification_history table")
+
+    # Refresh inspector after create_all
+    inspector = sa_inspect(engine)
 
     # Migration: add notifications_initialized column if it doesn't exist yet.
     # Existing users are marked True (already past first sync); new users default False.
-    from sqlalchemy import text, inspect as sa_inspect
-    inspector = sa_inspect(engine)
+    existing_cols = [col['name'] for col in inspector.get_columns('users')]
     existing_cols = [col['name'] for col in inspector.get_columns('users')]
     if 'notifications_initialized' not in existing_cols:
         with engine.connect() as conn:
