@@ -202,12 +202,37 @@ def init_db(db_url=None):
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
     engine = create_engine(db_url)
+
+    # Inspect BEFORE create_all so we can detect which tables/columns are missing
+    from sqlalchemy import text, inspect as sa_inspect
+    inspector = sa_inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    # Migration: migrate existing push_token data BEFORE create_all creates the new table
+    needs_push_token_migration = 'push_tokens' not in existing_tables and 'users' in existing_tables
+    needs_notif_history_table = 'notification_history' not in existing_tables
+
     Base.metadata.create_all(engine)
+
+    if needs_push_token_migration:
+        logger.info("Migrating existing push tokens to push_tokens table...")
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT id, push_token FROM users WHERE push_token IS NOT NULL AND push_token != ''")).fetchall()
+            for row in rows:
+                conn.execute(text("INSERT INTO push_tokens (user_id, token) VALUES (:uid, :tok)"), {"uid": row[0], "tok": row[1]})
+            if rows:
+                conn.commit()
+                logger.info(f"Migrated {len(rows)} push tokens to push_tokens table")
+
+    if needs_notif_history_table:
+        logger.info("Created notification_history table")
+
+    # Refresh inspector after create_all
+    inspector = sa_inspect(engine)
 
     # Migration: add notifications_initialized column if it doesn't exist yet.
     # Existing users are marked True (already past first sync); new users default False.
-    from sqlalchemy import text, inspect as sa_inspect
-    inspector = sa_inspect(engine)
+    existing_cols = [col['name'] for col in inspector.get_columns('users')]
     existing_cols = [col['name'] for col in inspector.get_columns('users')]
     if 'notifications_initialized' not in existing_cols:
         with engine.connect() as conn:
@@ -246,23 +271,5 @@ def init_db(db_url=None):
     if 'jobs' not in inspector.get_table_names():
         Job.__table__.create(engine)
         logger.info("Created jobs table")
-
-    # Migration: create push_tokens table and migrate existing single-token data
-    if 'push_tokens' not in inspector.get_table_names():
-        PushToken.__table__.create(engine)
-        logger.info("Created push_tokens table")
-        # Migrate existing push_token values from users table
-        with engine.connect() as conn:
-            rows = conn.execute(text("SELECT id, push_token FROM users WHERE push_token IS NOT NULL AND push_token != ''")).fetchall()
-            for row in rows:
-                conn.execute(text("INSERT INTO push_tokens (user_id, token) VALUES (:uid, :tok)"), {"uid": row[0], "tok": row[1]})
-            if rows:
-                conn.commit()
-                logger.info(f"Migrated {len(rows)} push tokens to push_tokens table")
-
-    # Migration: create notification_history table
-    if 'notification_history' not in inspector.get_table_names():
-        NotificationHistory.__table__.create(engine)
-        logger.info("Created notification_history table")
 
     return sessionmaker(bind=engine)

@@ -76,7 +76,7 @@ def _get_user_push_tokens(user: User, db: Session = None) -> list[str]:
 
 
 def _save_notification_history(db: Session, user: User, title: str, body: str, notif_type: str, data: dict = None):
-    """Persist a notification to the server-side history."""
+    """Persist a notification to the server-side history. Uses flush so the caller controls the commit."""
     notif = NotificationHistory(
         user_id=user.id,
         title=title,
@@ -85,7 +85,7 @@ def _save_notification_history(db: Session, user: User, title: str, body: str, n
         data=data,
     )
     db.add(notif)
-    db.commit()
+    db.flush()
 
 
 def _broadcast_push(tokens: list[str], title: str, body: str, data: dict):

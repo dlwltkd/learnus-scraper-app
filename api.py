@@ -337,8 +337,8 @@ def mark_notification_read(notif_id: int, user: User = Depends(get_current_user)
 @app.put("/notifications/read-all")
 def mark_all_notifications_read(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     db.query(NotificationHistory).filter(
-        NotificationHistory.user_id == user.id, NotificationHistory.read == False
-    ).update({"read": True})
+        NotificationHistory.user_id == user.id, NotificationHistory.read.is_(False)
+    ).update({"read": True}, synchronize_session=False)
     db.commit()
     return {"status": "success"}
 
