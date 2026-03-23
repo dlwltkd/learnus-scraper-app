@@ -10,9 +10,10 @@ import { Spacing } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
 import { useTheme } from './context/ThemeContext';
 import { useToast } from './context/ToastContext';
-import { transcribeVod, getVodTranscript, summarizeVod } from './services/api';
+import { transcribeVod, getVodTranscript, summarizeVod, generateFlashcards } from './services/api';
 import AIChatModal from './AIChatModal';
 import TypingDots from './TypingDots';
+import { ActivityIndicator } from 'react-native';
 
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
@@ -90,6 +91,7 @@ export default function VodTranscriptScreen() {
     const [transcript, setTranscript] = useState<string | null>(null);
     const [error, setError] = useState(false);
     const [chatVisible, setChatVisible] = useState(false);
+    const [generatingFlashcards, setGeneratingFlashcards] = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const stopPolling = useCallback(() => {
@@ -149,6 +151,33 @@ export default function VodTranscriptScreen() {
 
     const handleChat = () => {
         setChatVisible(true);
+    };
+
+    const handleFlashcards = async () => {
+        setGeneratingFlashcards(true);
+        try {
+            const data = await generateFlashcards(vodMoodleId);
+            if (data.cards && data.cards.length > 0) {
+                navigation.navigate('FlashcardStudy', {
+                    cards: data.cards,
+                    deckName: title,
+                    vodMoodleId,
+                    courseName: data.course_name || courseName,
+                    isPreview: true,
+                });
+            } else {
+                showError('생성 실패', '플래시카드를 생성할 수 없었어요.');
+            }
+        } catch (e: any) {
+            const detail = e?.response?.data?.detail;
+            if (e?.response?.status === 429) {
+                showInfo('한도 도달', detail || '일일 사용 한도에 도달했어요.');
+            } else {
+                showError('오류', detail || '플래시카드를 생성할 수 없어요.');
+            }
+        } finally {
+            setGeneratingFlashcards(false);
+        }
     };
 
     return (
@@ -211,7 +240,23 @@ export default function VodTranscriptScreen() {
                     <View style={styles.bottomDivider} />
                     <TouchableOpacity style={styles.bottomBtn} onPress={handleChat} activeOpacity={0.8}>
                         <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
-                        <Text style={[styles.bottomBtnText, { color: colors.primary }]}>AI 질문</Text>
+                        <Text style={styles.bottomBtnText}>AI 질문</Text>
+                    </TouchableOpacity>
+                    <View style={styles.bottomDivider} />
+                    <TouchableOpacity
+                        style={styles.bottomBtn}
+                        onPress={handleFlashcards}
+                        activeOpacity={0.8}
+                        disabled={generatingFlashcards}
+                    >
+                        {generatingFlashcards ? (
+                            <ActivityIndicator size="small" color={colors.primary} />
+                        ) : (
+                            <Ionicons name="albums-outline" size={18} color={colors.primary} />
+                        )}
+                        <Text style={styles.bottomBtnText}>
+                            {generatingFlashcards ? '생성 중...' : '플래시카드'}
+                        </Text>
                     </TouchableOpacity>
                 </View>
             )}

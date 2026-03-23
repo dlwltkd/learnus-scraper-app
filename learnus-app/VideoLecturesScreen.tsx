@@ -10,7 +10,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useNavigation } from '@react-navigation/native';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { getDashboardOverview, watchAllVods, watchSingleVod } from './services/api';
+import { getDashboardOverview, watchAllVods, watchSingleVod, getFlashcardDecks, getFlashcardDeck } from './services/api';
+import type { FlashcardDeckSummary } from './services/api';
 import { Spacing } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
 import { useTheme } from './context/ThemeContext';
@@ -68,6 +69,7 @@ const VideoLecturesScreen = () => {
     const [collapsed, setCollapsed] = useState<{ [k: string]: boolean }>({ missed: false });
     const [webViewer, setWebViewer] = useState<{ url: string; title: string; cookies: string } | null>(null);
     const [actionSheet, setActionSheet] = useState<any | null>(null);
+    const [flashcardDecks, setFlashcardDecks] = useState<FlashcardDeckSummary[]>([]);
 
     // Tour refs
     const watchAllRef = useTourRef('vod-watch-all-btn');
@@ -154,9 +156,13 @@ const VideoLecturesScreen = () => {
     const loadData = async () => {
         if (tourActiveRef.current) return;
         try {
-            const result = await getDashboardOverview();
+            const [result, decksResult] = await Promise.all([
+                getDashboardOverview(),
+                getFlashcardDecks().catch(() => ({ decks: [] })),
+            ]);
             if (tourActiveRef.current) return;
             setData(result);
+            setFlashcardDecks(decksResult.decks);
         } catch (e) { console.error(e); }
         finally { setLoading(false); }
     };
@@ -211,6 +217,48 @@ const VideoLecturesScreen = () => {
                 refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
                 showsVerticalScrollIndicator={false}
             >
+              {/* Flashcard Decks */}
+              {flashcardDecks.length > 0 && (
+                  <View style={styles.section}>
+                      <SectionHeader
+                          title="내 플래시카드"
+                          icon="albums-outline"
+                          action={
+                              <TouchableOpacity onPress={() => navigation.navigate('FlashcardDeckList')} activeOpacity={0.7}>
+                                  <Text style={{ ...typography.buttonSmall, color: colors.primary }}>전체보기</Text>
+                              </TouchableOpacity>
+                          }
+                      />
+                      {flashcardDecks.slice(0, 3).map(deck => (
+                          <TouchableOpacity
+                              key={deck.id}
+                              style={styles.flashcardDeckRow}
+                              activeOpacity={0.7}
+                              onPress={async () => {
+                                  try {
+                                      const d = await getFlashcardDeck(deck.id);
+                                      navigation.navigate('FlashcardStudy', {
+                                          cards: d.cards, deckName: d.name, deckId: d.id,
+                                          courseName: d.course_name, isPreview: false,
+                                      });
+                                  } catch { showError('오류', '덱을 불러올 수 없어요.'); }
+                              }}
+                          >
+                              <View style={styles.flashcardDeckIcon}>
+                                  <Ionicons name="albums" size={18} color={colors.primary} />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                  <Text style={styles.flashcardDeckName} numberOfLines={1}>{deck.name}</Text>
+                                  <Text style={styles.flashcardDeckMeta} numberOfLines={1}>
+                                      {deck.course_name ? `${deck.course_name} · ` : ''}{deck.card_count}장
+                                  </Text>
+                              </View>
+                              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                          </TouchableOpacity>
+                      ))}
+                  </View>
+              )}
+
               <View ref={availableSectionRef} collapsable={false}>
                 {/* Missed */}
                 {data?.missed_vods?.length > 0 && (
@@ -344,6 +392,21 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
     countBadge: { backgroundColor: colors.error, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2, marginLeft: 8 },
     countText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
     actionLink: { ...typography.body2, color: colors.primary, fontWeight: '600' },
+
+    // Flashcard deck rows
+    flashcardDeckRow: {
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: colors.surface, borderRadius: layout.borderRadius.m,
+        padding: Spacing.m, marginBottom: Spacing.s,
+        borderWidth: 1, borderColor: colors.borderLight,
+    },
+    flashcardDeckIcon: {
+        width: 36, height: 36, borderRadius: layout.borderRadius.s,
+        backgroundColor: colors.primaryLighter,
+        alignItems: 'center', justifyContent: 'center', marginRight: Spacing.m,
+    },
+    flashcardDeckName: { ...typography.subtitle2, color: colors.textPrimary },
+    flashcardDeckMeta: { ...typography.caption, color: colors.textTertiary, marginTop: 2 },
 });
 
 export default VideoLecturesScreen;
