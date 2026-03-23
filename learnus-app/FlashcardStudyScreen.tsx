@@ -4,6 +4,7 @@ import {
     Text,
     StyleSheet,
     Animated,
+    Easing,
     PanResponder,
     Dimensions,
     TouchableOpacity,
@@ -23,6 +24,7 @@ import { Spacing } from './constants/theme';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SWIPE_THRESHOLD = 80;
 const CARD_MARGIN = Spacing.screenPadding;
+const CARD_GAP = 20;
 
 interface FlashcardStudyParams {
     cards: FlashcardCard[];
@@ -44,57 +46,83 @@ export default function FlashcardStudyScreen({ route, navigation }: any) {
     const [saving, setSaving] = useState(false);
 
     const flipAnim = useRef(new Animated.Value(0)).current;
+    // panX is an absolute scroll position: 0 = card 0, -slideDistance = card 1, etc.
+    const cardWidth = SCREEN_WIDTH - CARD_MARGIN * 2;
+    const slideDistance = cardWidth + CARD_GAP;
     const panX = useRef(new Animated.Value(0)).current;
     const { showSuccess, showError } = useToast();
     const styles = useThemeStyles(createStyles);
 
-    const flipCard = useCallback(() => {
-        const toValue = isFlipped ? 0 : 1;
-        Animated.spring(flipAnim, {
-            toValue,
-            friction: 8,
-            tension: 10,
-            useNativeDriver: true,
-        }).start();
-        setIsFlipped(!isFlipped);
-    }, [isFlipped, flipAnim]);
-
-    const goToCard = useCallback((index: number) => {
-        if (index < 0 || index >= cards.length) return;
-
-        // Reset flip to front
-        flipAnim.setValue(0);
-        setIsFlipped(false);
-        setCurrentIndex(index);
-    }, [cards.length, flipAnim]);
-
-    const animateSwipeOut = useCallback((direction: 'left' | 'right', onDone: () => void) => {
-        const toX = direction === 'left' ? -SCREEN_WIDTH : SCREEN_WIDTH;
-        Animated.timing(panX, {
-            toValue: toX,
-            duration: 200,
-            useNativeDriver: true,
-        }).start(() => {
-            panX.setValue(0);
-            onDone();
-        });
-    }, [panX]);
+    const indexRef = useRef(0);
+    const flippedRef = useRef(false);
+    const animatingRef = useRef(false);
+    const isSwiping = useRef(false);
 
     const panResponder = useRef(
         PanResponder.create({
-            onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 10,
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: () => true,
+            onPanResponderGrant: () => {
+                isSwiping.current = false;
+            },
             onPanResponderMove: (_, gs) => {
-                panX.setValue(gs.dx);
+                if (animatingRef.current) return;
+                if (Math.abs(gs.dx) > 5) {
+                    isSwiping.current = true;
+                }
+                if (isSwiping.current) {
+                    const base = -indexRef.current * slideDistance;
+                    panX.setValue(base + gs.dx);
+                }
             },
             onPanResponderRelease: (_, gs) => {
-                if (gs.dx > SWIPE_THRESHOLD && currentIndex > 0) {
-                    animateSwipeOut('right', () => goToCard(currentIndex - 1));
-                } else if (gs.dx < -SWIPE_THRESHOLD && currentIndex < cards.length - 1) {
-                    animateSwipeOut('left', () => goToCard(currentIndex + 1));
-                } else {
-                    Animated.spring(panX, {
-                        toValue: 0,
+                if (animatingRef.current) return;
+                const idx = indexRef.current;
+
+                if (!isSwiping.current) {
+                    // Tap — flip the card
+                    const toValue = flippedRef.current ? 0 : 1;
+                    Animated.timing(flipAnim, {
+                        toValue,
+                        duration: 300,
+                        easing: Easing.out(Easing.quad),
                         useNativeDriver: true,
+                    }).start();
+                    flippedRef.current = !flippedRef.current;
+                    setIsFlipped(flippedRef.current);
+                    return;
+                }
+
+                let targetIdx = idx;
+                if (gs.dx > SWIPE_THRESHOLD && idx > 0) {
+                    targetIdx = idx - 1;
+                } else if (gs.dx < -SWIPE_THRESHOLD && idx < cards.length - 1) {
+                    targetIdx = idx + 1;
+                }
+
+                if (targetIdx !== idx) {
+                    animatingRef.current = true;
+                    // Reset flip for new card
+                    flipAnim.setValue(0);
+                    flippedRef.current = false;
+                    indexRef.current = targetIdx;
+                    setIsFlipped(false);
+                    setCurrentIndex(targetIdx);
+
+                    Animated.timing(panX, {
+                        toValue: -targetIdx * slideDistance,
+                        duration: 250,
+                        easing: Easing.out(Easing.cubic),
+                        useNativeDriver: false,
+                    }).start(() => {
+                        animatingRef.current = false;
+                    });
+                } else {
+                    // Snap back
+                    Animated.spring(panX, {
+                        toValue: -idx * slideDistance,
+                        useNativeDriver: false,
+                        tension: 40,
                         friction: 7,
                     }).start();
                 }
@@ -112,18 +140,13 @@ export default function FlashcardStudyScreen({ route, navigation }: any) {
         outputRange: ['-90deg', '-90deg', '0deg'],
     });
     const frontOpacity = flipAnim.interpolate({
-        inputRange: [0, 0.49, 0.5],
+        inputRange: [0, 0.35, 0.45],
         outputRange: [1, 1, 0],
+        extrapolate: 'clamp',
     });
     const backOpacity = flipAnim.interpolate({
-        inputRange: [0, 0.5, 0.51],
-        outputRange: [0, 0, 1],
-    });
-
-    // Card tilt based on drag
-    const cardRotateZ = panX.interpolate({
-        inputRange: [-SCREEN_WIDTH, 0, SCREEN_WIDTH],
-        outputRange: ['-8deg', '0deg', '8deg'],
+        inputRange: [0.55, 0.65, 1],
+        outputRange: [0, 1, 1],
         extrapolate: 'clamp',
     });
 
@@ -145,6 +168,14 @@ export default function FlashcardStudyScreen({ route, navigation }: any) {
     const card = cards[currentIndex];
     if (!card) return null;
 
+    const prevCard = currentIndex > 0 ? cards[currentIndex - 1] : null;
+    const nextCard = currentIndex < cards.length - 1 ? cards[currentIndex + 1] : null;
+
+    // Each card is at a fixed absolute position: index * slideDistance
+    // panX shifts the whole "track"
+    const makeCardTranslateX = (cardIndex: number) =>
+        Animated.add(panX, cardIndex * slideDistance);
+
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" />
@@ -165,23 +196,40 @@ export default function FlashcardStudyScreen({ route, navigation }: any) {
 
             {/* Card Area */}
             <View style={styles.cardContainer} {...panResponder.panHandlers}>
+                {/* Previous card */}
+                {prevCard && (
+                    <Animated.View
+                        style={[
+                            styles.cardWrapper,
+                            styles.adjacentCard,
+                            { transform: [{ translateX: makeCardTranslateX(currentIndex - 1) }] },
+                        ]}
+                    >
+                        <View style={styles.cardFlipContainer}>
+                            <View style={styles.card}>
+                                <View style={styles.cardLabel}>
+                                    <Ionicons name="help-circle-outline" size={18} color={styles._colors.primary} />
+                                    <Text style={styles.cardLabelText}>질문</Text>
+                                </View>
+                                <Text style={styles.cardFrontText}>{prevCard.front}</Text>
+                                <Text style={styles.cardHint}>탭하여 정답 보기</Text>
+                            </View>
+                        </View>
+                    </Animated.View>
+                )}
+
+                {/* Current card */}
                 <Animated.View
                     style={[
                         styles.cardWrapper,
-                        {
-                            transform: [
-                                { translateX: panX },
-                                { rotate: cardRotateZ },
-                            ],
-                        },
+                        styles.adjacentCard,
+                        { transform: [{ translateX: makeCardTranslateX(currentIndex) }] },
                     ]}
                 >
-                    <TouchableOpacity activeOpacity={1} onPress={flipCard} style={styles.cardTouchable}>
-                        {/* Front */}
+                    <View style={styles.cardFlipContainer}>
                         <Animated.View
                             style={[
                                 styles.card,
-                                styles.cardFront,
                                 {
                                     opacity: frontOpacity,
                                     transform: [{ perspective: 1000 }, { rotateY: frontRotate }],
@@ -196,11 +244,9 @@ export default function FlashcardStudyScreen({ route, navigation }: any) {
                             <Text style={styles.cardHint}>탭하여 정답 보기</Text>
                         </Animated.View>
 
-                        {/* Back */}
                         <Animated.View
                             style={[
                                 styles.card,
-                                styles.cardBack,
                                 {
                                     opacity: backOpacity,
                                     transform: [{ perspective: 1000 }, { rotateY: backRotate }],
@@ -214,14 +260,51 @@ export default function FlashcardStudyScreen({ route, navigation }: any) {
                             <Text style={styles.cardBackText}>{card.back}</Text>
                             <Text style={styles.cardHint}>탭하여 질문 보기</Text>
                         </Animated.View>
-                    </TouchableOpacity>
+                    </View>
                 </Animated.View>
+
+                {/* Next card */}
+                {nextCard && (
+                    <Animated.View
+                        style={[
+                            styles.cardWrapper,
+                            styles.adjacentCard,
+                            { transform: [{ translateX: makeCardTranslateX(currentIndex + 1) }] },
+                        ]}
+                    >
+                        <View style={styles.cardFlipContainer}>
+                            <View style={styles.card}>
+                                <View style={styles.cardLabel}>
+                                    <Ionicons name="help-circle-outline" size={18} color={styles._colors.primary} />
+                                    <Text style={styles.cardLabelText}>질문</Text>
+                                </View>
+                                <Text style={styles.cardFrontText}>{nextCard.front}</Text>
+                                <Text style={styles.cardHint}>탭하여 정답 보기</Text>
+                            </View>
+                        </View>
+                    </Animated.View>
+                )}
             </View>
 
             {/* Navigation hints */}
             <View style={styles.navHints}>
                 {currentIndex > 0 && (
-                    <TouchableOpacity style={styles.navArrow} onPress={() => goToCard(currentIndex - 1)}>
+                    <TouchableOpacity style={styles.navArrow} onPress={() => {
+                        if (animatingRef.current) return;
+                        const newIdx = currentIndex - 1;
+                        indexRef.current = newIdx;
+                        flipAnim.setValue(0);
+                        flippedRef.current = false;
+                        setIsFlipped(false);
+                        setCurrentIndex(newIdx);
+                        animatingRef.current = true;
+                        Animated.timing(panX, {
+                            toValue: -newIdx * slideDistance,
+                            duration: 250,
+                            easing: Easing.out(Easing.cubic),
+                            useNativeDriver: false,
+                        }).start(() => { animatingRef.current = false; });
+                    }}>
                         <Ionicons name="chevron-back" size={20} color={styles._colors.textTertiary} />
                     </TouchableOpacity>
                 )}
@@ -237,7 +320,22 @@ export default function FlashcardStudyScreen({ route, navigation }: any) {
                     ))}
                 </View>
                 {currentIndex < cards.length - 1 && (
-                    <TouchableOpacity style={styles.navArrow} onPress={() => goToCard(currentIndex + 1)}>
+                    <TouchableOpacity style={styles.navArrow} onPress={() => {
+                        if (animatingRef.current) return;
+                        const newIdx = currentIndex + 1;
+                        indexRef.current = newIdx;
+                        flipAnim.setValue(0);
+                        flippedRef.current = false;
+                        setIsFlipped(false);
+                        setCurrentIndex(newIdx);
+                        animatingRef.current = true;
+                        Animated.timing(panX, {
+                            toValue: -newIdx * slideDistance,
+                            duration: 250,
+                            easing: Easing.out(Easing.cubic),
+                            useNativeDriver: false,
+                        }).start(() => { animatingRef.current = false; });
+                    }}>
                         <Ionicons name="chevron-forward" size={20} color={styles._colors.textTertiary} />
                     </TouchableOpacity>
                 )}
@@ -337,14 +435,25 @@ const createStyles = ({ colors, typography, layout, spacing, isDark }: any) => {
             justifyContent: 'center',
             alignItems: 'center',
             paddingHorizontal: CARD_MARGIN,
+            overflow: 'hidden',
         },
         cardWrapper: {
             width: '100%',
             aspectRatio: 0.7,
             maxHeight: '80%',
+            backgroundColor: colors.surface,
+            borderRadius: layout.borderRadius.xl,
+            ...layout.shadow.lg,
         },
-        cardTouchable: {
+        adjacentCard: {
+            position: 'absolute',
+            left: CARD_MARGIN,
+            right: CARD_MARGIN,
+        },
+        cardFlipContainer: {
             flex: 1,
+            overflow: 'hidden',
+            borderRadius: layout.borderRadius.xl,
         },
         card: {
             ...StyleSheet.absoluteFillObject,
@@ -353,15 +462,8 @@ const createStyles = ({ colors, typography, layout, spacing, isDark }: any) => {
             padding: spacing.l,
             justifyContent: 'center',
             alignItems: 'center',
-            ...layout.shadow.lg,
             borderWidth: 1,
             borderColor: colors.borderLight,
-        },
-        cardFront: {
-            backfaceVisibility: 'hidden',
-        },
-        cardBack: {
-            backfaceVisibility: 'hidden',
         },
         cardLabel: {
             position: 'absolute',
