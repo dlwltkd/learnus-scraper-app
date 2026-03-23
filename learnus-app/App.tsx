@@ -24,6 +24,8 @@ import MyInfoScreen from './MyInfoScreen';
 import TermsOfServiceScreen from './TermsOfServiceScreen';
 import NotificationHistoryScreen from './NotificationHistoryScreen';
 import VodTranscriptScreen from './VodTranscriptScreen';
+import FlashcardStudyScreen from './FlashcardStudyScreen';
+import FlashcardDeckListScreen from './FlashcardDeckListScreen';
 
 import CustomTabBar from './components/TabBar';
 import { Spacing } from './constants/theme';
@@ -376,6 +378,16 @@ function AppContent() {
                 name="VodTranscript"
                 component={VodTranscriptScreen}
                 options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="FlashcardStudy"
+                component={FlashcardStudyScreen}
+                options={{ headerShown: false }}
+              />
+              <Stack.Screen
+                name="FlashcardDeckList"
+                component={FlashcardDeckListScreen}
+                options={{ title: '내 플래시카드' }}
               />
             </>
           )}

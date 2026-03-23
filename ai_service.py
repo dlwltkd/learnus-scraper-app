@@ -328,6 +328,52 @@ Lecture: {lecture_title}
                 yield "token", chunk.choices[0].delta.content
         yield "usage", usage_info
 
+    def generate_flashcards(self, transcript: str, course_name: str, lecture_title: str, count: int = 10):
+        """
+        Generates structured flashcards from a lecture transcript.
+        Returns (cards_list, usage_dict) where cards_list is [{front, back}, ...].
+        """
+        count = max(1, min(count, 20))
+        truncated = transcript[:12000]
+
+        prompt = f"""Based on this lecture transcript, generate exactly {count} flashcards for study purposes.
+
+Course: {course_name}
+Lecture: {lecture_title}
+
+Rules:
+- "front": a clear, specific question about a key concept from the lecture
+- "back": a concise but complete answer (1-3 sentences)
+- All text in Korean (해요체)
+- Focus on definitions, key concepts, important details, and relationships
+- Make questions specific enough to test understanding, not just recall
+
+Transcript:
+{truncated}"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a flashcard generator. Return only valid JSON with a 'cards' array."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=2000,
+                temperature=0.4,
+                response_format={"type": "json_object"},
+            )
+            usage = _extract_usage(response)
+            result = response.choices[0].message.content.strip()
+            parsed = json.loads(result)
+            cards = parsed.get("cards", [])
+            # Validate structure
+            cards = [{"front": c["front"], "back": c["back"]} for c in cards if "front" in c and "back" in c]
+            return cards, {"model": "gpt-4o-mini", **usage}
+        except (json.JSONDecodeError, KeyError) as e:
+            raise RuntimeError(f"Failed to parse flashcard response: {e}")
+        except Exception as e:
+            raise RuntimeError(f"Flashcard generation failed: {e}")
+
     def summarize_text(self, text: str, max_length: int = 150) -> str:
         """
         Summarizes a long text into a concise notification body (approx max_length chars).

@@ -32,7 +32,6 @@ interface DisplayMessage {
 const QUICK_ACTIONS = [
     { icon: 'list-outline' as const, label: '핵심 용어 정리', prompt: '이 강의의 핵심 용어와 개념을 정리해줘.' },
     { icon: 'document-text-outline' as const, label: '시험 대비 요약', prompt: '이 강의 내용을 시험 대비용으로 요약해줘.' },
-    { icon: 'layers-outline' as const, label: '플래시카드', prompt: '이 강의 내용으로 플래시카드(질문-답변 형식)를 만들어줘.' },
 ];
 
 

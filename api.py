@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport, Job, PushToken, NotificationHistory, AIUsageLog
+from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport, Job, PushToken, NotificationHistory, AIUsageLog, FlashcardDeck, Flashcard
 from moodle_client import MoodleClient
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -192,6 +192,26 @@ class ChatRequest(BaseModel):
 class LoginDebugReportRequest(BaseModel):
     device_info: Optional[str] = None
     logs: list
+
+class FlashcardItem(BaseModel):
+    front: str
+    back: str
+
+class GenerateFlashcardsRequest(BaseModel):
+    count: int = 10
+
+class SaveDeckRequest(BaseModel):
+    name: str
+    vod_moodle_id: int
+    cards: List[FlashcardItem]
+
+class FlashcardDeckResponse(BaseModel):
+    id: int
+    name: str
+    vod_moodle_id: int
+    course_name: Optional[str]
+    card_count: int
+    created_at: str
 
 # Date Parser helper...
 class StatsResponse(BaseModel):
@@ -901,6 +921,129 @@ def get_ai_summary(request: Request, user: User = Depends(get_current_user), db:
         })
     return {"summaries": summaries}
 
+
+# ─── Flashcard Endpoints ─────────────────────────────────────────────────────
+
+@app.post("/vods/{vod_moodle_id}/flashcards/generate")
+@limiter.limit("5/minute")
+def generate_flashcards(request: Request, vod_moodle_id: int, req: GenerateFlashcardsRequest = GenerateFlashcardsRequest(), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Generate flashcards from a VOD transcript using AI."""
+    from datetime import date as date_type
+
+    # Rate limiting (counts against daily chat limit)
+    today_str = date_type.today().isoformat()
+    if user.chat_count_date != today_str:
+        user.chat_count_today = 0
+        user.chat_count_date = today_str
+    if user.chat_count_today >= DAILY_CHAT_LIMIT:
+        raise HTTPException(429, f"일일 AI 사용 한도({DAILY_CHAT_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
+
+    vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
+    if not vod:
+        raise HTTPException(404, "VOD not found")
+
+    cached = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
+    if not cached or not cached.transcript:
+        raise HTTPException(400, "Transcript not available — transcribe first")
+
+    course = db.query(Course).filter(Course.id == vod.course_id).first()
+    course_name = course.name if course else ""
+    lecture_title = vod.title or ""
+
+    user.chat_count_today += 1
+    db.commit()
+
+    try:
+        from ai_service import AIService
+        cards, usage = AIService().generate_flashcards(cached.transcript, course_name, lecture_title, req.count)
+        _log_ai_usage(db, user.id, "flashcard_generate", usage)
+    except Exception as e:
+        user.chat_count_today = max(0, user.chat_count_today - 1)
+        db.commit()
+        logger.error(f"Flashcard generation failed for VOD {vod_moodle_id}: {e}")
+        raise HTTPException(500, "플래시카드를 생성할 수 없어요.")
+
+    remaining = DAILY_CHAT_LIMIT - user.chat_count_today
+    return {"status": "ok", "cards": cards, "remaining": remaining, "course_name": course_name}
+
+
+@app.post("/flashcards/decks")
+@limiter.limit("10/minute")
+def save_flashcard_deck(request: Request, req: SaveDeckRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Save a flashcard deck."""
+    if len(req.cards) < 1 or len(req.cards) > 30:
+        raise HTTPException(400, "카드는 1~30장이어야 해요.")
+    if not req.name.strip():
+        raise HTTPException(400, "덱 이름을 입력해주세요.")
+
+    # Look up course name from VOD
+    vod = db.query(VOD).join(Course).filter(VOD.moodle_id == req.vod_moodle_id, Course.owner_id == user.id).first()
+    course_name = None
+    if vod:
+        course = db.query(Course).filter(Course.id == vod.course_id).first()
+        course_name = course.name if course else None
+
+    deck = FlashcardDeck(
+        user_id=user.id,
+        vod_moodle_id=req.vod_moodle_id,
+        name=req.name.strip(),
+        course_name=course_name,
+        card_count=len(req.cards),
+    )
+    db.add(deck)
+    db.flush()  # get deck.id
+
+    for i, card in enumerate(req.cards):
+        db.add(Flashcard(deck_id=deck.id, position=i, front=card.front, back=card.back))
+    db.commit()
+
+    return {"status": "ok", "id": deck.id, "name": deck.name, "card_count": deck.card_count}
+
+
+@app.get("/flashcards/decks")
+@limiter.limit("30/minute")
+def list_flashcard_decks(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """List all flashcard decks for the current user."""
+    decks = db.query(FlashcardDeck).filter(FlashcardDeck.user_id == user.id).order_by(FlashcardDeck.created_at.desc()).all()
+    return {"decks": [
+        {
+            "id": d.id,
+            "name": d.name,
+            "vod_moodle_id": d.vod_moodle_id,
+            "course_name": d.course_name,
+            "card_count": d.card_count,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+        }
+        for d in decks
+    ]}
+
+
+@app.get("/flashcards/decks/{deck_id}")
+@limiter.limit("30/minute")
+def get_flashcard_deck(request: Request, deck_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Get a flashcard deck with all its cards."""
+    deck = db.query(FlashcardDeck).filter(FlashcardDeck.id == deck_id, FlashcardDeck.user_id == user.id).first()
+    if not deck:
+        raise HTTPException(404, "덱을 찾을 수 없어요.")
+    return {
+        "id": deck.id,
+        "name": deck.name,
+        "vod_moodle_id": deck.vod_moodle_id,
+        "course_name": deck.course_name,
+        "cards": [{"front": c.front, "back": c.back} for c in deck.cards],
+    }
+
+
+@app.delete("/flashcards/decks/{deck_id}")
+@limiter.limit("10/minute")
+def delete_flashcard_deck(request: Request, deck_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Delete a flashcard deck."""
+    deck = db.query(FlashcardDeck).filter(FlashcardDeck.id == deck_id, FlashcardDeck.user_id == user.id).first()
+    if not deck:
+        raise HTTPException(404, "덱을 찾을 수 없어요.")
+    db.delete(deck)
+    db.commit()
+    return {"status": "ok"}
 
 
 def require_debug():

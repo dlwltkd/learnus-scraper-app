@@ -217,6 +217,47 @@ export const chatWithVodStream = (
     return () => es.close();
 };
 
+// ─── Flashcards ──────────────────────────────────────────────────────────────
+
+export interface FlashcardCard {
+    front: string;
+    back: string;
+}
+
+export interface FlashcardDeckSummary {
+    id: number;
+    name: string;
+    vod_moodle_id: number;
+    course_name: string | null;
+    card_count: number;
+    created_at: string | null;
+}
+
+export const generateFlashcards = async (vodMoodleId: number, count: number = 10) => {
+    const response = await api.post(`/vods/${vodMoodleId}/flashcards/generate`, { count });
+    return response.data as { status: string; cards: FlashcardCard[]; remaining: number; course_name: string };
+};
+
+export const getFlashcardDecks = async () => {
+    const response = await api.get('/flashcards/decks');
+    return response.data as { decks: FlashcardDeckSummary[] };
+};
+
+export const getFlashcardDeck = async (deckId: number) => {
+    const response = await api.get(`/flashcards/decks/${deckId}`);
+    return response.data as { id: number; name: string; vod_moodle_id: number; course_name: string | null; cards: FlashcardCard[] };
+};
+
+export const saveFlashcardDeck = async (name: string, vodMoodleId: number, cards: FlashcardCard[]) => {
+    const response = await api.post('/flashcards/decks', { name, vod_moodle_id: vodMoodleId, cards });
+    return response.data as { status: string; id: number; name: string; card_count: number };
+};
+
+export const deleteFlashcardDeck = async (deckId: number) => {
+    const response = await api.delete(`/flashcards/decks/${deckId}`);
+    return response.data;
+};
+
 // Auth & Login
 
 
