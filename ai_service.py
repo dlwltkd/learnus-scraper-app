@@ -4,9 +4,23 @@ import tempfile
 from openai import OpenAI
 from dotenv import load_dotenv
 import json
+import logging
 from datetime import datetime, date
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+def _extract_usage(response) -> dict:
+    """Extract token usage from an OpenAI response."""
+    if hasattr(response, 'usage') and response.usage:
+        return {
+            "prompt_tokens": response.usage.prompt_tokens or 0,
+            "completion_tokens": response.usage.completion_tokens or 0,
+            "total_tokens": response.usage.total_tokens or 0,
+        }
+    return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
 def _days_remaining(due_date_str):
     """Returns days until due date (negative = past). None if no due date."""
@@ -127,6 +141,7 @@ Rules:
                 temperature=0.3
             )
 
+            usage = _extract_usage(response)
             result = response.choices[0].message.content.strip()
             if result.startswith("```"):
                 result = result.split("```")[1]
@@ -142,7 +157,8 @@ Rules:
                 "urgent": {"count": len(urgent_items), "items": urgent_items},
                 "upcoming": {"count": len(upcoming_items), "items": upcoming_items},
                 "announcement": ai_parts.get("announcement", {"has_new": False, "summary": None}),
-                "insight": ai_parts.get("insight", "")
+                "insight": ai_parts.get("insight", ""),
+                "_usage": {"model": "gpt-4o-mini", **usage},
             }
 
         except json.JSONDecodeError as e:
@@ -197,7 +213,7 @@ Rules:
                     file=audio_file,
                     response_format="text"
                 )
-            return response
+            return response, {"model": "whisper-1", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -228,7 +244,8 @@ Transcript:
             max_tokens=300,
             temperature=0.4
         )
-        return response.choices[0].message.content.strip()
+        usage = _extract_usage(response)
+        return response.choices[0].message.content.strip(), {"model": "gpt-4o-mini", **usage}
 
     def chat_about_transcript(self, transcript: str, course_name: str, lecture_title: str, messages: list) -> str:
         """
@@ -266,7 +283,8 @@ Lecture: {lecture_title}
                 max_tokens=1000,
                 temperature=0.5,
             )
-            return response.choices[0].message.content.strip()
+            usage = _extract_usage(response)
+            return response.choices[0].message.content.strip(), {"model": "gpt-4o-mini", **usage}
         except Exception as e:
             raise RuntimeError(f"AI chat failed: {e}")
 
@@ -300,11 +318,15 @@ Lecture: {lecture_title}
             max_tokens=1000,
             temperature=0.5,
             stream=True,
+            stream_options={"include_usage": True},
         )
+        usage_info = {"model": "gpt-4o-mini", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         for chunk in response:
-            delta = chunk.choices[0].delta
-            if delta.content:
-                yield delta.content
+            if chunk.usage:
+                usage_info = {"model": "gpt-4o-mini", **_extract_usage(chunk)}
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield "token", chunk.choices[0].delta.content
+        yield "usage", usage_info
 
     def summarize_text(self, text: str, max_length: int = 150) -> str:
         """
@@ -332,7 +354,9 @@ Lecture: {lecture_title}
                 max_tokens=100,
                 temperature=0.5
             )
+            usage = _extract_usage(response)
+            logger.info(f"summarize_text usage: {usage}")
             return response.choices[0].message.content.strip()
         except Exception as e:
-            print(f"Error summarizing text: {e}")
+            logger.error(f"Error summarizing text: {e}")
             return text[:max_length]

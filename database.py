@@ -36,6 +36,10 @@ class User(Base):
     # AI Chat rate limiting
     chat_count_today = Column(Integer, default=0)
     chat_count_date = Column(String, nullable=True)  # ISO date "2026-03-16"
+
+    # Transcription rate limiting
+    transcribe_count_today = Column(Integer, default=0)
+    transcribe_count_date = Column(String, nullable=True)
     
     courses = relationship("Course", back_populates="owner", cascade="all, delete-orphan")
     push_tokens = relationship("PushToken", back_populates="owner", cascade="all, delete-orphan")
@@ -188,6 +192,20 @@ class Job(Base):
     error = Column(Text, nullable=True)
 
 
+class AIUsageLog(Base):
+    """Tracks OpenAI token usage per user per request for cost monitoring."""
+    __tablename__ = 'ai_usage_logs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)  # null for system/scheduler calls
+    endpoint = Column(String, nullable=False)       # e.g. "chat", "summarize", "transcribe", "dashboard"
+    model = Column(String, nullable=False)           # e.g. "gpt-4o-mini", "whisper-1"
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class LoginDebugReport(Base):
     __tablename__ = 'login_debug_reports'
 
@@ -271,5 +289,18 @@ def init_db(db_url=None):
     if 'jobs' not in inspector.get_table_names():
         Job.__table__.create(engine)
         logger.info("Created jobs table")
+
+    # Migration: add transcription rate limit columns to users
+    if 'transcribe_count_today' not in existing_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN transcribe_count_today INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN transcribe_count_date TEXT"))
+            conn.commit()
+
+    # Migration: create ai_usage_logs table
+    refreshed_tables = sa_inspect(engine).get_table_names()
+    if 'ai_usage_logs' not in refreshed_tables:
+        AIUsageLog.__table__.create(engine)
+        logger.info("Created ai_usage_logs table")
 
     return sessionmaker(bind=engine)

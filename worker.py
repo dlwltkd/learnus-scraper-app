@@ -80,7 +80,7 @@ def _run_transcribe(payload: dict, db):
         elif cookies_raw:
             client.set_cookies(_parse_cookie_string(cookies_raw))
 
-        transcript = AIService().transcribe_vod(m3u8_url)
+        transcript, usage = AIService().transcribe_vod(m3u8_url)
 
         row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
         if row:
@@ -88,6 +88,19 @@ def _run_transcribe(payload: dict, db):
             row.is_processing = False
             db.commit()
         logger.info(f"Transcription complete for VOD {vod_moodle_id}")
+
+        # Log AI usage
+        try:
+            from database import AIUsageLog
+            db.add(AIUsageLog(
+                user_id=user_id, endpoint="transcribe", model=usage.get("model", "whisper-1"),
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+                total_tokens=usage.get("total_tokens", 0),
+            ))
+            db.commit()
+        except Exception:
+            pass
 
         # Push notification
         if user_id:
