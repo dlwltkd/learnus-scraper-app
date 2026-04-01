@@ -25,6 +25,15 @@ import { ActivityIndicator } from 'react-native';
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
 type Styles = ReturnType<typeof createStyles>;
+type StageKey = 'queued' | 'extracting_audio' | 'transcribing' | 'finalizing';
+
+const TRANSCRIBE_STAGES: Array<{ key: StageKey; label: string }> = [
+    { key: 'queued', label: '대기' },
+    { key: 'extracting_audio', label: '음성 추출' },
+    { key: 'transcribing', label: '텍스트 변환' },
+    { key: 'finalizing', label: '정리' },
+];
+
 const formatDuration = (seconds?: number | null) => {
     if (!seconds || seconds <= 0) return null;
     const mins = Math.round(seconds / 60);
@@ -63,6 +72,14 @@ const getStageMessage = (status?: VodTranscribeStatus | null) => {
     if (status.stage === 'transcribing') return 'Whisper가 음성을 텍스트로 변환 중이에요.';
     if (status.stage === 'finalizing') return '결과를 정리하고 화면에 반영하는 중이에요.';
     return '잠시만 기다려 주세요.';
+};
+
+const getStageKey = (status?: VodTranscribeStatus | null): StageKey => {
+    if (!status || status.status === 'queued') return 'queued';
+    if (status.stage === 'extracting_audio') return 'extracting_audio';
+    if (status.stage === 'transcribing') return 'transcribing';
+    if (status.stage === 'finalizing') return 'finalizing';
+    return 'queued';
 };
 
 const SummaryCard = ({ vodMoodleId, styles, colors }: { vodMoodleId: number; styles: Styles; colors: ColorScheme }) => {
@@ -250,9 +267,6 @@ export default function VodTranscriptScreen() {
         }
     };
 
-    const etaText = statusInfo?.eta_seconds
-        ? `${formatDuration(statusInfo.eta_seconds.low)} ~ ${formatDuration(statusInfo.eta_seconds.high)}`
-        : null;
     const stageLabel = getStageLabel(statusInfo);
     const stageProgress = Math.max(
         0,
@@ -262,6 +276,8 @@ export default function VodTranscriptScreen() {
         ),
     );
     const stageMessage = getStageMessage(statusInfo);
+    const currentStageKey = getStageKey(statusInfo);
+    const currentStageIndex = TRANSCRIBE_STAGES.findIndex((s) => s.key === currentStageKey);
 
     const handleCopy = () => {
         if (!transcript) return;
@@ -328,11 +344,44 @@ export default function VodTranscriptScreen() {
                                 <TypingDots size={8} gap={5} />
                             </View>
 
+                            <View style={styles.stageRail}>
+                                {TRANSCRIBE_STAGES.map((stage, idx) => {
+                                    const isActive = idx === currentStageIndex;
+                                    const isDone = idx < currentStageIndex || stageProgress >= 100;
+                                    return (
+                                        <View
+                                            key={stage.key}
+                                            style={[
+                                                styles.stageChip,
+                                                isDone && styles.stageChipDone,
+                                                isActive && styles.stageChipActive,
+                                            ]}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.stageChipText,
+                                                    isDone && styles.stageChipTextDone,
+                                                    isActive && styles.stageChipTextActive,
+                                                ]}
+                                            >
+                                                {stage.label}
+                                            </Text>
+                                        </View>
+                                    );
+                                })}
+                            </View>
+
                             <View style={styles.loadingProgressTrack}>
                                 <View style={[styles.loadingProgressFill, { width: `${stageProgress}%` }]} />
                             </View>
-                            <Text style={styles.loadingProgressText}>{stageProgress}%</Text>
-                            <Text style={styles.loadingSubText}>{stageMessage}</Text>
+                            <View style={styles.progressLabelRow}>
+                                <Text style={styles.loadingProgressLabel}>진행률</Text>
+                                <Text style={styles.loadingProgressText}>{stageProgress}%</Text>
+                            </View>
+                            <Text style={styles.loadingSubText}>
+                                {stageMessage}{'\n'}
+                                텍스트 추출은 보통 5분 이내에 완료되며, 강의 길이에 따라 더 소요될 수 있습니다.
+                            </Text>
 
                             <View style={styles.loadingMetaCard}>
                                 {statusInfo?.queue_ahead !== undefined && statusInfo?.queue_ahead !== null && (
@@ -342,13 +391,6 @@ export default function VodTranscriptScreen() {
                                         <Text style={styles.loadingMetaValue}>
                                             {statusInfo.queue_ahead > 0 ? `앞에 ${statusInfo.queue_ahead}개` : '바로 처리 중'}
                                         </Text>
-                                    </View>
-                                )}
-                                {etaText && (
-                                    <View style={styles.loadingMetaRow}>
-                                        <Ionicons name="time-outline" size={15} color={colors.textSecondary} />
-                                        <Text style={styles.loadingMetaLabel}>예상 남은 시간</Text>
-                                        <Text style={styles.loadingMetaValue}>{etaText}</Text>
                                     </View>
                                 )}
                                 {statusInfo?.elapsed_seconds !== undefined && statusInfo?.elapsed_seconds !== null && (
@@ -488,6 +530,40 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         paddingVertical: 4,
         overflow: 'hidden',
     },
+    stageRail: {
+        flexDirection: 'row',
+        gap: Spacing.xs,
+        marginBottom: Spacing.m,
+        flexWrap: 'wrap',
+    },
+    stageChip: {
+        paddingHorizontal: Spacing.s,
+        paddingVertical: 5,
+        borderRadius: layout.borderRadius.full,
+        backgroundColor: colors.surfaceMuted,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    stageChipDone: {
+        backgroundColor: colors.primaryLighter,
+        borderColor: colors.primary,
+    },
+    stageChipActive: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+    },
+    stageChipText: {
+        ...typography.caption,
+        color: colors.textSecondary,
+        fontSize: 11,
+        fontWeight: '600',
+    },
+    stageChipTextDone: {
+        color: colors.primary,
+    },
+    stageChipTextActive: {
+        color: '#fff',
+    },
     loadingProgressTrack: {
         height: 8,
         width: '100%',
@@ -501,11 +577,21 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         backgroundColor: colors.primary,
         borderRadius: layout.borderRadius.full,
     },
-    loadingProgressText: {
+    progressLabelRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: Spacing.s,
+    },
+    loadingProgressLabel: {
         ...typography.caption,
         color: colors.textSecondary,
-        textAlign: 'right',
-        marginBottom: Spacing.s,
+        fontWeight: '600',
+    },
+    loadingProgressText: {
+        ...typography.subtitle2,
+        color: colors.textPrimary,
+        fontWeight: '700',
     },
     loadingSubText: { ...typography.body2, color: colors.textSecondary, lineHeight: 20, marginBottom: Spacing.m },
     loadingMetaCard: {

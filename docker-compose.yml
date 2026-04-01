@@ -41,6 +41,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD}@db:5432/learnus
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - WORKER_MAX_CONCURRENCY=${WORKER_MAX_CONCURRENCY:-4}
     depends_on:
       - db
     restart: always

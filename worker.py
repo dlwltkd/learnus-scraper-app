@@ -8,6 +8,8 @@ import signal
 import time
 import json
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from database import init_db, Job, VodTranscript, User, VOD, Course
@@ -21,6 +23,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [worker] %(levelname
 logger = logging.getLogger("worker")
 
 SessionLocal = init_db()
+MAX_JOB_CONCURRENCY = max(1, int(os.getenv("WORKER_MAX_CONCURRENCY", "4")))
 
 # ─── Graceful Shutdown ────────────────────────────────────────────────────────
 
@@ -28,7 +31,7 @@ _shutdown = False
 
 def _handle_signal(sig, frame):
     global _shutdown
-    logger.info("Shutdown signal received — finishing current job before exit...")
+    logger.info("Shutdown signal received — finishing in-flight jobs before exit...")
     _shutdown = True
 
 signal.signal(signal.SIGTERM, _handle_signal)
@@ -59,7 +62,7 @@ def _claim_job(db):
     job.status = 'processing'
     job.started_at = datetime.now()
     db.commit()
-    return job
+    return {"id": job.id, "type": job.type}
 
 # ─── Job Runners ──────────────────────────────────────────────────────────────
 
@@ -271,6 +274,31 @@ def _dispatch(job, db):
     else:
         raise ValueError(f"Unknown job type: {t}")
 
+
+def _process_job(job_id: int):
+    """Process a claimed job in its own DB session (safe for threaded concurrency)."""
+    db = SessionLocal()
+    try:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            logger.warning(f"Claimed job {job_id} not found")
+            return
+        logger.info(f"Starting job {job.id} ({job.type})")
+        try:
+            _dispatch(job, db)
+            job.status = 'done'
+            job.completed_at = datetime.now()
+            db.commit()
+            logger.info(f"Job {job.id} done")
+        except Exception as e:
+            job.status = 'failed'
+            job.error = str(e)[:2000]
+            job.completed_at = datetime.now()
+            db.commit()
+            logger.error(f"Job {job.id} failed: {e}")
+    finally:
+        db.close()
+
 # ─── Main Loop ────────────────────────────────────────────────────────────────
 
 def main():
@@ -308,32 +336,43 @@ def main():
     sched.start()
     logger.info("Scheduler started (notices every 5min, sync every 60min, session health every 30min)")
 
-    logger.info("Polling for jobs...")
-    while not _shutdown:
-        db = SessionLocal()
-        try:
-            job = _claim_job(db)
-            if job:
-                logger.info(f"Starting job {job.id} ({job.type})")
+    logger.info(f"Polling for jobs (max concurrency={MAX_JOB_CONCURRENCY})...")
+    inflight = {}
+    with ThreadPoolExecutor(max_workers=MAX_JOB_CONCURRENCY) as pool:
+        while not _shutdown or inflight:
+            # Reap completed jobs first.
+            done_futures = [f for f in inflight if f.done()]
+            for fut in done_futures:
+                job_meta = inflight.pop(fut)
                 try:
-                    _dispatch(job, db)
-                    job.status = 'done'
-                    job.completed_at = datetime.now()
-                    db.commit()
-                    logger.info(f"Job {job.id} done")
+                    fut.result()
                 except Exception as e:
-                    job.status = 'failed'
-                    job.error = str(e)[:2000]
-                    job.completed_at = datetime.now()
-                    db.commit()
-                    logger.error(f"Job {job.id} failed: {e}")
-            else:
-                time.sleep(5)
-        except Exception as e:
-            logger.error(f"Worker loop error: {e}")
-            time.sleep(5)
-        finally:
-            db.close()
+                    logger.error(f"Unhandled worker thread exception for job {job_meta['id']}: {e}")
+
+            if _shutdown:
+                time.sleep(0.2)
+                continue
+
+            claimed_any = False
+            # Fill available worker slots.
+            while len(inflight) < MAX_JOB_CONCURRENCY and not _shutdown:
+                db = SessionLocal()
+                try:
+                    job = _claim_job(db)
+                except Exception as e:
+                    logger.error(f"Worker loop error while claiming job: {e}")
+                    job = None
+                finally:
+                    db.close()
+
+                if not job:
+                    break
+                claimed_any = True
+                fut = pool.submit(_process_job, job["id"])
+                inflight[fut] = job
+
+            if not claimed_any and not done_futures:
+                time.sleep(1)
 
     logger.info("Shutting down scheduler...")
     sched.shutdown(wait=False)
