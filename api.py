@@ -615,22 +615,38 @@ def _extract_vod_moodle_id_from_job(job: Job) -> Optional[int]:
     return None
 
 
-def _estimate_transcribe_eta_seconds(vod_duration: Optional[int], queue_ahead: int, stage: Optional[str]):
-    # Approximate only: extraction + Whisper latency + queue delay.
-    base = 180 if not vod_duration else max(120, min(1800, int(vod_duration * 0.7)))
+def _estimate_transcribe_eta_seconds(
+    vod_duration: Optional[int],
+    queue_ahead: int,
+    stage: Optional[str],
+    progress_pct: Optional[int] = None,
+    elapsed_seconds: Optional[int] = None,
+):
+    # Heuristic baseline for queued jobs; refined below with live progress when available.
+    base = 150 if not vod_duration else max(90, min(1500, int(vod_duration * 0.45)))
     low = base
-    high = int(base * 1.8)
+    high = int(base * 1.5)
 
     if queue_ahead > 0:
-        low += queue_ahead * 90
-        high += queue_ahead * 210
+        low += queue_ahead * 60
+        high += queue_ahead * 150
 
     if stage == "transcribing":
-        low = max(30, int(low * 0.35))
-        high = max(90, int(high * 0.60))
+        low = max(20, int(low * 0.25))
+        high = max(60, int(high * 0.45))
     elif stage == "finalizing":
-        low = 10
-        high = 45
+        low = 8
+        high = 35
+
+    # If we have live progress while running, prefer a data-driven ETA.
+    if elapsed_seconds and progress_pct and progress_pct > 4:
+        remaining = int(elapsed_seconds * (100 - progress_pct) / progress_pct)
+        remaining = max(5, min(3600, remaining))
+        low = max(8, int(remaining * 0.75))
+        high = max(low + 15, int(remaining * 1.35))
+        if stage == "finalizing":
+            low = min(low, 20)
+            high = min(high, 60)
 
     return {"low": low, "high": high}
 
@@ -685,7 +701,13 @@ def _build_transcribe_status(db: Session, vod: VOD, row: Optional[VodTranscript]
 
     eta_seconds = None
     if status in ("queued", "running"):
-        eta_seconds = _estimate_transcribe_eta_seconds(vod.duration, queue_ahead or 0, stage)
+        eta_seconds = _estimate_transcribe_eta_seconds(
+            vod.duration,
+            queue_ahead or 0,
+            stage,
+            row.progress_pct,
+            elapsed_seconds,
+        )
 
     progress_pct = row.progress_pct if row.progress_pct is not None else 0
     if status == "done":
