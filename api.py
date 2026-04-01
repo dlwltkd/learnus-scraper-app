@@ -131,6 +131,18 @@ def get_moodle_client(user: User):
             client.set_cookies(_parse_cookie_string(raw))
     return client
 
+
+def _is_transcribe_limit_bypassed(user: User) -> bool:
+    """Allow test-only transcription limit bypass for selected users/tokens via env vars."""
+    bypass_users = {
+        u.strip() for u in os.getenv("TRANSCRIBE_BYPASS_USERS", "").split(",") if u.strip()
+    }
+    bypass_tokens = {
+        t.strip() for t in os.getenv("TRANSCRIBE_BYPASS_TOKENS", "").split(",") if t.strip()
+    }
+    user_keys = {user.username or "", user.moodle_username or "", user.api_token or ""}
+    return any(k in bypass_users for k in user_keys if k) or any(k in bypass_tokens for k in user_keys if k)
+
 class CourseResponse(BaseModel):
     id: int
     name: str
@@ -745,16 +757,19 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
         else:
             return {"status": "processing"}
 
-    # Daily transcription cap
-    from datetime import date as date_type
-    today_str = date_type.today().isoformat()
-    if user.transcribe_count_date != today_str:
-        user.transcribe_count_today = 0
-        user.transcribe_count_date = today_str
-    if user.transcribe_count_today >= DAILY_TRANSCRIBE_LIMIT:
-        raise HTTPException(429, f"일일 텍스트 추출 한도({DAILY_TRANSCRIBE_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
-    user.transcribe_count_today += 1
-    db.commit()
+    # Daily transcription cap (optionally bypassed for designated test users)
+    if not _is_transcribe_limit_bypassed(user):
+        from datetime import date as date_type
+        today_str = date_type.today().isoformat()
+        if user.transcribe_count_date != today_str:
+            user.transcribe_count_today = 0
+            user.transcribe_count_date = today_str
+        if user.transcribe_count_today >= DAILY_TRANSCRIBE_LIMIT:
+            raise HTTPException(429, f"일일 텍스트 추출 한도({DAILY_TRANSCRIBE_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
+        user.transcribe_count_today += 1
+        db.commit()
+    else:
+        logger.info(f"Transcribe limit bypass enabled for user {user.username}")
 
     # Get stream URL now (requires active Moodle session)
     client = get_moodle_client(user)
