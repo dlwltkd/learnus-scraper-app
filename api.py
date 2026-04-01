@@ -721,7 +721,6 @@ def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user
     return {"status": "not_found"}
 
 @app.post("/vods/{vod_moodle_id}/transcribe")
-@limiter.limit("3/minute")
 def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:

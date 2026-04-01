@@ -42,6 +42,29 @@ const getStageLabel = (status?: VodTranscribeStatus | null) => {
     return '대기 중';
 };
 
+const getStageProgress = (status?: VodTranscribeStatus | null) => {
+    if (!status) return 8;
+    if (status.status === 'done') return 100;
+    if (status.status === 'failed') return 0;
+    if (status.status === 'queued') {
+        if ((status.queue_ahead || 0) > 0) return 12;
+        return 20;
+    }
+    if (status.stage === 'extracting_audio') return 38;
+    if (status.stage === 'transcribing') return 72;
+    if (status.stage === 'finalizing') return 92;
+    return 55;
+};
+
+const getStageMessage = (status?: VodTranscribeStatus | null) => {
+    if (!status) return '작업을 준비하고 있어요.';
+    if (status.status === 'queued') return '대기열 순서가 되면 바로 시작돼요.';
+    if (status.stage === 'extracting_audio') return '강의 스트림에서 음성을 추출하고 있어요.';
+    if (status.stage === 'transcribing') return 'Whisper가 음성을 텍스트로 변환 중이에요.';
+    if (status.stage === 'finalizing') return '결과를 정리하고 화면에 반영하는 중이에요.';
+    return '잠시만 기다려 주세요.';
+};
+
 const SummaryCard = ({ vodMoodleId, styles, colors }: { vodMoodleId: number; styles: Styles; colors: ColorScheme }) => {
     const { showError } = useToast();
     const [loading, setLoading] = useState(false);
@@ -117,6 +140,7 @@ export default function VodTranscriptScreen() {
     const [chatVisible, setChatVisible] = useState(false);
     const [generatingFlashcards, setGeneratingFlashcards] = useState(false);
     const [statusInfo, setStatusInfo] = useState<VodTranscribeStatus | null>(null);
+    const [showTranscribeProgress, setShowTranscribeProgress] = useState(false);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const stopPolling = useCallback(() => {
@@ -138,23 +162,27 @@ export default function VodTranscriptScreen() {
                     stopPolling();
                     if (data.status === 'ok') {
                         setTranscript(data.transcript);
+                        setShowTranscribeProgress(false);
                         setLoading(false);
                         showSuccess('추출 완료', '강의 텍스트가 준비되었어요!');
                     } else {
                         setError(true);
                         setErrorMessage('텍스트를 불러오지 못했어요. 다시 시도해주세요.');
+                        setShowTranscribeProgress(false);
                         setLoading(false);
                     }
                 } else if (status.status === 'failed') {
                     stopPolling();
                     setError(true);
                     setErrorMessage(status.error_message || '텍스트 추출에 실패했어요. 다시 시도해주세요.');
+                    setShowTranscribeProgress(false);
                     setLoading(false);
                 }
             } catch (e) {
                 stopPolling();
                 setError(true);
                 setErrorMessage('상태 확인 중 오류가 발생했어요. 다시 시도해주세요.');
+                setShowTranscribeProgress(false);
                 setLoading(false);
             }
         }, 4000);
@@ -170,12 +198,38 @@ export default function VodTranscriptScreen() {
         setError(false);
         setErrorMessage(null);
         setStatusInfo(null);
+        setShowTranscribeProgress(false);
         try {
+            // Fast path: if transcript already exists, render immediately without progress UI.
+            const cached = await getVodTranscript(vodMoodleId);
+            if (cached.status === 'ok') {
+                setTranscript(cached.transcript);
+                setLoading(false);
+                return;
+            }
+            if (cached.status === 'failed') {
+                setError(true);
+                setErrorMessage(cached.error_message || '텍스트 추출에 실패했어요. 다시 시도해주세요.');
+                setLoading(false);
+                return;
+            }
+            if (cached.status === 'processing') {
+                setShowTranscribeProgress(true);
+                try {
+                    const status = await getVodTranscribeStatus(vodMoodleId);
+                    setStatusInfo(status);
+                } catch {}
+                startPolling();
+                return;
+            }
+
             const data = await transcribeVod(vodMoodleId);
             if (data.status === 'ok' || data.status === 'cached') {
                 setTranscript(data.transcript);
+                setShowTranscribeProgress(false);
                 setLoading(false);
             } else if (data.status === 'processing') {
+                setShowTranscribeProgress(true);
                 try {
                     const status = await getVodTranscribeStatus(vodMoodleId);
                     setStatusInfo(status);
@@ -183,16 +237,25 @@ export default function VodTranscriptScreen() {
                 startPolling();
             }
         } catch (e) {
+            const detail = (e as any)?.response?.data?.detail;
             setError(true);
-            setErrorMessage('텍스트를 불러올 수 없어요. 다시 시도해주세요.');
+            setErrorMessage(detail || '텍스트를 불러올 수 없어요. 다시 시도해주세요.');
+            setShowTranscribeProgress(false);
             setLoading(false);
-            showError('오류', '텍스트를 불러올 수 없어요. 다시 시도해주세요.');
+            if ((e as any)?.response?.status === 429) {
+                showInfo('한도 또는 요청 제한', detail || '요청이 많아요. 잠시 후 다시 시도해주세요.');
+            } else {
+                showError('오류', detail || '텍스트를 불러올 수 없어요. 다시 시도해주세요.');
+            }
         }
     };
 
     const etaText = statusInfo?.eta_seconds
         ? `${formatDuration(statusInfo.eta_seconds.low)} ~ ${formatDuration(statusInfo.eta_seconds.high)}`
         : null;
+    const stageLabel = getStageLabel(statusInfo);
+    const stageProgress = getStageProgress(statusInfo);
+    const stageMessage = getStageMessage(statusInfo);
 
     const handleCopy = () => {
         if (!transcript) return;
@@ -246,21 +309,60 @@ export default function VodTranscriptScreen() {
 
             {loading ? (
                 <View style={styles.centered}>
-                    <TypingDots size={14} gap={12} />
-                    <Text style={styles.loadingText}>텍스트 추출 중...</Text>
-                    <Text style={styles.loadingSubText}>
-                        AI가 강의 음성을 텍스트로 변환하고 있어요.{'\n'}
-                        강의 길이에 따라 수 분이 걸릴 수 있어요.
-                    </Text>
-                    <Text style={styles.loadingMeta}>{getStageLabel(statusInfo)}</Text>
-                    {statusInfo?.queue_ahead !== undefined && statusInfo?.queue_ahead !== null && statusInfo.queue_ahead > 0 && (
-                        <Text style={styles.loadingMeta}>대기열 앞 작업 {statusInfo.queue_ahead}개</Text>
+                    {showTranscribeProgress ? (
+                        <View style={styles.loadingCard}>
+                            <View style={styles.loadingTopRow}>
+                                <View style={styles.loadingIconWrap}>
+                                    <Ionicons name="document-text-outline" size={22} color={colors.primary} />
+                                </View>
+                                <View style={styles.loadingTitleWrap}>
+                                    <Text style={styles.loadingTitle}>텍스트 추출 중</Text>
+                                    <Text style={styles.loadingStageBadge}>{stageLabel}</Text>
+                                </View>
+                                <TypingDots size={8} gap={5} />
+                            </View>
+
+                            <View style={styles.loadingProgressTrack}>
+                                <View style={[styles.loadingProgressFill, { width: `${stageProgress}%` }]} />
+                            </View>
+                            <Text style={styles.loadingProgressText}>{stageProgress}%</Text>
+                            <Text style={styles.loadingSubText}>{stageMessage}</Text>
+
+                            <View style={styles.loadingMetaCard}>
+                                {statusInfo?.queue_ahead !== undefined && statusInfo?.queue_ahead !== null && (
+                                    <View style={styles.loadingMetaRow}>
+                                        <Ionicons name="git-network-outline" size={15} color={colors.textSecondary} />
+                                        <Text style={styles.loadingMetaLabel}>대기열</Text>
+                                        <Text style={styles.loadingMetaValue}>
+                                            {statusInfo.queue_ahead > 0 ? `앞에 ${statusInfo.queue_ahead}개` : '바로 처리 중'}
+                                        </Text>
+                                    </View>
+                                )}
+                                {etaText && (
+                                    <View style={styles.loadingMetaRow}>
+                                        <Ionicons name="time-outline" size={15} color={colors.textSecondary} />
+                                        <Text style={styles.loadingMetaLabel}>예상 남은 시간</Text>
+                                        <Text style={styles.loadingMetaValue}>{etaText}</Text>
+                                    </View>
+                                )}
+                                {statusInfo?.elapsed_seconds !== undefined && statusInfo?.elapsed_seconds !== null && (
+                                    <View style={styles.loadingMetaRow}>
+                                        <Ionicons name="hourglass-outline" size={15} color={colors.textSecondary} />
+                                        <Text style={styles.loadingMetaLabel}>경과 시간</Text>
+                                        <Text style={styles.loadingMetaValue}>{formatDuration(statusInfo.elapsed_seconds)}</Text>
+                                    </View>
+                                )}
+                            </View>
+                        </View>
+                    ) : (
+                        <View style={styles.initialLoadingWrap}>
+                            <ActivityIndicator size="small" color={colors.primary} />
+                            <Text style={styles.initialLoadingText}>기존 텍스트를 확인하는 중...</Text>
+                        </View>
                     )}
-                    {etaText && <Text style={styles.loadingMeta}>예상 남은 시간 {etaText}</Text>}
-                    {statusInfo?.elapsed_seconds !== undefined && statusInfo?.elapsed_seconds !== null && (
-                        <Text style={styles.loadingMeta}>경과 시간 {formatDuration(statusInfo.elapsed_seconds)}</Text>
+                    {showTranscribeProgress && (
+                        <Text style={styles.loadingHintInline}>앱을 닫아도 계속 진행되고 완료되면 알림이 와요.</Text>
                     )}
-                    <Text style={styles.loadingHintInline}>완료되면 알림으로 알려드릴게요</Text>
                 </View>
             ) : error ? (
                 <View style={styles.centered}>
@@ -347,15 +449,92 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
     headerSub: { ...typography.caption, marginBottom: 2 },
 
     // Loading / Error
+    loadingCard: {
+        width: '100%',
+        maxWidth: 360,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.xl,
+        borderWidth: 1,
+        borderColor: colors.border,
+        padding: Spacing.l,
+        ...layout.shadow.sm,
+    },
+    loadingTopRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: Spacing.m,
+    },
     loadingIconWrap: {
-        width: 72, height: 72, borderRadius: 36,
+        width: 46, height: 46, borderRadius: 14,
         backgroundColor: colors.primaryLighter,
         alignItems: 'center', justifyContent: 'center',
+        marginRight: Spacing.m,
     },
-    loadingText: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginTop: Spacing.l, marginBottom: Spacing.s, textAlign: 'center' },
-    loadingSubText: { ...typography.body2, color: colors.textSecondary, textAlign: 'center', maxWidth: 280, lineHeight: 20 },
-    loadingMeta: { ...typography.caption, color: colors.textSecondary, marginTop: Spacing.s, textAlign: 'center' },
-    loadingHintInline: { ...typography.caption, color: colors.textTertiary, marginTop: Spacing.xl, textAlign: 'center' },
+    loadingTitleWrap: { flex: 1 },
+    loadingTitle: { ...typography.subtitle2, color: colors.textPrimary, fontWeight: '700', marginBottom: 4 },
+    loadingStageBadge: {
+        ...typography.caption,
+        color: colors.primary,
+        alignSelf: 'flex-start',
+        backgroundColor: colors.primaryLighter,
+        borderRadius: layout.borderRadius.full,
+        paddingHorizontal: Spacing.s,
+        paddingVertical: 4,
+        overflow: 'hidden',
+    },
+    loadingProgressTrack: {
+        height: 8,
+        width: '100%',
+        backgroundColor: colors.divider,
+        borderRadius: layout.borderRadius.full,
+        overflow: 'hidden',
+        marginBottom: Spacing.s,
+    },
+    loadingProgressFill: {
+        height: '100%',
+        backgroundColor: colors.primary,
+        borderRadius: layout.borderRadius.full,
+    },
+    loadingProgressText: {
+        ...typography.caption,
+        color: colors.textSecondary,
+        textAlign: 'right',
+        marginBottom: Spacing.s,
+    },
+    loadingSubText: { ...typography.body2, color: colors.textSecondary, lineHeight: 20, marginBottom: Spacing.m },
+    loadingMetaCard: {
+        backgroundColor: colors.surfaceMuted,
+        borderRadius: layout.borderRadius.l,
+        paddingVertical: Spacing.s,
+        paddingHorizontal: Spacing.m,
+        gap: Spacing.s,
+    },
+    loadingMetaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    loadingMetaLabel: {
+        ...typography.caption,
+        color: colors.textSecondary,
+        marginLeft: Spacing.xs,
+        flex: 1,
+    },
+    loadingMetaValue: {
+        ...typography.caption,
+        color: colors.textPrimary,
+        fontWeight: '600',
+    },
+    loadingHintInline: { ...typography.caption, color: colors.textTertiary, marginTop: Spacing.l, textAlign: 'center', maxWidth: 320 },
+    initialLoadingWrap: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: Spacing.xl,
+    },
+    initialLoadingText: {
+        ...typography.body2,
+        color: colors.textSecondary,
+        marginTop: Spacing.m,
+    },
     errorText: { ...typography.subtitle2, color: colors.error },
     errorSubText: { ...typography.caption, color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.s, marginBottom: Spacing.l },
     retryBtn: {
