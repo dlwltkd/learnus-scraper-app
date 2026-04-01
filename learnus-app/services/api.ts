@@ -147,6 +147,7 @@ export const getVodTranscript = async (vodMoodleId: number) => {
 export interface VodTranscribeStatus {
     status: 'not_found' | 'queued' | 'running' | 'done' | 'failed';
     stage: 'idle' | 'queued' | 'extracting_audio' | 'transcribing' | 'finalizing' | 'completed' | 'failed';
+    progress_pct?: number | null;
     queue_position?: number | null;
     queue_ahead?: number | null;
     elapsed_seconds?: number | null;

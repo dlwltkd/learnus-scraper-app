@@ -1,6 +1,7 @@
 import os
 import subprocess
 import tempfile
+import glob
 from openai import OpenAI
 from dotenv import load_dotenv
 import json
@@ -181,7 +182,101 @@ Rules:
             "insight": "데이터를 새로고침해 주세요."
         }
 
-    def transcribe_vod(self, m3u8_url: str, on_stage=None) -> str:
+    def _probe_duration_seconds(self, input_url: str) -> float | None:
+        """Try to fetch media duration via ffprobe. Returns None when unavailable."""
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    input_url,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode != 0:
+                return None
+            value = (result.stdout or "").strip()
+            if not value:
+                return None
+            dur = float(value)
+            return dur if dur > 0 else None
+        except Exception:
+            return None
+
+    def _extract_audio_with_progress(self, input_url: str, output_mp3_path: str, emit):
+        duration_seconds = self._probe_duration_seconds(input_url)
+        last_pct = -1
+
+        cmd = [
+            "ffmpeg", "-v", "error", "-y",
+            "-i", input_url,
+            "-vn",
+            "-acodec", "libmp3lame",
+            "-ac", "1",
+            "-ab", "32k",
+            "-progress", "pipe:1",
+            "-nostats",
+            output_mp3_path,
+        ]
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        try:
+            if proc.stdout:
+                for line in proc.stdout:
+                    line = line.strip()
+                    if line.startswith("out_time_ms=") and duration_seconds:
+                        try:
+                            out_ms = int(line.split("=", 1)[1])
+                            elapsed = out_ms / 1_000_000.0
+                            pct = max(0, min(100, int((elapsed / duration_seconds) * 100)))
+                            if pct != last_pct:
+                                emit("extracting_audio", pct)
+                                last_pct = pct
+                        except Exception:
+                            pass
+                    elif line == "progress=end":
+                        emit("extracting_audio", 100)
+            ret = proc.wait(timeout=900)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise RuntimeError("ffmpeg audio extraction timed out")
+
+        stderr_text = ""
+        if proc.stderr:
+            stderr_text = proc.stderr.read()[:500]
+        if ret != 0:
+            raise RuntimeError(f"ffmpeg failed: {stderr_text}")
+
+    def _split_audio_chunks(self, audio_path: str, chunk_dir: str, segment_seconds: int = 600) -> list[str]:
+        pattern = os.path.join(chunk_dir, "chunk_%03d.mp3")
+        result = subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-y",
+                "-i", audio_path,
+                "-f", "segment",
+                "-segment_time", str(segment_seconds),
+                "-c:a", "libmp3lame",
+                "-b:a", "32k",
+                pattern,
+            ],
+            capture_output=True,
+            timeout=600,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg chunk split failed: {result.stderr.decode(errors='ignore')[:500]}")
+        chunks = sorted(glob.glob(os.path.join(chunk_dir, "chunk_*.mp3")))
+        return chunks
+
+    def transcribe_vod(self, m3u8_url: str, on_stage=None, on_progress=None) -> tuple[str, dict]:
         """
         Downloads audio from an HLS stream via ffmpeg and transcribes it with Whisper.
         Returns the transcript text, or raises on failure.
@@ -189,37 +284,43 @@ Rules:
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
             tmp_path = tmp.name
 
-        try:
-            if on_stage:
-                on_stage("extracting_audio")
-            # Extract audio only — much faster and cheaper than full video
-            result = subprocess.run(
-                [
-                    "ffmpeg", "-y",
-                    "-i", m3u8_url,
-                    "-vn",                  # no video
-                    "-acodec", "libmp3lame",
-                    "-ac", "1",             # mono
-                    "-ab", "32k",           # 32kbps — ~14MB/hr, well under Whisper's 25MB limit
-                    tmp_path
-                ],
-                capture_output=True,
-                timeout=600  # 10 min max
-            )
-            if result.returncode != 0:
-                raise RuntimeError(f"ffmpeg failed: {result.stderr.decode()[:500]}")
+        last_stage = None
 
-            if on_stage:
-                on_stage("transcribing")
-            with open(tmp_path, "rb") as audio_file:
-                response = self.client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="text"
-                )
-            if on_stage:
-                on_stage("finalizing")
-            return response, {"model": "whisper-1", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        def emit(stage: str, pct: int | None = None, message: str | None = None):
+            nonlocal last_stage
+            if on_stage and stage != last_stage:
+                on_stage(stage)
+                last_stage = stage
+            if on_progress:
+                on_progress(stage, pct, message)
+
+        try:
+            emit("extracting_audio", 0)
+            self._extract_audio_with_progress(m3u8_url, tmp_path, emit)
+
+            with tempfile.TemporaryDirectory(prefix="transcribe_chunks_") as chunk_dir:
+                chunks = self._split_audio_chunks(tmp_path, chunk_dir, segment_seconds=600)
+                if not chunks:
+                    chunks = [tmp_path]
+
+                texts = []
+                total = len(chunks)
+                for idx, chunk_path in enumerate(chunks, start=1):
+                    emit("transcribing", int(((idx - 1) / total) * 100), f"{idx - 1}/{total}")
+                    with open(chunk_path, "rb") as audio_file:
+                        response = self.client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=audio_file,
+                            response_format="text"
+                        )
+                    text = response.strip() if isinstance(response, str) else str(response).strip()
+                    if text:
+                        texts.append(text)
+                    emit("transcribing", int((idx / total) * 100), f"{idx}/{total}")
+
+            emit("finalizing", 100)
+            transcript = "\n\n".join(texts).strip()
+            return transcript, {"model": "whisper-1", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

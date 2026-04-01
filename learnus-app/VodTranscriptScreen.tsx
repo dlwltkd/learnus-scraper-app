@@ -254,7 +254,13 @@ export default function VodTranscriptScreen() {
         ? `${formatDuration(statusInfo.eta_seconds.low)} ~ ${formatDuration(statusInfo.eta_seconds.high)}`
         : null;
     const stageLabel = getStageLabel(statusInfo);
-    const stageProgress = getStageProgress(statusInfo);
+    const stageProgress = Math.max(
+        0,
+        Math.min(
+            100,
+            statusInfo?.progress_pct ?? getStageProgress(statusInfo),
+        ),
+    );
     const stageMessage = getStageMessage(statusInfo);
 
     const handleCopy = () => {

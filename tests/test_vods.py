@@ -81,6 +81,7 @@ def test_get_transcribe_status_queued_with_queue_position(client, test_user, aut
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "queued"
+    assert data["progress_pct"] == 0
     assert data["queue_position"] == 2
     assert data["queue_ahead"] == 1
 
@@ -102,6 +103,7 @@ def test_get_transcribe_status_failed(client, test_user, auth_headers, db):
     status_resp = client.get("/vods/503/transcribe/status", headers=auth_headers)
     assert status_resp.status_code == 200
     assert status_resp.json()["status"] == "failed"
+    assert status_resp.json()["progress_pct"] == 0
     assert status_resp.json()["error_message"] == "boom"
 
     transcript_resp = client.get("/vods/503/transcript", headers=auth_headers)

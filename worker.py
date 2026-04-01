@@ -72,6 +72,7 @@ def _set_transcript_status(
     is_processing: bool | None = None,
     error_message: str | None = None,
     transcript: str | None = None,
+    progress_pct: int | None = None,
     started_at: datetime | None = None,
     completed_at: datetime | None = None,
 ):
@@ -90,12 +91,29 @@ def _set_transcript_status(
         row.error_message = error_message
     if transcript is not None:
         row.transcript = transcript
+    if progress_pct is not None:
+        row.progress_pct = max(0, min(100, int(progress_pct)))
     if started_at is not None:
         row.started_at = started_at
     if completed_at is not None:
         row.completed_at = completed_at
     db.commit()
     return row
+
+
+def _to_overall_progress(stage: str, stage_pct: int | None) -> int:
+    p = 0 if stage_pct is None else max(0, min(100, int(stage_pct)))
+    if stage == "extracting_audio":
+        return 5 + int(p * 0.40)    # 5..45
+    if stage == "transcribing":
+        return 45 + int(p * 0.50)   # 45..95
+    if stage == "finalizing":
+        return 95 + int(p * 0.04)   # 95..99
+    if stage == "completed":
+        return 100
+    if stage == "queued":
+        return 0
+    return p
 
 
 def _run_transcribe(payload: dict, db):
@@ -115,6 +133,7 @@ def _run_transcribe(payload: dict, db):
             stage='extracting_audio',
             is_processing=True,
             error_message='',
+            progress_pct=5,
             started_at=now,
         )
 
@@ -133,9 +152,24 @@ def _run_transcribe(payload: dict, db):
                 status='running',
                 stage=stage_name,
                 is_processing=True,
+                progress_pct=_to_overall_progress(stage_name, 0),
             )
 
-        transcript, usage = AIService().transcribe_vod(m3u8_url, on_stage=_on_stage)
+        def _on_progress(stage_name: str, stage_pct: int | None, _msg: str | None):
+            _set_transcript_status(
+                db,
+                vod_moodle_id,
+                status='running',
+                stage=stage_name,
+                is_processing=True,
+                progress_pct=_to_overall_progress(stage_name, stage_pct),
+            )
+
+        transcript, usage = AIService().transcribe_vod(
+            m3u8_url,
+            on_stage=_on_stage,
+            on_progress=_on_progress,
+        )
 
         _set_transcript_status(
             db,
@@ -144,6 +178,7 @@ def _run_transcribe(payload: dict, db):
             stage='completed',
             is_processing=False,
             transcript=transcript,
+            progress_pct=100,
             error_message='',
             completed_at=datetime.now(),
         )
@@ -191,6 +226,7 @@ def _run_transcribe(payload: dict, db):
             status='failed',
             stage='failed',
             is_processing=False,
+            progress_pct=0,
             error_message=str(e)[:2000],
             completed_at=datetime.now(),
         )
@@ -255,6 +291,7 @@ def main():
             db.query(VodTranscript).filter(VodTranscript.is_processing == True).update({
                 'status': 'queued',
                 'stage': 'queued',
+                'progress_pct': 0,
                 'started_at': None,
                 'error_message': '',
             })

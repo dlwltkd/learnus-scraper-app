@@ -136,6 +136,7 @@ class VodTranscript(Base):
     is_processing = Column(Boolean, default=False)
     status = Column(String, default='queued')  # queued | running | done | failed
     stage = Column(String, nullable=True)      # queued | extracting_audio | transcribing | finalizing | completed | failed
+    progress_pct = Column(Integer, default=0)
     transcript = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
@@ -349,6 +350,7 @@ def init_db(db_url=None):
     if 'vod_transcripts' in refreshed_tables:
         _add_column_if_missing('vod_transcripts', 'status', "ALTER TABLE vod_transcripts ADD COLUMN status TEXT DEFAULT 'queued'")
         _add_column_if_missing('vod_transcripts', 'stage', "ALTER TABLE vod_transcripts ADD COLUMN stage TEXT")
+        _add_column_if_missing('vod_transcripts', 'progress_pct', "ALTER TABLE vod_transcripts ADD COLUMN progress_pct INTEGER DEFAULT 0")
         _add_column_if_missing('vod_transcripts', 'error_message', "ALTER TABLE vod_transcripts ADD COLUMN error_message TEXT")
         _add_column_if_missing('vod_transcripts', 'started_at', "ALTER TABLE vod_transcripts ADD COLUMN started_at TIMESTAMP")
         _add_column_if_missing('vod_transcripts', 'completed_at', "ALTER TABLE vod_transcripts ADD COLUMN completed_at TIMESTAMP")
@@ -373,6 +375,16 @@ def init_db(db_url=None):
                     ELSE COALESCE(stage, 'queued')
                 END
                 WHERE stage IS NULL OR stage = ''
+            """))
+            conn.execute(text("""
+                UPDATE vod_transcripts
+                SET progress_pct = CASE
+                    WHEN status = 'done' THEN 100
+                    WHEN status = 'failed' THEN 0
+                    WHEN status = 'running' THEN COALESCE(progress_pct, 10)
+                    ELSE COALESCE(progress_pct, 0)
+                END
+                WHERE progress_pct IS NULL
             """))
             conn.commit()
 

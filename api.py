@@ -637,7 +637,7 @@ def _estimate_transcribe_eta_seconds(vod_duration: Optional[int], queue_ahead: i
 
 def _build_transcribe_status(db: Session, vod: VOD, row: Optional[VodTranscript]):
     if not row:
-        return {"status": "not_found", "stage": "idle"}
+        return {"status": "not_found", "stage": "idle", "progress_pct": 0}
 
     now = datetime.now()
     stage = row.stage or ("running" if row.is_processing else None)
@@ -687,9 +687,18 @@ def _build_transcribe_status(db: Session, vod: VOD, row: Optional[VodTranscript]
     if status in ("queued", "running"):
         eta_seconds = _estimate_transcribe_eta_seconds(vod.duration, queue_ahead or 0, stage)
 
+    progress_pct = row.progress_pct if row.progress_pct is not None else 0
+    if status == "done":
+        progress_pct = 100
+    elif status == "failed":
+        progress_pct = 0
+    elif status == "queued":
+        progress_pct = min(progress_pct, 25)
+
     return {
         "status": status,
         "stage": stage or "queued",
+        "progress_pct": progress_pct,
         "queue_position": queue_position,
         "queue_ahead": queue_ahead,
         "elapsed_seconds": elapsed_seconds,
@@ -725,6 +734,7 @@ def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user
         return {
             "status": "processing",
             "stage": status_meta.get("stage"),
+            "progress_pct": status_meta.get("progress_pct"),
             "queue_position": status_meta.get("queue_position"),
             "queue_ahead": status_meta.get("queue_ahead"),
             "elapsed_seconds": status_meta.get("elapsed_seconds"),
@@ -752,6 +762,7 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
             row.status = "failed"
             row.stage = "failed"
             row.error_message = "Processing timeout. Please retry."
+            row.progress_pct = 0
             row.completed_at = datetime.now()
             db.commit()
         else:
@@ -787,6 +798,7 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
         row.is_processing = True
         row.status = "queued"
         row.stage = "queued"
+        row.progress_pct = 0
         row.error_message = ""
         row.transcript = None
         row.summary = None
@@ -799,6 +811,7 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
             is_processing=True,
             status="queued",
             stage="queued",
+            progress_pct=0,
             error_message="",
             created_at=now,
         ))
@@ -813,7 +826,7 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
         'course_name': course_name,
     }))
     db.commit()
-    return {"status": "processing", "stage": "queued"}
+    return {"status": "processing", "stage": "queued", "progress_pct": 0}
 
 @app.post("/vods/{vod_moodle_id}/summarize")
 @limiter.limit("5/minute")
