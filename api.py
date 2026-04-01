@@ -589,6 +589,113 @@ def get_vods(course_id: int, user: User = Depends(get_current_user), db: Session
     return [{"id": v.moodle_id, "title": v.title, "start_date": v.start_date, "end_date": v.end_date, "is_completed": v.is_completed, "url": v.url} for v in vods]
 
 
+def _extract_vod_moodle_id_from_job(job: Job) -> Optional[int]:
+    payload = job.payload
+    if isinstance(payload, dict):
+        return payload.get("vod_moodle_id")
+    if isinstance(payload, str):
+        try:
+            parsed = json.loads(payload)
+            if isinstance(parsed, dict):
+                return parsed.get("vod_moodle_id")
+        except Exception:
+            return None
+    return None
+
+
+def _estimate_transcribe_eta_seconds(vod_duration: Optional[int], queue_ahead: int, stage: Optional[str]):
+    # Approximate only: extraction + Whisper latency + queue delay.
+    base = 180 if not vod_duration else max(120, min(1800, int(vod_duration * 0.7)))
+    low = base
+    high = int(base * 1.8)
+
+    if queue_ahead > 0:
+        low += queue_ahead * 90
+        high += queue_ahead * 210
+
+    if stage == "transcribing":
+        low = max(30, int(low * 0.35))
+        high = max(90, int(high * 0.60))
+    elif stage == "finalizing":
+        low = 10
+        high = 45
+
+    return {"low": low, "high": high}
+
+
+def _build_transcribe_status(db: Session, vod: VOD, row: Optional[VodTranscript]):
+    if not row:
+        return {"status": "not_found", "stage": "idle"}
+
+    now = datetime.now()
+    stage = row.stage or ("running" if row.is_processing else None)
+    status = row.status or ("running" if row.is_processing else ("done" if row.transcript else "queued"))
+
+    if row.transcript and not row.is_processing:
+        status = "done"
+        stage = "completed"
+    elif status == "failed" and not row.is_processing:
+        stage = "failed"
+    elif row.is_processing and status not in ("running", "queued"):
+        status = "running"
+
+    queue_position = None
+    queue_ahead = None
+    jobs = (
+        db.query(Job)
+        .filter(Job.type == "transcribe", Job.status.in_(["pending", "processing"]))
+        .order_by(Job.created_at, Job.id)
+        .all()
+    )
+
+    vod_job_index = None
+    for idx, job in enumerate(jobs):
+        if _extract_vod_moodle_id_from_job(job) == vod.moodle_id:
+            vod_job_index = idx
+            if job.status == "processing":
+                status = "running"
+            break
+
+    if status in ("queued", "running"):
+        if vod_job_index is not None:
+            queue_position = vod_job_index + 1
+            queue_ahead = max(0, vod_job_index)
+        else:
+            # Fallback for legacy rows where queue linkage is missing.
+            queue_position = 1 if status == "running" else None
+            queue_ahead = 0 if status == "running" else None
+
+    elapsed_seconds = None
+    if status in ("queued", "running") and row.created_at:
+        elapsed_seconds = int((now - row.created_at).total_seconds())
+    elif status in ("done", "failed") and row.started_at and row.completed_at:
+        elapsed_seconds = int((row.completed_at - row.started_at).total_seconds())
+
+    eta_seconds = None
+    if status in ("queued", "running"):
+        eta_seconds = _estimate_transcribe_eta_seconds(vod.duration, queue_ahead or 0, stage)
+
+    return {
+        "status": status,
+        "stage": stage or "queued",
+        "queue_position": queue_position,
+        "queue_ahead": queue_ahead,
+        "elapsed_seconds": elapsed_seconds,
+        "eta_seconds": eta_seconds,
+        "error_message": row.error_message or None,
+        "updated_at": (row.completed_at or row.started_at or row.created_at).isoformat() if (row.completed_at or row.started_at or row.created_at) else None,
+    }
+
+
+@app.get("/vods/{vod_moodle_id}/transcribe/status")
+def get_vod_transcribe_status(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
+    if not vod:
+        raise HTTPException(404, "VOD not found")
+    row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
+    return _build_transcribe_status(db, vod, row)
+
+
 @app.get("/vods/{vod_moodle_id}/transcript")
 def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
@@ -597,9 +704,21 @@ def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user
     row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
     if not row:
         return {"status": "not_found"}
-    if row.is_processing:
-        return {"status": "processing"}
-    return {"status": "ok", "transcript": row.transcript}
+    if row.transcript and not row.is_processing:
+        return {"status": "ok", "transcript": row.transcript}
+    if row.status == "failed" and not row.is_processing:
+        return {"status": "failed", "error_message": row.error_message or "Transcription failed"}
+    if row.is_processing or row.status in ("queued", "running"):
+        status_meta = _build_transcribe_status(db, vod, row)
+        return {
+            "status": "processing",
+            "stage": status_meta.get("stage"),
+            "queue_position": status_meta.get("queue_position"),
+            "queue_ahead": status_meta.get("queue_ahead"),
+            "elapsed_seconds": status_meta.get("elapsed_seconds"),
+            "eta_seconds": status_meta.get("eta_seconds"),
+        }
+    return {"status": "not_found"}
 
 @app.post("/vods/{vod_moodle_id}/transcribe")
 @limiter.limit("3/minute")
@@ -611,14 +730,18 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
     row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
 
     # Already done
-    if row and not row.is_processing:
+    if row and row.transcript and not row.is_processing:
         return {"status": "cached", "transcript": row.transcript}
 
     # Already in progress — just tell client to poll
     # But if stuck for >30 min (worker crashed mid-job), allow retry
     if row and row.is_processing:
         if row.created_at and (datetime.now() - row.created_at).total_seconds() > 1800:
-            db.delete(row)
+            row.is_processing = False
+            row.status = "failed"
+            row.stage = "failed"
+            row.error_message = "Processing timeout. Please retry."
+            row.completed_at = datetime.now()
             db.commit()
         else:
             return {"status": "processing"}
@@ -644,8 +767,27 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
     course_obj = db.query(Course).filter(Course.id == vod.course_id).first()
     course_name = course_obj.name if course_obj else None
 
-    # Insert processing placeholder so the polling endpoint returns "processing"
-    db.add(VodTranscript(moodle_id=vod_moodle_id, is_processing=True))
+    # Insert/update processing placeholder so the status endpoint can expose queue and ETA hints.
+    now = datetime.now()
+    if row:
+        row.is_processing = True
+        row.status = "queued"
+        row.stage = "queued"
+        row.error_message = ""
+        row.transcript = None
+        row.summary = None
+        row.started_at = None
+        row.completed_at = None
+        row.created_at = now
+    else:
+        db.add(VodTranscript(
+            moodle_id=vod_moodle_id,
+            is_processing=True,
+            status="queued",
+            stage="queued",
+            error_message="",
+            created_at=now,
+        ))
 
     # Enqueue job for the worker
     db.add(Job(type='transcribe', payload={
@@ -657,7 +799,7 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
         'course_name': course_name,
     }))
     db.commit()
-    return {"status": "processing"}
+    return {"status": "processing", "stage": "queued"}
 
 @app.post("/vods/{vod_moodle_id}/summarize")
 @limiter.limit("5/minute")

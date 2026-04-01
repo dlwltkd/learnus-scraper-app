@@ -134,8 +134,13 @@ class VodTranscript(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     moodle_id = Column(Integer, unique=True, index=True, nullable=False)
     is_processing = Column(Boolean, default=False)
+    status = Column(String, default='queued')  # queued | running | done | failed
+    stage = Column(String, nullable=True)      # queued | extracting_audio | transcribing | finalizing | completed | failed
     transcript = Column(Text, nullable=True)
     summary = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 class FileResource(Base):
@@ -276,6 +281,14 @@ def init_db(db_url=None):
     # Refresh inspector after create_all
     inspector = sa_inspect(engine)
 
+    def _add_column_if_missing(table_name: str, column_name: str, ddl_sql: str):
+        cols = [col['name'] for col in sa_inspect(engine).get_columns(table_name)]
+        if column_name in cols:
+            return
+        with engine.connect() as conn:
+            conn.execute(text(ddl_sql))
+            conn.commit()
+
     # Migration: add notifications_initialized column if it doesn't exist yet.
     # Existing users are marked True (already past first sync); new users default False.
     existing_cols = [col['name'] for col in inspector.get_columns('users')]
@@ -330,5 +343,37 @@ def init_db(db_url=None):
     if 'ai_usage_logs' not in refreshed_tables:
         AIUsageLog.__table__.create(engine)
         logger.info("Created ai_usage_logs table")
+
+    # Migration: add transcription status columns
+    refreshed_tables = sa_inspect(engine).get_table_names()
+    if 'vod_transcripts' in refreshed_tables:
+        _add_column_if_missing('vod_transcripts', 'status', "ALTER TABLE vod_transcripts ADD COLUMN status TEXT DEFAULT 'queued'")
+        _add_column_if_missing('vod_transcripts', 'stage', "ALTER TABLE vod_transcripts ADD COLUMN stage TEXT")
+        _add_column_if_missing('vod_transcripts', 'error_message', "ALTER TABLE vod_transcripts ADD COLUMN error_message TEXT")
+        _add_column_if_missing('vod_transcripts', 'started_at', "ALTER TABLE vod_transcripts ADD COLUMN started_at TIMESTAMP")
+        _add_column_if_missing('vod_transcripts', 'completed_at', "ALTER TABLE vod_transcripts ADD COLUMN completed_at TIMESTAMP")
+
+        # Backfill legacy rows
+        with engine.connect() as conn:
+            conn.execute(text("""
+                UPDATE vod_transcripts
+                SET status = CASE
+                    WHEN is_processing = TRUE THEN 'running'
+                    WHEN transcript IS NOT NULL AND transcript != '' THEN 'done'
+                    ELSE COALESCE(status, 'queued')
+                END
+                WHERE status IS NULL OR status = ''
+            """))
+            conn.execute(text("""
+                UPDATE vod_transcripts
+                SET stage = CASE
+                    WHEN status = 'running' THEN COALESCE(stage, 'transcribing')
+                    WHEN status = 'done' THEN COALESCE(stage, 'completed')
+                    WHEN status = 'failed' THEN COALESCE(stage, 'failed')
+                    ELSE COALESCE(stage, 'queued')
+                END
+                WHERE stage IS NULL OR stage = ''
+            """))
+            conn.commit()
 
     return sessionmaker(bind=engine)

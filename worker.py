@@ -63,6 +63,41 @@ def _claim_job(db):
 
 # ─── Job Runners ──────────────────────────────────────────────────────────────
 
+def _set_transcript_status(
+    db,
+    vod_moodle_id: int,
+    *,
+    status: str | None = None,
+    stage: str | None = None,
+    is_processing: bool | None = None,
+    error_message: str | None = None,
+    transcript: str | None = None,
+    started_at: datetime | None = None,
+    completed_at: datetime | None = None,
+):
+    row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
+    if not row:
+        row = VodTranscript(moodle_id=vod_moodle_id)
+        db.add(row)
+        db.flush()
+    if status is not None:
+        row.status = status
+    if stage is not None:
+        row.stage = stage
+    if is_processing is not None:
+        row.is_processing = is_processing
+    if error_message is not None:
+        row.error_message = error_message
+    if transcript is not None:
+        row.transcript = transcript
+    if started_at is not None:
+        row.started_at = started_at
+    if completed_at is not None:
+        row.completed_at = completed_at
+    db.commit()
+    return row
+
+
 def _run_transcribe(payload: dict, db):
     vod_moodle_id = payload['vod_moodle_id']
     m3u8_url = payload['m3u8_url']
@@ -72,6 +107,17 @@ def _run_transcribe(payload: dict, db):
     course_name = payload.get('course_name')
 
     try:
+        now = datetime.now()
+        _set_transcript_status(
+            db,
+            vod_moodle_id,
+            status='running',
+            stage='extracting_audio',
+            is_processing=True,
+            error_message='',
+            started_at=now,
+        )
+
         client = MoodleClient("https://ys.learnus.org")
         if isinstance(cookies_raw, dict):
             client.set_cookies(cookies_raw)
@@ -80,13 +126,27 @@ def _run_transcribe(payload: dict, db):
         elif cookies_raw:
             client.set_cookies(_parse_cookie_string(cookies_raw))
 
-        transcript, usage = AIService().transcribe_vod(m3u8_url)
+        def _on_stage(stage_name: str):
+            _set_transcript_status(
+                db,
+                vod_moodle_id,
+                status='running',
+                stage=stage_name,
+                is_processing=True,
+            )
 
-        row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
-        if row:
-            row.transcript = transcript
-            row.is_processing = False
-            db.commit()
+        transcript, usage = AIService().transcribe_vod(m3u8_url, on_stage=_on_stage)
+
+        _set_transcript_status(
+            db,
+            vod_moodle_id,
+            status='done',
+            stage='completed',
+            is_processing=False,
+            transcript=transcript,
+            error_message='',
+            completed_at=datetime.now(),
+        )
         logger.info(f"Transcription complete for VOD {vod_moodle_id}")
 
         # Log AI usage
@@ -125,10 +185,15 @@ def _run_transcribe(payload: dict, db):
 
     except Exception as e:
         logger.error(f"Transcription failed for VOD {vod_moodle_id}: {e}")
-        row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
-        if row:
-            db.delete(row)
-            db.commit()
+        _set_transcript_status(
+            db,
+            vod_moodle_id,
+            status='failed',
+            stage='failed',
+            is_processing=False,
+            error_message=str(e)[:2000],
+            completed_at=datetime.now(),
+        )
         raise
 
 
@@ -184,12 +249,17 @@ def main():
             db.commit()
             logger.info(f"Reset {stuck_jobs} stuck job(s) to pending for retry")
 
-        # Also clean up any stuck VodTranscript rows
+        # Keep transcript rows and re-queue them instead of deleting.
         stuck_vt = db.query(VodTranscript).filter(VodTranscript.is_processing == True).count()
         if stuck_vt:
-            db.query(VodTranscript).filter(VodTranscript.is_processing == True).delete()
+            db.query(VodTranscript).filter(VodTranscript.is_processing == True).update({
+                'status': 'queued',
+                'stage': 'queued',
+                'started_at': None,
+                'error_message': '',
+            })
             db.commit()
-            logger.info(f"Cleared {stuck_vt} stuck VodTranscript row(s)")
+            logger.info(f"Re-queued {stuck_vt} stuck VodTranscript row(s)")
     finally:
         db.close()
 

@@ -181,7 +181,7 @@ Rules:
             "insight": "데이터를 새로고침해 주세요."
         }
 
-    def transcribe_vod(self, m3u8_url: str) -> str:
+    def transcribe_vod(self, m3u8_url: str, on_stage=None) -> str:
         """
         Downloads audio from an HLS stream via ffmpeg and transcribes it with Whisper.
         Returns the transcript text, or raises on failure.
@@ -190,6 +190,8 @@ Rules:
             tmp_path = tmp.name
 
         try:
+            if on_stage:
+                on_stage("extracting_audio")
             # Extract audio only — much faster and cheaper than full video
             result = subprocess.run(
                 [
@@ -207,12 +209,16 @@ Rules:
             if result.returncode != 0:
                 raise RuntimeError(f"ffmpeg failed: {result.stderr.decode()[:500]}")
 
+            if on_stage:
+                on_stage("transcribing")
             with open(tmp_path, "rb") as audio_file:
                 response = self.client.audio.transcriptions.create(
                     model="whisper-1",
                     file=audio_file,
                     response_format="text"
                 )
+            if on_stage:
+                on_stage("finalizing")
             return response, {"model": "whisper-1", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         finally:
             if os.path.exists(tmp_path):

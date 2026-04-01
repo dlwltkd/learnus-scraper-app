@@ -144,6 +144,22 @@ export const getVodTranscript = async (vodMoodleId: number) => {
     return response.data;
 };
 
+export interface VodTranscribeStatus {
+    status: 'not_found' | 'queued' | 'running' | 'done' | 'failed';
+    stage: 'idle' | 'queued' | 'extracting_audio' | 'transcribing' | 'finalizing' | 'completed' | 'failed';
+    queue_position?: number | null;
+    queue_ahead?: number | null;
+    elapsed_seconds?: number | null;
+    eta_seconds?: { low: number; high: number } | null;
+    error_message?: string | null;
+    updated_at?: string | null;
+}
+
+export const getVodTranscribeStatus = async (vodMoodleId: number): Promise<VodTranscribeStatus> => {
+    const response = await api.get(`/vods/${vodMoodleId}/transcribe/status`);
+    return response.data;
+};
+
 export const summarizeVod = async (vodMoodleId: number) => {
     const response = await api.post(`/vods/${vodMoodleId}/summarize`);
     return response.data;

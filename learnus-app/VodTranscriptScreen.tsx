@@ -10,7 +10,14 @@ import { Spacing } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
 import { useTheme } from './context/ThemeContext';
 import { useToast } from './context/ToastContext';
-import { transcribeVod, getVodTranscript, summarizeVod, generateFlashcards } from './services/api';
+import {
+    transcribeVod,
+    getVodTranscript,
+    getVodTranscribeStatus,
+    summarizeVod,
+    generateFlashcards,
+    type VodTranscribeStatus,
+} from './services/api';
 import AIChatModal from './AIChatModal';
 import TypingDots from './TypingDots';
 import { ActivityIndicator } from 'react-native';
@@ -18,11 +25,27 @@ import { ActivityIndicator } from 'react-native';
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
 type Styles = ReturnType<typeof createStyles>;
+const formatDuration = (seconds?: number | null) => {
+    if (!seconds || seconds <= 0) return null;
+    const mins = Math.round(seconds / 60);
+    if (mins < 1) return '1분 미만';
+    return `${mins}분`;
+};
+
+const getStageLabel = (status?: VodTranscribeStatus | null) => {
+    if (!status) return '대기 중';
+    if (status.status === 'queued') return '대기열에서 순서를 기다리는 중';
+    if (status.stage === 'extracting_audio') return '강의 음성 추출 중';
+    if (status.stage === 'transcribing') return '음성을 텍스트로 변환 중';
+    if (status.stage === 'finalizing') return '결과 정리 중';
+    if (status.status === 'running') return '처리 중';
+    return '대기 중';
+};
 
 const SummaryCard = ({ vodMoodleId, styles, colors }: { vodMoodleId: number; styles: Styles; colors: ColorScheme }) => {
     const { showError } = useToast();
     const [loading, setLoading] = useState(false);
-    const [summary, setSummary] = useState<{ tldr: string; points: string[] } | null>(null);
+    const [summary, setSummary] = useState<string | null>(null);
     const fadeIn = useRef(new Animated.Value(0)).current;
 
     const load = async () => {
@@ -90,8 +113,10 @@ export default function VodTranscriptScreen() {
     const [loading, setLoading] = useState(true);
     const [transcript, setTranscript] = useState<string | null>(null);
     const [error, setError] = useState(false);
+    const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [chatVisible, setChatVisible] = useState(false);
     const [generatingFlashcards, setGeneratingFlashcards] = useState(false);
+    const [statusInfo, setStatusInfo] = useState<VodTranscribeStatus | null>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const stopPolling = useCallback(() => {
@@ -105,20 +130,35 @@ export default function VodTranscriptScreen() {
         stopPolling();
         pollRef.current = setInterval(async () => {
             try {
-                const data = await getVodTranscript(vodMoodleId);
-                if (data.status === 'ok') {
+                const status = await getVodTranscribeStatus(vodMoodleId);
+                setStatusInfo(status);
+
+                if (status.status === 'done') {
+                    const data = await getVodTranscript(vodMoodleId);
                     stopPolling();
-                    setTranscript(data.transcript);
+                    if (data.status === 'ok') {
+                        setTranscript(data.transcript);
+                        setLoading(false);
+                        showSuccess('추출 완료', '강의 텍스트가 준비되었어요!');
+                    } else {
+                        setError(true);
+                        setErrorMessage('텍스트를 불러오지 못했어요. 다시 시도해주세요.');
+                        setLoading(false);
+                    }
+                } else if (status.status === 'failed') {
+                    stopPolling();
+                    setError(true);
+                    setErrorMessage(status.error_message || '텍스트 추출에 실패했어요. 다시 시도해주세요.');
                     setLoading(false);
-                    showSuccess('추출 완료', '강의 텍스트가 준비되었어요!');
                 }
             } catch (e) {
                 stopPolling();
                 setError(true);
+                setErrorMessage('상태 확인 중 오류가 발생했어요. 다시 시도해주세요.');
                 setLoading(false);
             }
-        }, 5000);
-    }, [vodMoodleId, stopPolling]);
+        }, 4000);
+    }, [vodMoodleId, stopPolling, showSuccess]);
 
     useEffect(() => {
         load();
@@ -128,20 +168,31 @@ export default function VodTranscriptScreen() {
     const load = async () => {
         setLoading(true);
         setError(false);
+        setErrorMessage(null);
+        setStatusInfo(null);
         try {
             const data = await transcribeVod(vodMoodleId);
             if (data.status === 'ok' || data.status === 'cached') {
                 setTranscript(data.transcript);
                 setLoading(false);
             } else if (data.status === 'processing') {
+                try {
+                    const status = await getVodTranscribeStatus(vodMoodleId);
+                    setStatusInfo(status);
+                } catch {}
                 startPolling();
             }
         } catch (e) {
             setError(true);
+            setErrorMessage('텍스트를 불러올 수 없어요. 다시 시도해주세요.');
             setLoading(false);
             showError('오류', '텍스트를 불러올 수 없어요. 다시 시도해주세요.');
         }
     };
+
+    const etaText = statusInfo?.eta_seconds
+        ? `${formatDuration(statusInfo.eta_seconds.low)} ~ ${formatDuration(statusInfo.eta_seconds.high)}`
+        : null;
 
     const handleCopy = () => {
         if (!transcript) return;
@@ -201,12 +252,21 @@ export default function VodTranscriptScreen() {
                         AI가 강의 음성을 텍스트로 변환하고 있어요.{'\n'}
                         강의 길이에 따라 수 분이 걸릴 수 있어요.
                     </Text>
+                    <Text style={styles.loadingMeta}>{getStageLabel(statusInfo)}</Text>
+                    {statusInfo?.queue_ahead !== undefined && statusInfo?.queue_ahead !== null && statusInfo.queue_ahead > 0 && (
+                        <Text style={styles.loadingMeta}>대기열 앞 작업 {statusInfo.queue_ahead}개</Text>
+                    )}
+                    {etaText && <Text style={styles.loadingMeta}>예상 남은 시간 {etaText}</Text>}
+                    {statusInfo?.elapsed_seconds !== undefined && statusInfo?.elapsed_seconds !== null && (
+                        <Text style={styles.loadingMeta}>경과 시간 {formatDuration(statusInfo.elapsed_seconds)}</Text>
+                    )}
                     <Text style={styles.loadingHintInline}>완료되면 알림으로 알려드릴게요</Text>
                 </View>
             ) : error ? (
                 <View style={styles.centered}>
                     <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
                     <Text style={styles.errorText}>불러오기 실패</Text>
+                    {errorMessage ? <Text style={styles.errorSubText}>{errorMessage}</Text> : null}
                     <TouchableOpacity style={styles.retryBtn} onPress={load} activeOpacity={0.8}>
                         <Text style={styles.retryText}>다시 시도</Text>
                     </TouchableOpacity>
@@ -294,8 +354,10 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
     },
     loadingText: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginTop: Spacing.l, marginBottom: Spacing.s, textAlign: 'center' },
     loadingSubText: { ...typography.body2, color: colors.textSecondary, textAlign: 'center', maxWidth: 280, lineHeight: 20 },
+    loadingMeta: { ...typography.caption, color: colors.textSecondary, marginTop: Spacing.s, textAlign: 'center' },
     loadingHintInline: { ...typography.caption, color: colors.textTertiary, marginTop: Spacing.xl, textAlign: 'center' },
     errorText: { ...typography.subtitle2, color: colors.error },
+    errorSubText: { ...typography.caption, color: colors.textSecondary, textAlign: 'center', marginTop: Spacing.s, marginBottom: Spacing.l },
     retryBtn: {
         paddingHorizontal: Spacing.l, paddingVertical: Spacing.s,
         backgroundColor: colors.primary, borderRadius: layout.borderRadius.full,
