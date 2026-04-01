@@ -9,6 +9,7 @@ import time
 import json
 import logging
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
@@ -24,6 +25,9 @@ logger = logging.getLogger("worker")
 
 SessionLocal = init_db()
 MAX_JOB_CONCURRENCY = max(1, int(os.getenv("WORKER_MAX_CONCURRENCY", "4")))
+TRANSCRIBE_TIMING_LOG_PATH = os.getenv("TRANSCRIBE_TIMING_LOG_PATH", "/app/error_log/transcribe_timing.jsonl")
+TRANSCRIBE_TIMING_LOG_ENABLED = os.getenv("TRANSCRIBE_TIMING_LOG_ENABLED", "true").lower() in ("1", "true", "yes", "on")
+_timing_log_lock = threading.Lock()
 
 # ─── Graceful Shutdown ────────────────────────────────────────────────────────
 
@@ -47,6 +51,23 @@ def _parse_cookie_string(raw: str) -> dict:
             k, v = item.split('=', 1)
             cookies[k.strip()] = v.strip()
     return cookies
+
+
+def _append_transcribe_timing_log(row: dict):
+    if not TRANSCRIBE_TIMING_LOG_ENABLED:
+        return
+    try:
+        payload = dict(row)
+        payload["logged_at"] = datetime.now().isoformat()
+        log_dir = os.path.dirname(TRANSCRIBE_TIMING_LOG_PATH)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        line = json.dumps(payload, ensure_ascii=False)
+        with _timing_log_lock:
+            with open(TRANSCRIBE_TIMING_LOG_PATH, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+    except Exception as e:
+        logger.error(f"Failed to write transcribe timing log: {e}")
 
 def _claim_job(db):
     """Atomically claim one pending job. Uses SELECT FOR UPDATE SKIP LOCKED (PostgreSQL)."""
@@ -128,6 +149,8 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
     course_name = payload.get('course_name')
     started_perf = time.perf_counter()
     last_stage = "queued"
+    stage_started_perf: float | None = None
+    stage_durations_s: dict[str, float] = {}
     queue_wait_text = f"{queue_wait_s:.1f}s" if queue_wait_s is not None else "n/a"
     logger.info(
         f"Transcribe start job_id={job_id} vod={vod_moodle_id} user_id={user_id} "
@@ -165,6 +188,8 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
             if stage_name == last_stage:
                 return
             now_perf = time.perf_counter()
+            if stage_started_perf is not None:
+                stage_durations_s[last_stage] = round(now_perf - stage_started_perf, 3)
             logger.info(
                 f"Transcribe stage done job_id={job_id} vod={vod_moodle_id} "
                 f"stage={last_stage} duration_s={now_perf - stage_started_perf:.1f}"
@@ -208,6 +233,8 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
             on_stage=_on_stage,
             on_progress=_on_progress,
         )
+        if stage_started_perf is not None:
+            stage_durations_s[last_stage] = round(time.perf_counter() - stage_started_perf, 3)
 
         _set_transcript_status(
             db,
@@ -225,6 +252,17 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
             f"Transcribe complete job_id={job_id} vod={vod_moodle_id} "
             f"chars={len(transcript or '')} total_s={total_s:.1f}"
         )
+        _append_transcribe_timing_log({
+            "type": "transcribe_timing",
+            "status": "done",
+            "job_id": job_id,
+            "vod_moodle_id": vod_moodle_id,
+            "user_id": user_id,
+            "queue_wait_s": round(queue_wait_s, 3) if queue_wait_s is not None else None,
+            "total_s": round(total_s, 3),
+            "stage_durations_s": stage_durations_s,
+            "transcript_chars": len(transcript or ""),
+        })
 
         # Log AI usage
         try:
@@ -267,6 +305,8 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
                     logger.error(f"Transcribe push failed job_id={job_id} vod={vod_moodle_id}: {exc}")
 
     except Exception as e:
+        if stage_started_perf is not None:
+            stage_durations_s[last_stage] = round(time.perf_counter() - stage_started_perf, 3)
         total_s = time.perf_counter() - started_perf
         logger.exception(
             f"Transcribe failed job_id={job_id} vod={vod_moodle_id} "
@@ -282,6 +322,17 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
             error_message=str(e)[:2000],
             completed_at=datetime.now(),
         )
+        _append_transcribe_timing_log({
+            "type": "transcribe_timing",
+            "status": "failed",
+            "job_id": job_id,
+            "vod_moodle_id": vod_moodle_id,
+            "user_id": user_id,
+            "queue_wait_s": round(queue_wait_s, 3) if queue_wait_s is not None else None,
+            "total_s": round(total_s, 3),
+            "stage_durations_s": stage_durations_s,
+            "error": str(e)[:500],
+        })
         raise
 
 
@@ -359,6 +410,10 @@ def _process_job(job_id: int):
 
 def main():
     logger.info("Worker starting...")
+    if TRANSCRIBE_TIMING_LOG_ENABLED:
+        logger.info(f"Transcribe timing log enabled path={TRANSCRIBE_TIMING_LOG_PATH}")
+    else:
+        logger.info("Transcribe timing log disabled")
 
     # Reset any jobs that were left in 'processing' state (worker died mid-job)
     db = SessionLocal()

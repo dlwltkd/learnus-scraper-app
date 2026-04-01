@@ -384,15 +384,6 @@ export default function VodTranscriptScreen() {
                             </Text>
 
                             <View style={styles.loadingMetaCard}>
-                                {statusInfo?.queue_ahead !== undefined && statusInfo?.queue_ahead !== null && (
-                                    <View style={styles.loadingMetaRow}>
-                                        <Ionicons name="git-network-outline" size={15} color={colors.textSecondary} />
-                                        <Text style={styles.loadingMetaLabel}>대기열</Text>
-                                        <Text style={styles.loadingMetaValue}>
-                                            {statusInfo.queue_ahead > 0 ? `앞에 ${statusInfo.queue_ahead}개` : '바로 처리 중'}
-                                        </Text>
-                                    </View>
-                                )}
                                 {statusInfo?.elapsed_seconds !== undefined && statusInfo?.elapsed_seconds !== null && (
                                     <View style={styles.loadingMetaRow}>
                                         <Ionicons name="hourglass-outline" size={15} color={colors.textSecondary} />

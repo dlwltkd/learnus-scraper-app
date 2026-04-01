@@ -42,9 +42,13 @@ services:
       - DATABASE_URL=postgresql://user:${POSTGRES_PASSWORD}@db:5432/learnus
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - WORKER_MAX_CONCURRENCY=${WORKER_MAX_CONCURRENCY:-4}
+      - TRANSCRIBE_TIMING_LOG_ENABLED=${TRANSCRIBE_TIMING_LOG_ENABLED:-true}
+      - TRANSCRIBE_TIMING_LOG_PATH=${TRANSCRIBE_TIMING_LOG_PATH:-/app/error_log/transcribe_timing.jsonl}
     depends_on:
       - db
     restart: always
+    volumes:
+      - ./error_log:/app/error_log
     stop_grace_period: 10m  # give worker up to 10min to finish a transcription before force-kill
 
   db:

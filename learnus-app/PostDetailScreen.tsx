@@ -20,7 +20,8 @@ export default function PostDetailScreen() {
 
   useEffect(() => {
     setPost(initialPost || {});
-  }, [initialPost]);
+    setLoadError(null);
+  }, [postId, initialPost?.url, initialPost?.title]);
 
   useEffect(() => {
     navigation.setOptions({
