@@ -766,20 +766,24 @@ def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user
 
 @app.post("/vods/{vod_moodle_id}/transcribe")
 def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    logger.info(f"Transcribe request user={user.username} user_id={user.id} vod={vod_moodle_id}")
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
+        logger.warning(f"Transcribe request denied (VOD not found) user_id={user.id} vod={vod_moodle_id}")
         raise HTTPException(404, "VOD not found")
 
     row = db.query(VodTranscript).filter(VodTranscript.moodle_id == vod_moodle_id).first()
 
     # Already done
     if row and row.transcript and not row.is_processing:
+        logger.info(f"Transcribe cache hit user_id={user.id} vod={vod_moodle_id}")
         return {"status": "cached", "transcript": row.transcript}
 
     # Already in progress — just tell client to poll
     # But if stuck for >30 min (worker crashed mid-job), allow retry
     if row and row.is_processing:
         if row.created_at and (datetime.now() - row.created_at).total_seconds() > 1800:
+            logger.warning(f"Transcribe row timed out, marking failed and requeueing allowed user_id={user.id} vod={vod_moodle_id}")
             row.is_processing = False
             row.status = "failed"
             row.stage = "failed"
@@ -788,6 +792,11 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
             row.completed_at = datetime.now()
             db.commit()
         else:
+            age_s = int((datetime.now() - row.created_at).total_seconds()) if row.created_at else None
+            logger.info(
+                f"Transcribe already processing user_id={user.id} vod={vod_moodle_id} "
+                f"age_s={age_s if age_s is not None else 'n/a'}"
+            )
             return {"status": "processing"}
 
     # Daily transcription cap (optionally bypassed for designated test users)
@@ -798,17 +807,24 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
             user.transcribe_count_today = 0
             user.transcribe_count_date = today_str
         if user.transcribe_count_today >= DAILY_TRANSCRIBE_LIMIT:
+            logger.warning(
+                f"Transcribe daily limit exceeded user_id={user.id} vod={vod_moodle_id} "
+                f"count_today={user.transcribe_count_today} limit={DAILY_TRANSCRIBE_LIMIT}"
+            )
             raise HTTPException(429, f"일일 텍스트 추출 한도({DAILY_TRANSCRIBE_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
         user.transcribe_count_today += 1
         db.commit()
     else:
-        logger.info(f"Transcribe limit bypass enabled for user {user.username}")
+        logger.info(f"Transcribe limit bypass enabled for user {user.username} (vod={vod_moodle_id})")
 
     # Get stream URL now (requires active Moodle session)
     client = get_moodle_client(user)
     m3u8_url = client.get_vod_stream_url(vod_moodle_id)
     if not m3u8_url:
+        logger.error(f"Transcribe stream URL not found user_id={user.id} vod={vod_moodle_id}")
         raise HTTPException(502, "Could not find stream URL for this VOD")
+    safe_source = m3u8_url.split("?", 1)[0]
+    logger.info(f"Transcribe stream resolved user_id={user.id} vod={vod_moodle_id} source={safe_source}")
 
     vod_title = vod.title
     course_obj = db.query(Course).filter(Course.id == vod.course_id).first()
@@ -848,6 +864,11 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
         'course_name': course_name,
     }))
     db.commit()
+    queue_depth = db.query(Job).filter(Job.type == 'transcribe', Job.status.in_(['pending', 'processing'])).count()
+    logger.info(
+        f"Transcribe enqueued user_id={user.id} vod={vod_moodle_id} "
+        f"queue_depth={queue_depth} status=queued"
+    )
     return {"status": "processing", "stage": "queued", "progress_pct": 0}
 
 @app.post("/vods/{vod_moodle_id}/summarize")

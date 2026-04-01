@@ -56,8 +56,9 @@ const navigationRef = createNavigationContainerRef<any>();
 
 function handleNotificationTap(data: any) {
   if (!navigationRef.isReady() || !data) return;
-  if (data.type === 'announcement' && data.postUrl) {
+  if (data.type === 'announcement' && (data.postId || data.postUrl)) {
     navigationRef.navigate('PostDetail', {
+      postId: data.postId,
       post: {
         url: data.postUrl,
         title: data.postTitle || '공지사항',

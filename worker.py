@@ -119,13 +119,20 @@ def _to_overall_progress(stage: str, stage_pct: int | None) -> int:
     return p
 
 
-def _run_transcribe(payload: dict, db):
+def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_s: float | None = None):
     vod_moodle_id = payload['vod_moodle_id']
     m3u8_url = payload['m3u8_url']
     cookies_raw = payload.get('cookies', '')
     user_id = payload.get('user_id')
     vod_title = payload.get('vod_title')
     course_name = payload.get('course_name')
+    started_perf = time.perf_counter()
+    last_stage = "queued"
+    queue_wait_text = f"{queue_wait_s:.1f}s" if queue_wait_s is not None else "n/a"
+    logger.info(
+        f"Transcribe start job_id={job_id} vod={vod_moodle_id} user_id={user_id} "
+        f"queue_wait={queue_wait_text}"
+    )
 
     try:
         now = datetime.now()
@@ -139,6 +146,9 @@ def _run_transcribe(payload: dict, db):
             progress_pct=5,
             started_at=now,
         )
+        last_stage = "extracting_audio"
+        stage_started_perf = time.perf_counter()
+        logger.info(f"Transcribe stage start job_id={job_id} vod={vod_moodle_id} stage={last_stage}")
 
         client = MoodleClient("https://ys.learnus.org")
         if isinstance(cookies_raw, dict):
@@ -148,7 +158,20 @@ def _run_transcribe(payload: dict, db):
         elif cookies_raw:
             client.set_cookies(_parse_cookie_string(cookies_raw))
 
+        progress_log_buckets: dict[str, int] = {}
+
         def _on_stage(stage_name: str):
+            nonlocal last_stage, stage_started_perf
+            if stage_name == last_stage:
+                return
+            now_perf = time.perf_counter()
+            logger.info(
+                f"Transcribe stage done job_id={job_id} vod={vod_moodle_id} "
+                f"stage={last_stage} duration_s={now_perf - stage_started_perf:.1f}"
+            )
+            last_stage = stage_name
+            stage_started_perf = now_perf
+            logger.info(f"Transcribe stage start job_id={job_id} vod={vod_moodle_id} stage={stage_name}")
             _set_transcript_status(
                 db,
                 vod_moodle_id,
@@ -158,15 +181,27 @@ def _run_transcribe(payload: dict, db):
                 progress_pct=_to_overall_progress(stage_name, 0),
             )
 
-        def _on_progress(stage_name: str, stage_pct: int | None, _msg: str | None):
+        def _on_progress(stage_name: str, stage_pct: int | None, msg: str | None):
+            overall_pct = _to_overall_progress(stage_name, stage_pct)
             _set_transcript_status(
                 db,
                 vod_moodle_id,
                 status='running',
                 stage=stage_name,
                 is_processing=True,
-                progress_pct=_to_overall_progress(stage_name, stage_pct),
+                progress_pct=overall_pct,
             )
+            if stage_pct is None:
+                return
+            bucket = max(0, min(100, int(stage_pct) // 10 * 10))
+            last_bucket = progress_log_buckets.get(stage_name, -10)
+            if bucket != last_bucket and (bucket >= last_bucket + 10 or bucket in (0, 100)):
+                progress_log_buckets[stage_name] = bucket
+                detail = f" detail={msg}" if msg else ""
+                logger.info(
+                    f"Transcribe progress job_id={job_id} vod={vod_moodle_id} stage={stage_name} "
+                    f"stage_pct={bucket}% overall_pct={overall_pct}%{detail}"
+                )
 
         transcript, usage = AIService().transcribe_vod(
             m3u8_url,
@@ -185,7 +220,11 @@ def _run_transcribe(payload: dict, db):
             error_message='',
             completed_at=datetime.now(),
         )
-        logger.info(f"Transcription complete for VOD {vod_moodle_id}")
+        total_s = time.perf_counter() - started_perf
+        logger.info(
+            f"Transcribe complete job_id={job_id} vod={vod_moodle_id} "
+            f"chars={len(transcript or '')} total_s={total_s:.1f}"
+        )
 
         # Log AI usage
         try:
@@ -197,7 +236,12 @@ def _run_transcribe(payload: dict, db):
                 total_tokens=usage.get("total_tokens", 0),
             ))
             db.commit()
+            logger.info(
+                f"Transcribe usage logged job_id={job_id} vod={vod_moodle_id} "
+                f"model={usage.get('model', 'whisper-1')}"
+            )
         except Exception:
+            logger.warning(f"Transcribe usage log failed job_id={job_id} vod={vod_moodle_id}")
             pass
 
         # Push notification
@@ -218,11 +262,16 @@ def _run_transcribe(payload: dict, db):
                             "saveToHistory": True,
                         }
                     ))
+                    logger.info(f"Transcribe push sent job_id={job_id} vod={vod_moodle_id} user_id={user_id}")
                 except Exception as exc:
-                    logger.error(f"Push notification failed: {exc}")
+                    logger.error(f"Transcribe push failed job_id={job_id} vod={vod_moodle_id}: {exc}")
 
     except Exception as e:
-        logger.error(f"Transcription failed for VOD {vod_moodle_id}: {e}")
+        total_s = time.perf_counter() - started_perf
+        logger.exception(
+            f"Transcribe failed job_id={job_id} vod={vod_moodle_id} "
+            f"stage={last_stage} elapsed_s={total_s:.1f}: {e}"
+        )
         _set_transcript_status(
             db,
             vod_moodle_id,
@@ -263,10 +312,10 @@ def _run_watch_one(payload: dict):
         db.close()
 
 
-def _dispatch(job, db):
+def _dispatch(job, db, *, queue_wait_s: float | None = None):
     t = job.type
     if t == 'transcribe':
-        _run_transcribe(job.payload, db)
+        _run_transcribe(job.payload, db, job_id=job.id, queue_wait_s=queue_wait_s)
     elif t == 'watch_all':
         _run_watch_all(job.payload)
     elif t == 'watch_one':
@@ -283,19 +332,26 @@ def _process_job(job_id: int):
         if not job:
             logger.warning(f"Claimed job {job_id} not found")
             return
-        logger.info(f"Starting job {job.id} ({job.type})")
+        queue_wait_s = None
+        if job.created_at and job.started_at:
+            queue_wait_s = (job.started_at - job.created_at).total_seconds()
+        logger.info(
+            f"Starting job {job.id} ({job.type}) queue_wait_s="
+            f"{queue_wait_s:.1f}" if queue_wait_s is not None else f"Starting job {job.id} ({job.type})"
+        )
+        run_started = time.perf_counter()
         try:
-            _dispatch(job, db)
+            _dispatch(job, db, queue_wait_s=queue_wait_s)
             job.status = 'done'
             job.completed_at = datetime.now()
             db.commit()
-            logger.info(f"Job {job.id} done")
+            logger.info(f"Job {job.id} done runtime_s={time.perf_counter() - run_started:.1f}")
         except Exception as e:
             job.status = 'failed'
             job.error = str(e)[:2000]
             job.completed_at = datetime.now()
             db.commit()
-            logger.error(f"Job {job.id} failed: {e}")
+            logger.exception(f"Job {job.id} failed runtime_s={time.perf_counter() - run_started:.1f}: {e}")
     finally:
         db.close()
 

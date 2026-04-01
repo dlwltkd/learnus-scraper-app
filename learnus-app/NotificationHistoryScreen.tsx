@@ -186,8 +186,9 @@ export default function NotificationHistoryScreen() {
 
         // Navigate based on type
         if (item.type === 'announcement' || item.type === 'ai_summary') {
-            if (item.data?.postUrl) {
+            if (item.data?.postId || item.data?.postUrl) {
                 (navigation as any).navigate('PostDetail', {
+                    postId: item.data.postId,
                     post: {
                         url: item.data.postUrl,
                         title: item.data.postTitle || '공지사항',

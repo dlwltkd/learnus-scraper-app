@@ -2,6 +2,7 @@ import os
 import subprocess
 import tempfile
 import glob
+import time
 from openai import OpenAI
 from dotenv import load_dotenv
 import json
@@ -255,6 +256,7 @@ Rules:
             stderr_text = proc.stderr.read()[:500]
         if ret != 0:
             raise RuntimeError(f"ffmpeg failed: {stderr_text}")
+        return duration_seconds
 
     def _split_audio_chunks(self, audio_path: str, chunk_dir: str, segment_seconds: int = 600) -> list[str]:
         pattern = os.path.join(chunk_dir, "chunk_%03d.mp3")
@@ -295,18 +297,31 @@ Rules:
                 on_progress(stage, pct, message)
 
         try:
+            safe_source = (m3u8_url or "").split("?", 1)[0]
+            start_t = time.perf_counter()
+            logger.info(f"AI transcribe start source={safe_source}")
+
             emit("extracting_audio", 0)
-            self._extract_audio_with_progress(m3u8_url, tmp_path, emit)
+            extract_t0 = time.perf_counter()
+            probed_duration = self._extract_audio_with_progress(m3u8_url, tmp_path, emit)
+            extract_s = time.perf_counter() - extract_t0
+            audio_size_mb = os.path.getsize(tmp_path) / (1024 * 1024)
+            logger.info(
+                f"Audio extraction done in {extract_s:.1f}s "
+                f"(size={audio_size_mb:.2f}MB, probe_duration_s={probed_duration})"
+            )
 
             with tempfile.TemporaryDirectory(prefix="transcribe_chunks_") as chunk_dir:
                 chunks = self._split_audio_chunks(tmp_path, chunk_dir, segment_seconds=600)
                 if not chunks:
                     chunks = [tmp_path]
+                logger.info(f"Audio split into {len(chunks)} chunk(s)")
 
                 texts = []
                 total = len(chunks)
                 for idx, chunk_path in enumerate(chunks, start=1):
                     emit("transcribing", int(((idx - 1) / total) * 100), f"{idx - 1}/{total}")
+                    chunk_t0 = time.perf_counter()
                     with open(chunk_path, "rb") as audio_file:
                         response = self.client.audio.transcriptions.create(
                             model="whisper-1",
@@ -316,10 +331,14 @@ Rules:
                     text = response.strip() if isinstance(response, str) else str(response).strip()
                     if text:
                         texts.append(text)
+                    chunk_s = time.perf_counter() - chunk_t0
+                    logger.info(f"Chunk {idx}/{total} transcribed in {chunk_s:.1f}s (chars={len(text)})")
                     emit("transcribing", int((idx / total) * 100), f"{idx}/{total}")
 
             emit("finalizing", 100)
             transcript = "\n\n".join(texts).strip()
+            total_s = time.perf_counter() - start_t
+            logger.info(f"AI transcribe complete in {total_s:.1f}s (chars={len(transcript)})")
             return transcript, {"model": "whisper-1", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         finally:
             if os.path.exists(tmp_path):

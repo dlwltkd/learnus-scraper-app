@@ -114,6 +114,11 @@ export const getPosts = async (boardId: number) => {
     return response.data;
 };
 
+export const getPostDetail = async (postId: number) => {
+    const response = await api.get(`/posts/${postId}`);
+    return response.data;
+};
+
 export const getDashboardOverview = async () => {
     const response = await api.get('/dashboard/overview');
     return response.data;

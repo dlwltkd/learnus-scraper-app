@@ -109,6 +109,7 @@ export function setupNotificationReceivedListener() {
             await addNotification(title, body, type, {
                 courseId: data.courseId as number | undefined,
                 courseName: data.courseName as string | undefined,
+                postId: data.postId as number | undefined,
                 postUrl: data.postUrl as string | undefined,
                 postTitle: data.postTitle as string | undefined,
                 vodMoodleId: data.vodMoodleId as number | undefined,
@@ -126,6 +127,7 @@ export async function saveNotificationResponseToHistory(notification: Notificati
         await addNotification(title, body, type, {
             courseId: data.courseId as number | undefined,
             courseName: data.courseName as string | undefined,
+            postId: data.postId as number | undefined,
             postUrl: data.postUrl as string | undefined,
             postTitle: data.postTitle as string | undefined,
             vodMoodleId: data.vodMoodleId as number | undefined,
