@@ -200,7 +200,8 @@ def process_user_updates(user: User, db: Session):
 
                     else:
                         # Update existing
-                        assign.is_completed = item['is_completed']
+                        if not assign.completion_overridden:
+                            assign.is_completed = item['is_completed']
                         if item.get('deadline_text'): assign.due_date = item.get('deadline_text')
 
                 # --- VODs ---
