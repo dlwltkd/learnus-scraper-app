@@ -17,6 +17,7 @@ interface ItemRowProps {
     onWebPress?: () => void;
     onMenuPress?: () => void;
     highlightMenu?: boolean;
+    rightAction?: React.ReactNode;
 }
 
 const TYPE_ICON: Record<ItemType, keyof typeof Ionicons.glyphMap> = {
@@ -29,7 +30,7 @@ const COMPLETED_ICON: Record<ItemType, keyof typeof Ionicons.glyphMap> = {
     vod: 'checkmark-circle',
 };
 
-export default function ItemRow({ title, courseName, meta, state, type, onWebPress, onMenuPress, highlightMenu }: ItemRowProps) {
+export default function ItemRow({ title, courseName, meta, state, type, onWebPress, onMenuPress, highlightMenu, rightAction }: ItemRowProps) {
     const { colors, typography, layout, isDark } = useTheme();
     const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
 
@@ -130,7 +131,9 @@ export default function ItemRow({ title, courseName, meta, state, type, onWebPre
                         <Text style={[styles.badgeText, { color: cfg.badgeColor }]}>{cfg.badge}</Text>
                     </View>
                 )}
-                {onMenuPress ? (
+                {rightAction ? (
+                    rightAction
+                ) : onMenuPress ? (
                     <Animated.View style={highlightMenu ? {
                         transform: [{ scale: pulseAnim }],
                     } : undefined}>

@@ -107,6 +107,7 @@ class Assignment(Base):
     title = Column(String)
     due_date = Column(String)
     is_completed = Column(Boolean, default=False)
+    completion_overridden = Column(Boolean, default=False)
     url = Column(String)
     
     course = relationship("Course", back_populates="assignments")
@@ -344,6 +345,15 @@ def init_db(db_url=None):
     if 'ai_usage_logs' not in refreshed_tables:
         AIUsageLog.__table__.create(engine)
         logger.info("Created ai_usage_logs table")
+
+    # Migration: allow preserving manually overridden assignment completion state
+    refreshed_tables = sa_inspect(engine).get_table_names()
+    if 'assignments' in refreshed_tables:
+        _add_column_if_missing(
+            'assignments',
+            'completion_overridden',
+            "ALTER TABLE assignments ADD COLUMN completion_overridden BOOLEAN DEFAULT FALSE",
+        )
 
     # Migration: add transcription status columns
     refreshed_tables = sa_inspect(engine).get_table_names()

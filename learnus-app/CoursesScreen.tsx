@@ -25,7 +25,7 @@ import Badge from './components/Badge';
 import EmptyState from './components/EmptyState';
 import { useTourRef } from './hooks/useTourRef';
 import { useTour } from './context/TourContext';
-import { TOUR_MOCK_COURSES } from './constants/tourMockData';
+import { TOUR_MOCK_COURSES, FORCE_MOCK_MODE } from './constants/tourMockData';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -190,14 +190,15 @@ export default function CoursesScreen() {
     useEffect(() => { loadCourses(); }, []);
 
     useEffect(() => {
-        tourActiveRef.current = tourActive;
-        if (tourActive) {
+        const mockActive = tourActive || FORCE_MOCK_MODE;
+        tourActiveRef.current = mockActive;
+        if (mockActive) {
             setCourses(TOUR_MOCK_COURSES);
             setLoading(false);
         } else if (prevTourActive.current) {
             loadCourses();
         }
-        prevTourActive.current = tourActive;
+        prevTourActive.current = mockActive;
     }, [tourActive]);
 
     const loadCourses = async () => {

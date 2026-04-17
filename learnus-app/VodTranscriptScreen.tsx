@@ -21,6 +21,13 @@ import {
 import AIChatModal from './AIChatModal';
 import TypingDots from './TypingDots';
 import { ActivityIndicator } from 'react-native';
+import {
+    FORCE_MOCK_MODE,
+    TOUR_DEFAULT_MOCK_SUMMARY,
+    TOUR_DEFAULT_MOCK_TRANSCRIPT,
+    TOUR_MOCK_SUMMARIES,
+    TOUR_MOCK_TRANSCRIPTS,
+} from './constants/tourMockData';
 
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
@@ -91,6 +98,11 @@ const SummaryCard = ({ vodMoodleId, styles, colors }: { vodMoodleId: number; sty
     const load = async () => {
         setLoading(true);
         try {
+            if (FORCE_MOCK_MODE) {
+                setSummary(TOUR_MOCK_SUMMARIES[vodMoodleId] || TOUR_DEFAULT_MOCK_SUMMARY);
+                Animated.timing(fadeIn, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+                return;
+            }
             const data = await summarizeVod(vodMoodleId);
             setSummary(data.summary);
             Animated.timing(fadeIn, { toValue: 1, duration: 300, useNativeDriver: true }).start();
@@ -217,6 +229,12 @@ export default function VodTranscriptScreen() {
         setStatusInfo(null);
         setShowTranscribeProgress(false);
         try {
+            if (FORCE_MOCK_MODE) {
+                setTranscript(TOUR_MOCK_TRANSCRIPTS[vodMoodleId] || TOUR_DEFAULT_MOCK_TRANSCRIPT);
+                setLoading(false);
+                return;
+            }
+
             // Fast path: if transcript already exists, render immediately without progress UI.
             const cached = await getVodTranscript(vodMoodleId);
             if (cached.status === 'ok') {

@@ -1,4 +1,5 @@
 from database import Course, Assignment, VOD
+from moodle_client import MoodleClient
 
 
 def test_get_courses_empty(client, test_user, auth_headers):
@@ -96,3 +97,82 @@ def test_get_vods_for_course(client, test_user, auth_headers, db):
     assert len(data) == 1
     assert data[0]["title"] == "Lecture 1"
     assert data[0]["id"] == 60  # moodle_id
+
+
+def test_update_assignment_status_sets_manual_override(client, test_user, auth_headers, db):
+    course = Course(moodle_id=100, owner_id=test_user.id, name="Math 101", is_active=True)
+    db.add(course)
+    db.commit()
+    db.refresh(course)
+
+    a = Assignment(
+        moodle_id=50,
+        course_id=course.id,
+        title="Assignment 1",
+        due_date="2025-12-01 23:59:00",
+        is_completed=False,
+        url="http://example.com/a1",
+    )
+    db.add(a)
+    db.commit()
+
+    resp = client.put(
+        f"/courses/{course.id}/assignments/{a.moodle_id}/status",
+        json={"is_completed": True, "lock_override": True},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["status"] == "success"
+    assert payload["assignment"]["is_completed"] is True
+    assert payload["assignment"]["completion_overridden"] is True
+
+    db.refresh(a)
+    assert a.is_completed is True
+    assert a.completion_overridden is True
+
+
+def test_sync_does_not_overwrite_manually_overridden_assignment(db, test_user):
+    course = Course(moodle_id=100, owner_id=test_user.id, name="Math 101", is_active=True)
+    db.add(course)
+    db.commit()
+    db.refresh(course)
+
+    a = Assignment(
+        moodle_id=50,
+        course_id=course.id,
+        title="Old Title",
+        due_date="2025-12-01 23:59:00",
+        is_completed=True,
+        completion_overridden=True,
+        url="http://example.com/a1",
+    )
+    db.add(a)
+    db.commit()
+
+    client = MoodleClient("https://ys.learnus.org")
+
+    client.get_course_contents = lambda _course_id: {
+        "announcements": [],
+        "assignments": [
+            {
+                "id": 50,
+                "name": "Updated Assignment Name",
+                "url": "https://ys.learnus.org/mod/assign/view.php?id=50",
+                "is_completed": False,
+                "has_tracking": True,
+                "deadline_text": "2025-12-03 23:59:00",
+            }
+        ],
+        "files": [],
+        "boards": [],
+        "vods": [],
+    }
+
+    client.sync_course_to_db(course.moodle_id, db, test_user.id)
+
+    db.refresh(a)
+    assert a.title == "Updated Assignment Name"
+    assert a.due_date == "2025-12-03 23:59:00"
+    assert a.is_completed is True
+    assert a.completion_overridden is True

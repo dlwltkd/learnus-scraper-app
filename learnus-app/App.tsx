@@ -46,6 +46,7 @@ const NOTIF_PROMPT_DISMISSED_KEY = 'notif_prompt_dismissed_at';
 import {
   registerForPushNotificationsAsync,
   registerBackgroundFetchAsync,
+  checkAndScheduleNotifications,
   setupNotificationReceivedListener,
   saveNotificationResponseToHistory,
 } from './services/NotificationService';
@@ -414,6 +415,17 @@ export default function App() {
     // after the onboarding prompt, so we don't request permission here.
     registerBackgroundFetchAsync();
 
+    const refreshReminderSchedule = async () => {
+      try {
+        await checkAndScheduleNotifications();
+      } catch (e) {
+        console.log('Failed to refresh reminder schedule', e);
+      }
+    };
+
+    // Ensure local reminders are refreshed immediately on launch.
+    refreshReminderSchedule();
+
     // Save any delivered notifications that arrived while app was in background
     const saveDeliveredNotifications = async () => {
       const delivered = await Notifications.getPresentedNotificationsAsync();
@@ -435,6 +447,7 @@ export default function App() {
     const appStateListener = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         saveDeliveredNotifications();
+        refreshReminderSchedule();
       }
     });
 

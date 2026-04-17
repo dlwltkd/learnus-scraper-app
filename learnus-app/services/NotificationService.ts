@@ -10,6 +10,15 @@ import { addNotification, NotificationHistoryItem } from './NotificationHistoryS
 
 const BACKGROUND_FETCH_TASK = 'BACKGROUND_NOTIFICATION_TASK';
 const NOTIFICATION_SETTINGS_KEY = 'notification_settings';
+const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
+    unfinishedAssignments: ['1d'],
+    finishedAssignments: [],
+    unfinishedVods: ['1d'],
+    aiSummary: true,
+    newAssignment: true,
+    newVod: true,
+    vodOpen: true,
+};
 
 // Configure notification handler
 Notifications.setNotificationHandler({
@@ -56,10 +65,47 @@ export async function registerForPushNotificationsAsync() {
 async function getSettings(): Promise<NotificationSettings | null> {
     try {
         const saved = await AsyncStorage.getItem(NOTIFICATION_SETTINGS_KEY);
-        return saved ? JSON.parse(saved) : null;
+        if (!saved) {
+            await AsyncStorage.setItem(NOTIFICATION_SETTINGS_KEY, JSON.stringify(DEFAULT_NOTIFICATION_SETTINGS));
+            return DEFAULT_NOTIFICATION_SETTINGS;
+        }
+
+        // Merge with defaults so newly added keys are always present.
+        return { ...DEFAULT_NOTIFICATION_SETTINGS, ...JSON.parse(saved) };
     } catch (e) {
         return null;
     }
+}
+
+function parseBackendDate(value?: string | null): Date | null {
+    if (!value || value === 'None') return null;
+
+    const raw = value.replace(/\u00a0/g, ' ').trim().replace(/\.$/, '');
+    if (!raw) return null;
+
+    const direct = new Date(raw);
+    if (!isNaN(direct.getTime())) return direct;
+
+    // "2026-04-17 23:59:00" -> ISO-like
+    const isoLike = raw.match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}(?::\d{2})?)$/);
+    if (isoLike) {
+        const dt = new Date(`${isoLike[1]}T${isoLike[2]}`);
+        if (!isNaN(dt.getTime())) return dt;
+    }
+
+    // "2026년 4월 17일 23:59" / "2026년 4월 17일"
+    const koMatch = raw.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D+(\d{1,2})[:시](\d{2}))?/);
+    if (koMatch) {
+        const year = Number(koMatch[1]);
+        const month = Number(koMatch[2]) - 1;
+        const day = Number(koMatch[3]);
+        const hour = Number(koMatch[4] || 0);
+        const minute = Number(koMatch[5] || 0);
+        const dt = new Date(year, month, day, hour, minute, 0);
+        if (!isNaN(dt.getTime())) return dt;
+    }
+
+    return null;
 }
 
 function getTimeOffset(setting: string): number {
@@ -164,8 +210,8 @@ export async function checkAndScheduleNotifications() {
         const scheduledDetails: string[] = [];
 
         for (const a of assignments) {
-            const dueDate = new Date(a.due_date);
-            if (isNaN(dueDate.getTime())) continue;
+            const dueDate = parseBackendDate(a.due_date);
+            if (!dueDate) continue;
 
             const offsets = a.is_completed ? finishedOffsets : unfinishedOffsets;
 
@@ -202,8 +248,8 @@ export async function checkAndScheduleNotifications() {
 
             // For VODs, we typically remind before 'end_date'
             if (!v.end_date) continue;
-            const endDate = new Date(v.end_date);
-            if (isNaN(endDate.getTime())) continue;
+            const endDate = parseBackendDate(v.end_date);
+            if (!endDate) continue;
 
             for (const offset of vodOffsets) {
                 if (offset === 0) continue;
@@ -225,8 +271,8 @@ export async function checkAndScheduleNotifications() {
             const upcomingVods = data.upcoming_vods || [];
             for (const v of upcomingVods) {
                 if (!v.start_date) continue;
-                const startDate = new Date(v.start_date);
-                if (isNaN(startDate.getTime())) continue;
+                const startDate = parseBackendDate(v.start_date);
+                if (!startDate) continue;
 
                 // Schedule for start time
                 if (await scheduleReminder(

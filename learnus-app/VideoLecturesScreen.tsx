@@ -21,7 +21,7 @@ import VodActionSheet from './components/VodActionSheet';
 import VodWebViewer from './components/VodWebViewer';
 import { useTourRef } from './hooks/useTourRef';
 import { useTour } from './context/TourContext';
-import { TOUR_MOCK_OVERVIEW } from './constants/tourMockData';
+import { TOUR_MOCK_OVERVIEW, FORCE_MOCK_MODE } from './constants/tourMockData';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -83,15 +83,16 @@ const VideoLecturesScreen = () => {
     const tourActiveRef = React.useRef(false);
     const prevTourActive = React.useRef(false);
     useEffect(() => {
-        tourActiveRef.current = tourActive;
-        if (tourActive) {
+        const mockActive = tourActive || FORCE_MOCK_MODE;
+        tourActiveRef.current = mockActive;
+        if (mockActive) {
             setData(TOUR_MOCK_OVERVIEW);
             setLoading(false);
         } else if (prevTourActive.current) {
             setActionSheet(null);
             loadData();
         }
-        prevTourActive.current = tourActive;
+        prevTourActive.current = mockActive;
     }, [tourActive]);
 
     const openWebViewer = async (item: any) => {

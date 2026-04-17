@@ -448,7 +448,8 @@ class MoodleClient:
                 db_session.add(assign)
             assign.title = item['name']
             assign.url = item['url']
-            assign.is_completed = item['is_completed']
+            if not assign.completion_overridden:
+                assign.is_completed = item['is_completed']
             deadline = item.get('deadline_text')
             
             # Deep check for Quiz if deadline/completion is questionable or it's definitely a quiz
@@ -456,7 +457,8 @@ class MoodleClient:
                 details = self.get_quiz_details(item['url'])
                 if details:
                     if details['due_date']: deadline = details['due_date']
-                    if details['is_completed']: assign.is_completed = True
+                    if details['is_completed'] and not assign.completion_overridden:
+                        assign.is_completed = True
 
             if not deadline and item['url'] and '/mod/assign/' in item['url']: 
                  deadline = self.get_assignment_deadline(item['url'])

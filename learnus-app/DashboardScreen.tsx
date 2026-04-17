@@ -20,7 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { getDashboardOverview, syncAllActiveCourses, fetchAISummary } from './services/api';
+import { getDashboardOverview, syncAllActiveCourses, fetchAISummary, updateAssignmentStatus } from './services/api';
 import { Spacing, Animation } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
 import { useTheme } from './context/ThemeContext';
@@ -34,7 +34,7 @@ import Button, { IconButton } from './components/Button';
 import ItemRow from './components/ItemRow';
 import { useTourRef } from './hooks/useTourRef';
 import { useTour } from './context/TourContext';
-import { TOUR_MOCK_OVERVIEW } from './constants/tourMockData';
+import { TOUR_MOCK_OVERVIEW, FORCE_MOCK_MODE } from './constants/tourMockData';
 
 if (Platform.OS === 'android') {
     if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -495,6 +495,7 @@ const DashboardScreen = () => {
     const [data, setData] = useState<any>(null);
     const [syncing, setSyncing] = useState(false);
     const [unreadNotifications, setUnreadNotifications] = useState(0);
+    const [assignmentUpdating, setAssignmentUpdating] = useState<Record<string, boolean>>({});
 
     // Tour
     const { isActive: tourActive } = useTour();
@@ -504,14 +505,15 @@ const DashboardScreen = () => {
     const aiSectionRef = useTourRef('dashboard-ai-section');
 
     useEffect(() => {
-        tourActiveRef.current = tourActive;
-        if (tourActive) {
+        const mockActive = tourActive || FORCE_MOCK_MODE;
+        tourActiveRef.current = mockActive;
+        if (mockActive) {
             setData(TOUR_MOCK_OVERVIEW);
             setLoading(false);
         } else if (prevTourActive.current) {
             loadDashboard();
         }
-        prevTourActive.current = tourActive;
+        prevTourActive.current = mockActive;
     }, [tourActive]);
 
     // Collapsible state
@@ -572,6 +574,74 @@ const DashboardScreen = () => {
         loadDashboard();
         loadUnreadCount();
     }, []);
+
+    const getAssignmentKey = (item: any) => `${item.course_id ?? 'unknown'}:${item.id}`;
+
+    const applyAssignmentCompletedToDashboardData = (prev: any, item: any) => {
+        if (!prev) return prev;
+
+        const updatedUpcoming = (prev.upcoming_assignments ?? []).map((a: any) =>
+            a.id === item.id && a.course_id === item.course_id
+                ? { ...a, is_completed: true, completion_overridden: true }
+                : a
+        );
+        const wasUpcomingUpdated = (prev.upcoming_assignments ?? []).some(
+            (a: any) => a.id === item.id && a.course_id === item.course_id && !a.is_completed
+        );
+
+        const updatedMissed = (prev.missed_assignments ?? []).filter(
+            (a: any) => !(a.id === item.id && a.course_id === item.course_id)
+        );
+        const wasMissedRemoved = (prev.missed_assignments ?? []).length !== updatedMissed.length;
+
+        const nextStats = { ...(prev.stats ?? {}) };
+        if (wasUpcomingUpdated) {
+            nextStats.completed_assignments_due = Math.min(
+                (nextStats.total_assignments_due ?? 0),
+                (nextStats.completed_assignments_due ?? 0) + 1,
+            );
+        }
+        if (wasMissedRemoved) {
+            nextStats.missed_assignments_count = Math.max(
+                0,
+                (nextStats.missed_assignments_count ?? 0) - 1,
+            );
+        }
+
+        return {
+            ...prev,
+            upcoming_assignments: updatedUpcoming,
+            missed_assignments: updatedMissed,
+            stats: nextStats,
+        };
+    };
+
+    const handleMarkAssignmentComplete = async (item: any) => {
+        if (!item?.course_id) {
+            showError('완료 처리 실패', '과제 정보를 찾을 수 없어요. 새로고침 후 다시 시도해주세요.');
+            return;
+        }
+
+        const itemKey = getAssignmentKey(item);
+        if (assignmentUpdating[itemKey]) return;
+
+        let rollbackSnapshot: any = null;
+        setAssignmentUpdating(prev => ({ ...prev, [itemKey]: true }));
+        setData((prev: any) => {
+            rollbackSnapshot = prev;
+            return applyAssignmentCompletedToDashboardData(prev, item);
+        });
+
+        try {
+            await updateAssignmentStatus(item.course_id, item.id, true, true);
+            showSuccess('완료 처리됨', '수동 완료로 저장되어 동기화 후에도 유지됩니다.');
+        } catch (e) {
+            setData(rollbackSnapshot);
+            showError('완료 처리 실패', '네트워크 상태를 확인하고 다시 시도해주세요.');
+        } finally {
+            setAssignmentUpdating(prev => ({ ...prev, [itemKey]: false }));
+        }
+    };
 
     const loadAISummaries = async () => {
         setLoadingAI(true);
@@ -812,7 +882,10 @@ const DashboardScreen = () => {
                             onToggle={() => toggleSection('missedAssignments')}
                         />
                         {!collapsedSections.missedAssignments &&
-                            [...data.missed_assignments].sort((a: any, b: any) => (a.due_date ? new Date(a.due_date).getTime() : Infinity) - (b.due_date ? new Date(b.due_date).getTime() : Infinity)).map((item: any) => (
+                            [...data.missed_assignments].sort((a: any, b: any) => (a.due_date ? new Date(a.due_date).getTime() : Infinity) - (b.due_date ? new Date(b.due_date).getTime() : Infinity)).map((item: any) => {
+                                const itemKey = getAssignmentKey(item);
+                                const isUpdating = !!assignmentUpdating[itemKey];
+                                return (
                                 <ItemRow
                                     key={item.id}
                                     title={item.title}
@@ -820,8 +893,28 @@ const DashboardScreen = () => {
                                     meta={item.due_date ? `${item.due_date} 마감` : undefined}
                                     state="missed"
                                     type="assignment"
+                                    rightAction={
+                                        item.course_id ? (
+                                            <TouchableOpacity
+                                                style={[styles.completeButton, isUpdating && styles.completeButtonDisabled]}
+                                                onPress={() => handleMarkAssignmentComplete(item)}
+                                                activeOpacity={0.75}
+                                                disabled={isUpdating}
+                                            >
+                                                {isUpdating ? (
+                                                    <ActivityIndicator size="small" color={colors.success} />
+                                                ) : (
+                                                    <>
+                                                        <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
+                                                        <Text style={styles.completeButtonText}>완료</Text>
+                                                    </>
+                                                )}
+                                            </TouchableOpacity>
+                                        ) : undefined
+                                    }
                                 />
-                            ))}
+                                );
+                            })}
                     </View>
                 )}
 
@@ -833,7 +926,10 @@ const DashboardScreen = () => {
                             icon="calendar"
                             iconColor={colors.primary}
                         />
-                        {[...data.upcoming_assignments].sort((a: any, b: any) => (a.due_date ? new Date(a.due_date).getTime() : Infinity) - (b.due_date ? new Date(b.due_date).getTime() : Infinity)).map((item: any) => (
+                        {[...data.upcoming_assignments].sort((a: any, b: any) => (a.due_date ? new Date(a.due_date).getTime() : Infinity) - (b.due_date ? new Date(b.due_date).getTime() : Infinity)).map((item: any) => {
+                            const itemKey = getAssignmentKey(item);
+                            const isUpdating = !!assignmentUpdating[itemKey];
+                            return (
                             <ItemRow
                                 key={item.id}
                                 title={item.title}
@@ -841,8 +937,28 @@ const DashboardScreen = () => {
                                 meta={item.due_date ? `${item.due_date} 마감` : undefined}
                                 state={item.is_completed ? 'completed' : 'pending'}
                                 type="assignment"
+                                rightAction={
+                                    !item.is_completed && item.course_id ? (
+                                        <TouchableOpacity
+                                            style={[styles.completeButton, isUpdating && styles.completeButtonDisabled]}
+                                            onPress={() => handleMarkAssignmentComplete(item)}
+                                            activeOpacity={0.75}
+                                            disabled={isUpdating}
+                                        >
+                                            {isUpdating ? (
+                                                <ActivityIndicator size="small" color={colors.success} />
+                                            ) : (
+                                                <>
+                                                    <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
+                                                    <Text style={styles.completeButtonText}>완료</Text>
+                                                </>
+                                            )}
+                                        </TouchableOpacity>
+                                    ) : undefined
+                                }
                             />
-                        ))}
+                            );
+                        })}
                     </View>
                 )}
 
@@ -1377,6 +1493,27 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         fontSize: 12,
         fontWeight: '600',
         marginTop: 2,
+    },
+    completeButton: {
+        minWidth: 64,
+        height: 32,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: colors.success,
+        backgroundColor: colors.successLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'row',
+        gap: 4,
+        paddingHorizontal: 8,
+    },
+    completeButtonDisabled: {
+        opacity: 0.65,
+    },
+    completeButtonText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: colors.success,
     },
 
     // Empty State

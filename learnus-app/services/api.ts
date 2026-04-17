@@ -99,6 +99,19 @@ export const getAssignments = async (courseId: number) => {
     return response.data;
 };
 
+export const updateAssignmentStatus = async (
+    courseId: number,
+    assignmentId: number,
+    isCompleted: boolean,
+    lockOverride: boolean = true,
+) => {
+    const response = await api.put(
+        `/courses/${courseId}/assignments/${assignmentId}/status`,
+        { is_completed: isCompleted, lock_override: lockOverride },
+    );
+    return response.data;
+};
+
 export const getBoards = async (courseId: number) => {
     const response = await api.get(`/courses/${courseId}/boards`);
     return response.data;

@@ -154,14 +154,17 @@ class CourseActiveUpdate(BaseModel):
 class AssignmentResponse(BaseModel):
     id: int
     title: str
+    course_id: Optional[int] = None
     course_name: Optional[str] = None
     due_date: Optional[str]
     is_completed: bool
+    completion_overridden: bool = False
     url: str
 
 class VODResponse(BaseModel):
     id: int
     title: str
+    course_id: Optional[int] = None
     course_name: Optional[str] = None
     start_date: Optional[str]
     end_date: Optional[str]
@@ -216,6 +219,10 @@ class SaveDeckRequest(BaseModel):
     name: str
     vod_moodle_id: int
     cards: List[FlashcardItem]
+
+class AssignmentStatusUpdateRequest(BaseModel):
+    is_completed: bool
+    lock_override: bool = True
 
 class FlashcardDeckResponse(BaseModel):
     id: int
@@ -590,7 +597,44 @@ def get_assignments(course_id: int, user: User = Depends(get_current_user), db: 
     if not course: raise HTTPException(404, "Course not found")
     assigns = db.query(Assignment).filter(Assignment.course_id == course_id).all()
     # Use moodle_id as the exposed id
-    return [{"id": a.moodle_id, "title": a.title, "due_date": a.due_date, "is_completed": a.is_completed, "url": a.url, "course_name": course.name} for a in assigns]
+    return [{"id": a.moodle_id, "title": a.title, "due_date": a.due_date, "is_completed": a.is_completed, "completion_overridden": bool(a.completion_overridden), "url": a.url, "course_name": course.name} for a in assigns]
+
+@app.put("/courses/{course_id}/assignments/{assignment_id}/status")
+def update_assignment_status(
+    course_id: int,
+    assignment_id: int,
+    req: AssignmentStatusUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
+    if not course:
+        raise HTTPException(404, "Course not found")
+
+    assignment = (
+        db.query(Assignment)
+        .filter(Assignment.course_id == course.id, Assignment.moodle_id == assignment_id)
+        .first()
+    )
+    if not assignment:
+        raise HTTPException(404, "Assignment not found")
+
+    assignment.is_completed = req.is_completed
+    assignment.completion_overridden = req.lock_override
+    db.commit()
+
+    return {
+        "status": "success",
+        "assignment": {
+            "id": assignment.moodle_id,
+            "course_id": course.id,
+            "title": assignment.title,
+            "due_date": assignment.due_date,
+            "is_completed": assignment.is_completed,
+            "completion_overridden": bool(assignment.completion_overridden),
+            "url": assignment.url,
+        },
+    }
 
 @app.get("/courses/{course_id}/vods", response_model=List[VODResponse])
 def get_vods(course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -1094,8 +1138,8 @@ def get_dashboard_overview(user: User = Depends(get_current_user), db: Session =
     missed.sort(key=lambda x: parse_date(x.due_date) or datetime.min, reverse=True)
     
     # Updated mapping to use moodle_id
-    def map_assign(l): return [{"id": a.moodle_id, "title": a.title, "course_name": a.course.name, "due_date": a.due_date, "is_completed": a.is_completed, "url": a.url} for a in l]
-    def map_vod(l): return [{"id": v.moodle_id, "title": v.title, "course_name": v.course.name, "start_date": v.start_date, "end_date": v.end_date, "is_completed": v.is_completed, "url": v.url} for v in l]
+    def map_assign(l): return [{"id": a.moodle_id, "title": a.title, "course_id": a.course.id, "course_name": a.course.name, "due_date": a.due_date, "is_completed": a.is_completed, "url": a.url} for a in l]
+    def map_vod(l): return [{"id": v.moodle_id, "title": v.title, "course_id": v.course.id, "course_name": v.course.name, "start_date": v.start_date, "end_date": v.end_date, "is_completed": v.is_completed, "url": v.url} for v in l]
 
     one_week_later = now + timedelta(days=7)
     assignments_this_week = [a for a in upcoming if parse_date(a.due_date) and parse_date(a.due_date) <= one_week_later]
