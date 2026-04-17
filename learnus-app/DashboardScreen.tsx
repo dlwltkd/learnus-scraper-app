@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { Swipeable, RectButton } from 'react-native-gesture-handler';
 
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -577,31 +578,38 @@ const DashboardScreen = () => {
 
     const getAssignmentKey = (item: any) => `${item.course_id ?? 'unknown'}:${item.id}`;
 
-    const applyAssignmentCompletedToDashboardData = (prev: any, item: any) => {
+    const applyAssignmentStatusToDashboardData = (prev: any, item: any, nextCompleted: boolean) => {
         if (!prev) return prev;
 
+        const matched = (a: any) => a.id === item.id && a.course_id === item.course_id;
+        const wasUpcomingPending = (prev.upcoming_assignments ?? []).some((a: any) => matched(a) && !a.is_completed);
+        const wasUpcomingCompleted = (prev.upcoming_assignments ?? []).some((a: any) => matched(a) && !!a.is_completed);
+        const wasMissed = (prev.missed_assignments ?? []).some((a: any) => matched(a));
+
         const updatedUpcoming = (prev.upcoming_assignments ?? []).map((a: any) =>
-            a.id === item.id && a.course_id === item.course_id
-                ? { ...a, is_completed: true, completion_overridden: true }
+            matched(a)
+                ? { ...a, is_completed: nextCompleted, completion_overridden: true }
                 : a
         );
-        const wasUpcomingUpdated = (prev.upcoming_assignments ?? []).some(
-            (a: any) => a.id === item.id && a.course_id === item.course_id && !a.is_completed
-        );
 
-        const updatedMissed = (prev.missed_assignments ?? []).filter(
-            (a: any) => !(a.id === item.id && a.course_id === item.course_id)
-        );
-        const wasMissedRemoved = (prev.missed_assignments ?? []).length !== updatedMissed.length;
+        const updatedMissed = nextCompleted
+            ? (prev.missed_assignments ?? []).filter((a: any) => !matched(a))
+            : (prev.missed_assignments ?? []);
 
         const nextStats = { ...(prev.stats ?? {}) };
-        if (wasUpcomingUpdated) {
+        if (nextCompleted && wasUpcomingPending) {
             nextStats.completed_assignments_due = Math.min(
                 (nextStats.total_assignments_due ?? 0),
                 (nextStats.completed_assignments_due ?? 0) + 1,
             );
         }
-        if (wasMissedRemoved) {
+        if (!nextCompleted && wasUpcomingCompleted) {
+            nextStats.completed_assignments_due = Math.max(
+                0,
+                (nextStats.completed_assignments_due ?? 0) - 1,
+            );
+        }
+        if (nextCompleted && wasMissed) {
             nextStats.missed_assignments_count = Math.max(
                 0,
                 (nextStats.missed_assignments_count ?? 0) - 1,
@@ -616,7 +624,7 @@ const DashboardScreen = () => {
         };
     };
 
-    const handleMarkAssignmentComplete = async (item: any) => {
+    const handleSetAssignmentStatus = async (item: any, nextCompleted: boolean) => {
         if (!item?.course_id) {
             showError('완료 처리 실패', '과제 정보를 찾을 수 없어요. 새로고침 후 다시 시도해주세요.');
             return;
@@ -629,15 +637,21 @@ const DashboardScreen = () => {
         setAssignmentUpdating(prev => ({ ...prev, [itemKey]: true }));
         setData((prev: any) => {
             rollbackSnapshot = prev;
-            return applyAssignmentCompletedToDashboardData(prev, item);
+            return applyAssignmentStatusToDashboardData(prev, item, nextCompleted);
         });
 
         try {
-            await updateAssignmentStatus(item.course_id, item.id, true, true);
-            showSuccess('완료 처리됨', '수동 완료로 저장되어 동기화 후에도 유지됩니다.');
+            await updateAssignmentStatus(item.course_id, item.id, nextCompleted, true);
+            showSuccess(
+                nextCompleted ? '완료 처리됨' : '미완료로 변경됨',
+                '수동 상태로 저장되어 동기화 후에도 유지됩니다.',
+            );
         } catch (e) {
             setData(rollbackSnapshot);
-            showError('완료 처리 실패', '네트워크 상태를 확인하고 다시 시도해주세요.');
+            showError(
+                nextCompleted ? '완료 처리 실패' : '미완료 변경 실패',
+                '네트워크 상태를 확인하고 다시 시도해주세요.',
+            );
         } finally {
             setAssignmentUpdating(prev => ({ ...prev, [itemKey]: false }));
         }
@@ -881,38 +895,45 @@ const DashboardScreen = () => {
                             isCollapsed={collapsedSections.missedAssignments}
                             onToggle={() => toggleSection('missedAssignments')}
                         />
+                        {!collapsedSections.missedAssignments && (
+                            <Text style={styles.swipeHint}>좌우로 밀어서 완료/되돌리기</Text>
+                        )}
                         {!collapsedSections.missedAssignments &&
                             [...data.missed_assignments].sort((a: any, b: any) => (a.due_date ? new Date(a.due_date).getTime() : Infinity) - (b.due_date ? new Date(b.due_date).getTime() : Infinity)).map((item: any) => {
                                 const itemKey = getAssignmentKey(item);
                                 const isUpdating = !!assignmentUpdating[itemKey];
                                 return (
-                                <ItemRow
-                                    key={item.id}
-                                    title={item.title}
-                                    courseName={item.course_name}
-                                    meta={item.due_date ? `${item.due_date} 마감` : undefined}
-                                    state="missed"
-                                    type="assignment"
-                                    rightAction={
-                                        item.course_id ? (
-                                            <TouchableOpacity
-                                                style={[styles.completeButton, isUpdating && styles.completeButtonDisabled]}
-                                                onPress={() => handleMarkAssignmentComplete(item)}
-                                                activeOpacity={0.75}
-                                                disabled={isUpdating}
+                                    <Swipeable
+                                        key={item.id}
+                                        friction={2}
+                                        leftThreshold={60}
+                                        overshootLeft={false}
+                                        overshootRight={false}
+                                        enabled={!!item.course_id && !isUpdating}
+                                        renderLeftActions={() => (
+                                            <RectButton
+                                                style={[styles.swipeAction, styles.swipeActionComplete]}
+                                                onPress={() => handleSetAssignmentStatus(item, true)}
                                             >
                                                 {isUpdating ? (
-                                                    <ActivityIndicator size="small" color={colors.success} />
+                                                    <ActivityIndicator size="small" color={colors.textInverse} />
                                                 ) : (
                                                     <>
-                                                        <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
-                                                        <Text style={styles.completeButtonText}>완료</Text>
+                                                        <Ionicons name="checkmark-done-outline" size={18} color={colors.textInverse} />
+                                                        <Text style={styles.swipeActionText}>완료</Text>
                                                     </>
                                                 )}
-                                            </TouchableOpacity>
-                                        ) : undefined
-                                    }
-                                />
+                                            </RectButton>
+                                        )}
+                                    >
+                                        <ItemRow
+                                            title={item.title}
+                                            courseName={item.course_name}
+                                            meta={item.due_date ? `${item.due_date} 마감` : undefined}
+                                            state="missed"
+                                            type="assignment"
+                                        />
+                                    </Swipeable>
                                 );
                             })}
                     </View>
@@ -926,37 +947,62 @@ const DashboardScreen = () => {
                             icon="calendar"
                             iconColor={colors.primary}
                         />
+                        <Text style={styles.swipeHint}>좌우로 밀어서 완료/되돌리기</Text>
                         {[...data.upcoming_assignments].sort((a: any, b: any) => (a.due_date ? new Date(a.due_date).getTime() : Infinity) - (b.due_date ? new Date(b.due_date).getTime() : Infinity)).map((item: any) => {
                             const itemKey = getAssignmentKey(item);
                             const isUpdating = !!assignmentUpdating[itemKey];
                             return (
-                            <ItemRow
-                                key={item.id}
-                                title={item.title}
-                                courseName={item.course_name}
-                                meta={item.due_date ? `${item.due_date} 마감` : undefined}
-                                state={item.is_completed ? 'completed' : 'pending'}
-                                type="assignment"
-                                rightAction={
-                                    !item.is_completed && item.course_id ? (
-                                        <TouchableOpacity
-                                            style={[styles.completeButton, isUpdating && styles.completeButtonDisabled]}
-                                            onPress={() => handleMarkAssignmentComplete(item)}
-                                            activeOpacity={0.75}
-                                            disabled={isUpdating}
-                                        >
-                                            {isUpdating ? (
-                                                <ActivityIndicator size="small" color={colors.success} />
-                                            ) : (
-                                                <>
-                                                    <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
-                                                    <Text style={styles.completeButtonText}>완료</Text>
-                                                </>
-                                            )}
-                                        </TouchableOpacity>
-                                    ) : undefined
-                                }
-                            />
+                                <Swipeable
+                                    key={item.id}
+                                    friction={2}
+                                    leftThreshold={60}
+                                    rightThreshold={80}
+                                    overshootLeft={false}
+                                    overshootRight={false}
+                                    enabled={!!item.course_id && !isUpdating}
+                                    renderLeftActions={() => (
+                                        !item.is_completed ? (
+                                            <RectButton
+                                                style={[styles.swipeAction, styles.swipeActionComplete]}
+                                                onPress={() => handleSetAssignmentStatus(item, true)}
+                                            >
+                                                {isUpdating ? (
+                                                    <ActivityIndicator size="small" color={colors.textInverse} />
+                                                ) : (
+                                                    <>
+                                                        <Ionicons name="checkmark-done-outline" size={18} color={colors.textInverse} />
+                                                        <Text style={styles.swipeActionText}>완료</Text>
+                                                    </>
+                                                )}
+                                            </RectButton>
+                                        ) : <View />
+                                    )}
+                                    renderRightActions={() => (
+                                        item.is_completed ? (
+                                            <RectButton
+                                                style={[styles.swipeAction, styles.swipeActionUndo]}
+                                                onPress={() => handleSetAssignmentStatus(item, false)}
+                                            >
+                                                {isUpdating ? (
+                                                    <ActivityIndicator size="small" color={colors.textInverse} />
+                                                ) : (
+                                                    <>
+                                                        <Ionicons name="refresh-outline" size={18} color={colors.textInverse} />
+                                                        <Text style={styles.swipeActionText}>되돌리기</Text>
+                                                    </>
+                                                )}
+                                            </RectButton>
+                                        ) : <View />
+                                    )}
+                                >
+                                    <ItemRow
+                                        title={item.title}
+                                        courseName={item.course_name}
+                                        meta={item.due_date ? `${item.due_date} 마감` : undefined}
+                                        state={item.is_completed ? 'completed' : 'pending'}
+                                        type="assignment"
+                                    />
+                                </Swipeable>
                             );
                         })}
                     </View>
@@ -1479,41 +1525,30 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         ...typography.body2,
         marginLeft: Spacing.s,
     },
+    swipeHint: {
+        ...typography.caption,
+        color: colors.textTertiary,
+        marginBottom: Spacing.s,
+        marginTop: -Spacing.xs,
+    },
     swipeAction: {
-        backgroundColor: colors.success,
         justifyContent: 'center',
         alignItems: 'center',
-        width: 80,
+        width: 76,
         marginBottom: Spacing.s,
-        borderRadius: layout.borderRadius.l,
-        marginLeft: -layout.borderRadius.l,
+        borderRadius: layout.borderRadius.m,
+    },
+    swipeActionComplete: {
+        backgroundColor: colors.success,
+    },
+    swipeActionUndo: {
+        backgroundColor: colors.warning,
     },
     swipeActionText: {
         color: colors.textInverse,
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '600',
-        marginTop: 2,
-    },
-    completeButton: {
-        minWidth: 64,
-        height: 32,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: colors.success,
-        backgroundColor: colors.successLight,
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexDirection: 'row',
-        gap: 4,
-        paddingHorizontal: 8,
-    },
-    completeButtonDisabled: {
-        opacity: 0.65,
-    },
-    completeButtonText: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: colors.success,
+        marginTop: 1,
     },
 
     // Empty State
