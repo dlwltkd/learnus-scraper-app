@@ -863,7 +863,10 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
 
     # Get stream URL now (requires active Moodle session)
     client = get_moodle_client(user)
-    m3u8_url = client.get_vod_stream_url(vod_moodle_id)
+    if not client.is_session_valid():
+        logger.warning(f"Transcribe denied due to expired Moodle session user_id={user.id} vod={vod_moodle_id}")
+        raise HTTPException(401, "Moodle session expired. Please re-login.")
+    m3u8_url = client.get_vod_stream_url(vod_moodle_id, viewer_url=vod.url)
     if not m3u8_url:
         logger.error(f"Transcribe stream URL not found user_id={user.id} vod={vod_moodle_id}")
         raise HTTPException(502, "Could not find stream URL for this VOD")

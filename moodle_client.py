@@ -4,6 +4,7 @@ import logging
 import re
 import time
 import html as html_lib
+from urllib.parse import urljoin
 from datetime import datetime
 
 class MoodleClient:
@@ -526,13 +527,38 @@ class MoodleClient:
         viewer_url = viewer_url or f"{self.base_url}/mod/vod/viewer.php?id={vod_moodle_id}"
         self.logger.info(f"Fetching VOD viewer for stream URL: {viewer_url}")
         try:
-            response = self.session.get(viewer_url, timeout=15)
+            response = self.session.get(viewer_url, timeout=15, allow_redirects=True)
             response.raise_for_status()
-            match = re.search(r'<source[^>]+src="([^"]+\.m3u8)"', response.text)
-            if match:
-                url = match.group(1)
+            html = response.text
+
+            if "login" in str(response.url) or "login/index.php" in html:
+                self.logger.warning(
+                    f"Viewer request appears unauthenticated for VOD {vod_moodle_id} (final_url={response.url})"
+                )
+                return None
+
+            patterns = [
+                r'<source[^>]+src=["\']([^"\']+\.m3u8(?:\?[^"\']*)?)["\']',
+                r'["\']file["\']\s*:\s*["\']([^"\']+\.m3u8(?:\?[^"\']*)?)["\']',
+                r'["\']src["\']\s*:\s*["\']([^"\']+\.m3u8(?:\?[^"\']*)?)["\']',
+                r'(https?:\\?/\\?/[^"\']+\.m3u8(?:\?[^"\']*)?)',
+                r'(/[^"\']+\.m3u8(?:\?[^"\']*)?)',
+            ]
+
+            for pattern in patterns:
+                match = re.search(pattern, html, re.IGNORECASE)
+                if not match:
+                    continue
+                url = html_lib.unescape(match.group(1)).replace(r"\/", "/").strip()
+                if url.startswith("//"):
+                    url = "https:" + url
+                elif url.startswith("/"):
+                    url = urljoin(str(response.url), url)
+                elif not re.match(r"^https?://", url, re.IGNORECASE):
+                    url = urljoin(str(response.url), url)
                 self.logger.info(f"Found .m3u8 URL: {url}")
                 return url
+
             self.logger.warning(f"No .m3u8 found in viewer page for VOD {vod_moodle_id}")
             return None
         except Exception as e:
