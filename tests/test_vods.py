@@ -112,6 +112,63 @@ def test_get_transcribe_status_failed(client, test_user, auth_headers, db):
     assert transcript_resp.json()["error_message"] == "boom"
 
 
+def test_transcribe_vod_accepts_manual_media_url(client, test_user, auth_headers, db):
+    course = Course(moodle_id=100, owner_id=test_user.id, name="Test", is_active=True)
+    db.add(course)
+    db.commit()
+    db.refresh(course)
+
+    vod = VOD(
+        moodle_id=504, course_id=course.id, title="Manual VOD",
+        is_completed=False, has_tracking=True, url="http://example.com/v",
+    )
+    db.add(vod)
+    db.commit()
+
+    resp = client.post(
+        "/vods/504/transcribe",
+        headers=auth_headers,
+        json={"media_url": "https://cdn.example.com/lecture.m3u8?token=secret"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "processing"
+
+    row = db.query(VodTranscript).filter(VodTranscript.moodle_id == 504).first()
+    assert row is not None
+    assert row.status == "queued"
+    assert row.is_processing is True
+
+    job = db.query(Job).filter(Job.type == "transcribe").first()
+    assert job is not None
+    assert job.payload["vod_moodle_id"] == 504
+    assert job.payload["m3u8_url"] == "https://cdn.example.com/lecture.m3u8?token=secret"
+
+
+def test_transcribe_vod_rejects_manual_non_http_url(client, test_user, auth_headers, db):
+    course = Course(moodle_id=100, owner_id=test_user.id, name="Test", is_active=True)
+    db.add(course)
+    db.commit()
+    db.refresh(course)
+
+    vod = VOD(
+        moodle_id=505, course_id=course.id, title="Manual VOD",
+        is_completed=False, has_tracking=True, url="http://example.com/v",
+    )
+    db.add(vod)
+    db.commit()
+
+    resp = client.post(
+        "/vods/505/transcribe",
+        headers=auth_headers,
+        json={"media_url": "file:///tmp/lecture.mp4"},
+    )
+
+    assert resp.status_code == 400
+    assert "media_url" in resp.json()["detail"]
+    assert db.query(Job).filter(Job.type == "transcribe").count() == 0
+
+
 def test_get_transcript_wrong_user(client, test_user, auth_headers, db):
     """VOD owned by another user should return 404."""
     from database import User

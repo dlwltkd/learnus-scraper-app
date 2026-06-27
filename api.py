@@ -204,6 +204,9 @@ class PreferencesRequest(BaseModel):
 class ChatRequest(BaseModel):
     messages: list  # [{role: "user"|"assistant", content: str}, ...]
 
+class ManualTranscribeRequest(BaseModel):
+    media_url: Optional[str] = None
+
 class LoginDebugReportRequest(BaseModel):
     device_info: Optional[str] = None
     logs: list
@@ -809,7 +812,7 @@ def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user
     return {"status": "not_found"}
 
 @app.post("/vods/{vod_moodle_id}/transcribe")
-def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def transcribe_vod(request: Request, vod_moodle_id: int, req: Optional[ManualTranscribeRequest] = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     logger.info(f"Transcribe request user={user.username} user_id={user.id} vod={vod_moodle_id}")
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
@@ -861,17 +864,25 @@ def transcribe_vod(request: Request, vod_moodle_id: int, user: User = Depends(ge
     else:
         logger.info(f"Transcribe limit bypass enabled for user {user.username} (vod={vod_moodle_id})")
 
-    # Get stream URL now (requires active Moodle session)
-    client = get_moodle_client(user)
-    if not client.is_session_valid():
-        logger.warning(f"Transcribe denied due to expired Moodle session user_id={user.id} vod={vod_moodle_id}")
-        raise HTTPException(401, "Moodle session expired. Please re-login.")
-    m3u8_url = client.get_vod_stream_url(vod_moodle_id, viewer_url=vod.url)
-    if not m3u8_url:
-        logger.error(f"Transcribe stream URL not found user_id={user.id} vod={vod_moodle_id}")
-        raise HTTPException(502, "Could not find stream URL for this VOD")
-    safe_source = m3u8_url.split("?", 1)[0]
-    logger.info(f"Transcribe stream resolved user_id={user.id} vod={vod_moodle_id} source={safe_source}")
+    manual_media_url = (req.media_url.strip() if req and req.media_url else "")
+    if manual_media_url:
+        if not manual_media_url.lower().startswith(("http://", "https://")):
+            raise HTTPException(400, "media_url must be an http(s) URL")
+        m3u8_url = manual_media_url
+        safe_source = m3u8_url.split("?", 1)[0]
+        logger.info(f"Transcribe manual media URL accepted user_id={user.id} vod={vod_moodle_id} source={safe_source}")
+    else:
+        # Get stream URL now (requires active Moodle session)
+        client = get_moodle_client(user)
+        if not client.is_session_valid():
+            logger.warning(f"Transcribe denied due to expired Moodle session user_id={user.id} vod={vod_moodle_id}")
+            raise HTTPException(401, "Moodle session expired. Please re-login.")
+        m3u8_url = client.get_vod_stream_url(vod_moodle_id, viewer_url=vod.url)
+        if not m3u8_url:
+            logger.error(f"Transcribe stream URL not found user_id={user.id} vod={vod_moodle_id}")
+            raise HTTPException(502, "Could not find stream URL for this VOD")
+        safe_source = m3u8_url.split("?", 1)[0]
+        logger.info(f"Transcribe stream resolved user_id={user.id} vod={vod_moodle_id} source={safe_source}")
 
     vod_title = vod.title
     course_obj = db.query(Course).filter(Course.id == vod.course_id).first()
