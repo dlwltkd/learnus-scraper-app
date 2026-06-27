@@ -40,6 +40,10 @@ class User(Base):
     # Transcription rate limiting
     transcribe_count_today = Column(Integer, default=0)
     transcribe_count_date = Column(String, nullable=True)
+
+    # Hidden lab settings
+    labs_unlocked = Column(Boolean, default=False)
+    auto_watch_enabled = Column(Boolean, default=False)
     
     courses = relationship("Course", back_populates="owner", cascade="all, delete-orphan")
     push_tokens = relationship("PushToken", back_populates="owner", cascade="all, delete-orphan")
@@ -338,6 +342,18 @@ def init_db(db_url=None):
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN transcribe_count_today INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE users ADD COLUMN transcribe_count_date TEXT"))
+            conn.commit()
+
+    # Migration: add hidden lab settings to users. Existing and new users default off.
+    user_cols = [col['name'] for col in sa_inspect(engine).get_columns('users')]
+    if 'labs_unlocked' not in user_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN labs_unlocked BOOLEAN DEFAULT FALSE"))
+            conn.commit()
+    user_cols = [col['name'] for col in sa_inspect(engine).get_columns('users')]
+    if 'auto_watch_enabled' not in user_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN auto_watch_enabled BOOLEAN DEFAULT FALSE"))
             conn.commit()
 
     # Migration: create ai_usage_logs table

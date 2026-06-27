@@ -23,6 +23,7 @@ import { useAuth } from './context/AuthContext';
 import { useUser } from './context/UserContext';
 import { useToast } from './context/ToastContext';
 import { useTour, resetTour } from './context/TourContext';
+import { useLabs } from './context/LabsContext';
 import { ScreenHeader } from './components/Header';
 
 // ============================================
@@ -138,6 +139,7 @@ export default function SettingsScreen() {
     const { profile } = useUser();
     const { showConfirm, showInfo, showSuccess } = useToast();
     const { startTour } = useTour();
+    const { labsUnlocked, autoWatchEnabled } = useLabs();
     const [showThemeModal, setShowThemeModal] = useState(false);
 
     const handleReplayTour = async () => {
@@ -293,6 +295,20 @@ export default function SettingsScreen() {
                         isLast
                     />
                 </SettingSection>
+
+                {labsUnlocked && (
+                    <SettingSection title="실험실">
+                        <SettingItem
+                            icon="flask-outline"
+                            iconColor={colors.warning}
+                            title="개잘자 옵션"
+                            subtitle={autoWatchEnabled ? '자동 시청 켜짐' : '자동 시청 꺼짐'}
+                            onPress={() => (navigation as any).navigate('Labs')}
+                            isFirst
+                            isLast
+                        />
+                    </SettingSection>
+                )}
 
                 {/* Support Section */}
                 <SettingSection title="지원">

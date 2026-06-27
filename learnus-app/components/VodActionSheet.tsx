@@ -12,11 +12,12 @@ interface VodActionSheetProps {
     onTranscribe: () => void;
     onAutoWatch: () => void;
     onClose: () => void;
+    showAutoWatch?: boolean;
     tourRef?: React.RefObject<any>;
     tourActive?: boolean;
 }
 
-export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatch, onClose, tourRef, tourActive }: VodActionSheetProps) {
+export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatch, onClose, showAutoWatch = false, tourRef, tourActive }: VodActionSheetProps) {
     const { colors, typography, layout, isDark } = useTheme();
     const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
 
@@ -75,16 +76,18 @@ export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatc
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.action, item.is_completed && styles.actionDisabled]} onPress={onAutoWatch} activeOpacity={0.7}>
-                <View style={[styles.actionIcon, { backgroundColor: item.is_completed ? colors.surfaceAlt : colors.successLight }]}>
-                    <Ionicons name="checkmark-circle-outline" size={22} color={item.is_completed ? colors.textTertiary : colors.success} />
-                </View>
-                <View style={styles.actionText}>
-                    <Text style={[styles.actionLabel, item.is_completed && { color: colors.textTertiary }]}>자동 시청</Text>
-                    <Text style={styles.actionSub}>{item.is_completed ? '이미 시청 완료된 강의예요' : '백그라운드에서 자동으로 시청'}</Text>
-                </View>
-                {!item.is_completed && <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />}
-            </TouchableOpacity>
+            {showAutoWatch && (
+                <TouchableOpacity style={[styles.action, item.is_completed && styles.actionDisabled]} onPress={onAutoWatch} activeOpacity={0.7}>
+                    <View style={[styles.actionIcon, { backgroundColor: item.is_completed ? colors.surfaceAlt : colors.successLight }]}>
+                        <Ionicons name="checkmark-circle-outline" size={22} color={item.is_completed ? colors.textTertiary : colors.success} />
+                    </View>
+                    <View style={styles.actionText}>
+                        <Text style={[styles.actionLabel, item.is_completed && { color: colors.textTertiary }]}>자동 시청</Text>
+                        <Text style={styles.actionSub}>{item.is_completed ? '이미 시청 완료된 강의예요' : '백그라운드에서 자동으로 시청'}</Text>
+                    </View>
+                    {!item.is_completed && <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />}
+                </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.cancelBtn} onPress={dismiss} activeOpacity={0.7}>
                 <Text style={styles.cancelText}>취소</Text>
             </TouchableOpacity>
@@ -113,7 +116,7 @@ export default function VodActionSheet({ item, onWatch, onTranscribe, onAutoWatc
                         <View style={styles.divider} />
                         <View style={styles.action}><View style={styles.actionIcon} /><View style={styles.actionText}><Text style={styles.actionLabel}> </Text><Text style={styles.actionSub}> </Text></View></View>
                         <View style={styles.action}><View style={styles.actionIcon} /><View style={styles.actionText}><Text style={styles.actionLabel}> </Text><Text style={styles.actionSub}> </Text></View></View>
-                        <View style={styles.action}><View style={styles.actionIcon} /><View style={styles.actionText}><Text style={styles.actionLabel}> </Text><Text style={styles.actionSub}> </Text></View></View>
+                        {showAutoWatch && <View style={styles.action}><View style={styles.actionIcon} /><View style={styles.actionText}><Text style={styles.actionLabel}> </Text><Text style={styles.actionSub}> </Text></View></View>}
                     </View>
                 )}
             </View>

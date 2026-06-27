@@ -142,6 +142,26 @@ export const syncAllActiveCourses = async () => {
     return response.data;
 };
 
+export interface LabsSettings {
+    labs_unlocked: boolean;
+    auto_watch_enabled: boolean;
+}
+
+export const getLabsSettings = async (): Promise<LabsSettings> => {
+    const response = await api.get('/settings/labs');
+    return response.data;
+};
+
+export const unlockLabs = async (): Promise<LabsSettings> => {
+    const response = await api.post('/settings/labs/unlock');
+    return response.data;
+};
+
+export const updateLabsSettings = async (autoWatchEnabled: boolean): Promise<LabsSettings> => {
+    const response = await api.put('/settings/labs', { auto_watch_enabled: autoWatchEnabled });
+    return response.data;
+};
+
 export const watchAllVods = async () => {
     const response = await api.post('/vods/watch-all');
     return response.data;

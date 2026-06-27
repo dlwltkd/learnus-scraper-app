@@ -19,6 +19,7 @@ import { useToast } from './context/ToastContext';
 import ItemRow from './components/ItemRow';
 import VodActionSheet from './components/VodActionSheet';
 import VodWebViewer from './components/VodWebViewer';
+import { useLabs } from './context/LabsContext';
 import { useTourRef } from './hooks/useTourRef';
 import { useTour } from './context/TourContext';
 import { TOUR_MOCK_OVERVIEW, FORCE_MOCK_MODE } from './constants/tourMockData';
@@ -62,6 +63,7 @@ const VideoLecturesScreen = () => {
     const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const { showSuccess, showError } = useToast();
     const { notifyInteraction, isActive: tourActive, currentStep } = useTour();
+    const { autoWatchEnabled } = useLabs();
     const navigation = useNavigation<any>();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState<any>(null);
@@ -131,7 +133,9 @@ const VideoLecturesScreen = () => {
             await watchSingleVod(item.id);
             showSuccess('시청 시작', '백그라운드에서 강의를 시청하고 있어요.');
         } catch (e: any) {
-            if (e?.response?.status === 409) {
+            if (e?.response?.status === 403) {
+                showError('비활성화됨', '설정의 개잘자 옵션에서 자동 시청을 켜주세요.');
+            } else if (e?.response?.status === 409) {
                 showError('진행 중', '전체 시청이 이미 실행 중이에요. 완료 후 다시 시도해주세요.');
             } else {
                 showError('오류', '자동 시청을 시작할 수 없어요.');
@@ -177,8 +181,12 @@ const VideoLecturesScreen = () => {
             } else {
                 showSuccess('시청 시작', '백그라운드에서 강의를 시청하고 있어요. 앱을 닫아도 계속 진행됩니다.');
             }
-        } catch (e) {
-            showError('오류', '시청을 시작할 수 없어요. 다시 시도해주세요.');
+        } catch (e: any) {
+            if (e?.response?.status === 403) {
+                showError('비활성화됨', '설정의 개잘자 옵션에서 자동 시청을 켜주세요.');
+            } else {
+                showError('오류', '시청을 시작할 수 없어요. 다시 시도해주세요.');
+            }
         } finally {
             setWatching(false);
         }
@@ -194,7 +202,7 @@ const VideoLecturesScreen = () => {
         <SafeAreaView style={styles.container} edges={['top']}>
             <View style={styles.header}>
                 <Text style={styles.headerTitle} numberOfLines={1}>동영상 강의</Text>
-                {unwatchedCount > 0 && (
+                {autoWatchEnabled && unwatchedCount > 0 && (
                     <View ref={watchAllRef} collapsable={false}>
                     <TouchableOpacity
                         style={[styles.watchAllBtn, watching && { opacity: 0.6 }]}
@@ -370,6 +378,7 @@ const VideoLecturesScreen = () => {
                     onTranscribe={handleTranscribe}
                     onAutoWatch={handleAutoWatch}
                     onClose={() => setActionSheet(null)}
+                    showAutoWatch={autoWatchEnabled}
                     tourRef={actionSheetRef}
                     tourActive={tourActive}
                 />

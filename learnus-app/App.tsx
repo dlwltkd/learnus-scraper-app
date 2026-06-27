@@ -26,6 +26,7 @@ import NotificationHistoryScreen from './NotificationHistoryScreen';
 import VodTranscriptScreen from './VodTranscriptScreen';
 import FlashcardStudyScreen from './FlashcardStudyScreen';
 import FlashcardDeckListScreen from './FlashcardDeckListScreen';
+import LabsScreen from './LabsScreen';
 
 import CustomTabBar from './components/TabBar';
 import { Spacing } from './constants/theme';
@@ -33,6 +34,7 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserProvider } from './context/UserContext';
+import { LabsProvider } from './context/LabsContext';
 import { ToastProvider } from './context/ToastContext';
 import { TourProvider, TourProviderHandle, hasTourCompleted } from './context/TourContext';
 import TourOverlay from './components/TourOverlay';
@@ -391,6 +393,11 @@ function AppContent() {
                 component={FlashcardDeckListScreen}
                 options={{ title: '내 플래시카드' }}
               />
+              <Stack.Screen
+                name="Labs"
+                component={LabsScreen}
+                options={{ title: '개잘자 옵션' }}
+              />
             </>
           )}
         </Stack.Navigator>
@@ -483,9 +490,11 @@ export default function App() {
         <ThemeProvider>
           <ToastProvider>
             <AuthProvider>
-              <UserProvider>
-                <AppContent />
-              </UserProvider>
+              <LabsProvider>
+                <UserProvider>
+                  <AppContent />
+                </UserProvider>
+              </LabsProvider>
             </AuthProvider>
           </ToastProvider>
         </ThemeProvider>

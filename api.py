@@ -227,6 +227,9 @@ class AssignmentStatusUpdateRequest(BaseModel):
     is_completed: bool
     lock_override: bool = True
 
+class LabsSettingsUpdateRequest(BaseModel):
+    auto_watch_enabled: bool
+
 class FlashcardDeckResponse(BaseModel):
     id: int
     name: str
@@ -251,6 +254,16 @@ class DashboardOverviewResponse(BaseModel):
     unchecked_vods: List[VODResponse]
     upcoming_vods: List[VODResponse]
     summary: Optional[str] = None
+
+def _labs_payload(user: User) -> dict:
+    return {
+        "labs_unlocked": bool(user.labs_unlocked),
+        "auto_watch_enabled": bool(user.auto_watch_enabled),
+    }
+
+def _require_auto_watch_enabled(user: User):
+    if not user.auto_watch_enabled:
+        raise HTTPException(status_code=403, detail="Auto watch is disabled")
 
 def parse_date(date_str):
     if not date_str or date_str == 'None': return None
@@ -362,6 +375,30 @@ def update_preferences(req: PreferencesRequest, user: User = Depends(get_current
     db.commit()
     logger.info(f"Updated preferences for {user.username}: {user.notification_preferences}")
     return {"status": "success", "preferences": user.notification_preferences}
+
+@app.get("/settings/labs")
+def get_labs_settings(user: User = Depends(get_current_user)):
+    return _labs_payload(user)
+
+@app.post("/settings/labs/unlock")
+def unlock_labs(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    user.labs_unlocked = True
+    db.commit()
+    db.refresh(user)
+    return _labs_payload(user)
+
+@app.put("/settings/labs")
+def update_labs_settings(
+    req: LabsSettingsUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if not user.labs_unlocked:
+        raise HTTPException(status_code=403, detail="Labs not unlocked")
+    user.auto_watch_enabled = req.auto_watch_enabled
+    db.commit()
+    db.refresh(user)
+    return _labs_payload(user)
 
 # ============================================================
 # Notification History
@@ -1355,6 +1392,7 @@ def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
 
 @app.post("/vods/{vod_moodle_id}/watch")
 def watch_single_vod(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    _require_auto_watch_enabled(user)
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
         raise HTTPException(404, "VOD not found")
@@ -1369,6 +1407,7 @@ def watch_single_vod(vod_moodle_id: int, user: User = Depends(get_current_user),
 @app.post("/vods/watch-all")
 def trigger_watch_all(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Manually trigger background VOD watching for the current user only."""
+    _require_auto_watch_enabled(user)
     # Validate Moodle session before queuing — prevents silent failure
     client = get_moodle_client(user)
     if not client.is_session_valid():

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Spacing } from './constants/theme';
@@ -6,6 +6,8 @@ import type { ColorScheme, TypographyType, LayoutType } from './constants/theme'
 import { useTheme } from './context/ThemeContext';
 import { APP_VERSION } from './constants/version';
 import { Ionicons } from '@expo/vector-icons';
+import { useLabs } from './context/LabsContext';
+import { useToast } from './context/ToastContext';
 
 const SectionHeader = ({ title, styles }: { title: string; styles: ReturnType<typeof createStyles> }) => (
     <Text style={styles.sectionHeader}>{title}</Text>
@@ -50,6 +52,10 @@ const ActionRow = ({ icon, label, onPress, isDestructive = false, isLast = false
 export default function HelpScreen() {
     const { colors, typography, layout, isDark } = useTheme();
     const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+    const { labsUnlocked, unlockLabs } = useLabs();
+    const { showSuccess, showInfo, showError } = useToast();
+    const tapCountRef = useRef(0);
+    const lastTapRef = useRef(0);
 
     const handleContact = () => {
         Linking.openURL('mailto:dlwltkd@yonsei.ac.kr').catch(() => { });
@@ -59,15 +65,35 @@ export default function HelpScreen() {
         Linking.openURL('https://github.com/dlwltkd/learnus-scraper-app').catch(() => { });
     };
 
+    const handleLogoPress = async () => {
+        if (labsUnlocked) {
+            showInfo('실험실', '이미 실험실 기능이 활성화되어 있습니다.');
+            return;
+        }
+        const now = Date.now();
+        tapCountRef.current = now - lastTapRef.current > 2000 ? 1 : tapCountRef.current + 1;
+        lastTapRef.current = now;
+
+        if (tapCountRef.current < 5) return;
+
+        tapCountRef.current = 0;
+        try {
+            await unlockLabs();
+            showSuccess('실험실 활성화', '설정에서 개잘자 옵션을 확인할 수 있어요.');
+        } catch (e) {
+            showError('오류', '실험실 기능을 활성화할 수 없어요.');
+        }
+    };
+
     return (
         <SafeAreaView style={styles.container} edges={['bottom']}>
             <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
                 {/* Hero / Header */}
                 <View style={styles.hero}>
-                    <View style={styles.logoBadge}>
+                    <TouchableOpacity style={styles.logoBadge} onPress={handleLogoPress} activeOpacity={0.85}>
                         <Ionicons name="school" size={40} color="white" />
-                    </View>
+                    </TouchableOpacity>
                     <Text style={styles.appName}>LearnUs Connect</Text>
                     <Text style={styles.version}>Version {APP_VERSION} (Beta)</Text>
                 </View>
