@@ -70,7 +70,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         content={"detail": "요청이 너무 많아요. 잠시 후 다시 시도해주세요."},
     )
 
-ENABLE_DEBUG = os.getenv("ENABLE_DEBUG", "false").lower() == "true"
+ENABLE_DEBUG = os.getenv("ENABLE_DEBUG", "false").lower() == "true" 
 
 
 FORCE_UPDATE_MIN_VERSION = "0.4.1"
