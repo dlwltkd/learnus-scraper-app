@@ -480,6 +480,7 @@ def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
     logger.info(f"Parsed cookie keys: {list(cookies.keys())}")
     moodle_session = cookies.get('MoodleSession', '')
     logger.info(f"MoodleSession value (first 20 chars): {moodle_session[:20]!r}")
+    logger.info(f"Session sync request user_id={req.user_id!r}")
 
     client = MoodleClient("https://ys.learnus.org", cookies=cookies)
 

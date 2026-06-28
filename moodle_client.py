@@ -127,11 +127,28 @@ class MoodleClient:
         try:
             url = f"{self.base_url}/grade/report/overview/index.php"
             res = self.session.get(url, timeout=10)
+            self.logger.info(
+                "Grade report scrape URL: %s (Status: %s, Content-Type: %s, Length: %s)",
+                res.url,
+                res.status_code,
+                res.headers.get("content-type", ""),
+                len(res.text or ""),
+            )
             if res.status_code == 200:
+                self.logger.info(
+                    "Grade report markers: course_user=%s user_param=%s login=%s",
+                    "course/user.php" in res.text,
+                    "user=" in res.text,
+                    "login" in res.url.lower() or "login" in res.text[:2000].lower(),
+                )
                 match = re.search(r'href="[^"]*course/user\.php\?.*?user=(\d+)', res.text)
                 if match:
                     self.logger.info(f"Found UserID via Grade Report: {match.group(1)}")
                     return int(match.group(1))
+                self.logger.warning("Grade report loaded but no course/user.php user id matched")
+                self.logger.info(f"Grade report HTML prefix: {(res.text or '')[:1200]!r}")
+            else:
+                self.logger.warning(f"Grade report returned non-200 status: {res.status_code}")
         except Exception as e:
             self.logger.warning(f"Strategy 0 (Grade Report) failed: {e}")
 
