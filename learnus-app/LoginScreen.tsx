@@ -9,6 +9,7 @@ import {
     TouchableOpacity,
     ActivityIndicator,
     Modal,
+    TextInput,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,6 +18,7 @@ import CookieManager from '@react-native-cookies/cookies';
 import * as Device from 'expo-device';
 
 import { loginWithCookies } from './services/api';
+import { DEMO_TOKEN, isDemoCredentials } from './services/demoMode';
 import { Spacing, Animation } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
 import { useTheme } from './context/ThemeContext';
@@ -28,6 +30,28 @@ interface LoginScreenProps {
     onAutoLogoutComplete?: () => void;
 }
 
+// LearnUs URL predicates. Kept together because these strings drift: the login form is
+// served from /login.php (no trailing slash) while the app opens /login/index.php, and the
+// logout chain never touches /login/ at all. Scattered url.includes() checks let those
+// differences hide.
+const isLoginUrl = (url: string) =>
+    url.includes('/login/index.php') || url.includes('/login/') || url.includes('/login.php');
+
+const isSSOCredentialsUrl = (url: string) => url.includes('infra.yonsei.ac.kr/sso');
+
+// Entry point of a fresh SSO attempt — credentials have not been submitted yet.
+const isSSOEntryUrl = (url: string) => url.includes('spLogin2.php');
+
+// Observed logout chain: spLogout.php -> PmSLOService -> spLogoutProcess.php
+const isLogoutUrl = (url: string) =>
+    url.includes('/login/logout.php') ||
+    url.includes('spLogout.php') ||
+    url.includes('spLogoutProcess.php') ||
+    url.includes('PmSLOService');
+
+// How long the "로그인 중" overlay may stay up before we assume the flow is wedged.
+const AUTH_OVERLAY_TIMEOUT_MS = 30000;
+
 export default function LoginScreen({
     onLoginSuccess,
     autoLogout,
@@ -38,6 +62,24 @@ export default function LoginScreen({
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const isLoggingOutRef = useRef(false);
     const [isAuthenticating, setIsAuthenticating] = useState(false);
+    const [authError, setAuthError] = useState<string | null>(null);
+
+    // Manual demo login (Google Play review) — hidden behind a long-press on the logo.
+    const [showDemoLogin, setShowDemoLogin] = useState(false);
+    const [demoUsername, setDemoUsername] = useState('');
+    const [demoPassword, setDemoPassword] = useState('');
+    const [demoError, setDemoError] = useState<string | null>(null);
+
+    const submitDemoLogin = async () => {
+        if (!isDemoCredentials(demoUsername, demoPassword)) {
+            setDemoError('아이디 또는 비밀번호가 올바르지 않습니다.');
+            return;
+        }
+        setDemoError(null);
+        setShowDemoLogin(false);
+        // Runs entirely on local mock data — no request is made.
+        await onLoginSuccess(DEMO_TOKEN);
+    };
 
     // WebView State
     const [url, setUrl] = useState('https://ys.learnus.org/login/index.php');
@@ -46,6 +88,11 @@ export default function LoginScreen({
     const currentUrlRef = useRef('https://ys.learnus.org/login/index.php');
     const wasOnLoginPage = useRef(false);
     const pendingCookieString = useRef<string | null>(null);
+    // Set once a logout is observed, cleared only when the user starts a new login attempt.
+    // The logout chain lands on https://ys.learnus.org/, which is indistinguishable from a
+    // successful login by URL alone — without this we can re-harvest cookies and undo the
+    // logout as soon as the isLoggingOut timer lapses.
+    const loggedOutAwaitingLogin = useRef(false);
 
     // Debug logging
     const debugLogsRef = useRef<Array<{timestamp: string; event: string; url?: string; cookies?: string; data?: any}>>([]);
@@ -123,8 +170,21 @@ export default function LoginScreen({
         if (isAuthenticating) {
             setShowDebugLink(false);
             setDebugSent(false);
+            setAuthError(null);
             const timer = setTimeout(() => setShowDebugLink(true), 15000);
-            return () => clearTimeout(timer);
+            // The overlay used to have no exit: if the WebView landed anywhere we don't
+            // recognise (LearnUs' "already logged in" confirm page, an unreachable server),
+            // it spun forever. Release it and tell the user what happened.
+            const failTimer = setTimeout(() => {
+                addDebugLog('auth_timeout', { url: currentUrlRef.current });
+                setIsAuthenticating(false);
+                wasOnLoginPage.current = false;
+                setAuthError('로그인을 완료하지 못했습니다. 아래 화면에서 다시 시도해 주세요.');
+            }, AUTH_OVERLAY_TIMEOUT_MS);
+            return () => {
+                clearTimeout(timer);
+                clearTimeout(failTimer);
+            };
         } else {
             setShowDebugLink(false);
         }
@@ -175,8 +235,22 @@ export default function LoginScreen({
         currentUrlRef.current = url;
         addDebugLog('nav', { url });
 
-        const isLoginPage = url.includes('/login/index.php') || url.includes('/login/');
-        const isSSOCredentialsPage = url.includes('infra.yonsei.ac.kr/sso');
+        const isLoginPage = isLoginUrl(url);
+        const isSSOCredentialsPage = isSSOCredentialsUrl(url);
+        const isSSOEntryPage = isSSOEntryUrl(url);
+        const isLogoutPage = isLogoutUrl(url);
+
+        // Starting a new login attempt clears any stale flag from a previous session.
+        if (isSSOEntryPage || isLogoutPage) {
+            wasOnLoginPage.current = false;
+        }
+        if (isLogoutPage) {
+            loggedOutAwaitingLogin.current = true;
+        }
+        // A deliberate new attempt (Portal/External Login) re-arms cookie capture.
+        if (isSSOEntryPage || isSSOCredentialsPage) {
+            loggedOutAwaitingLogin.current = false;
+        }
 
         // Track if user is on SSO credentials page
         if (isSSOCredentialsPage) {
@@ -186,6 +260,7 @@ export default function LoginScreen({
         // Detect when user leaves SSO credentials page (clicked "log on")
         // They'll be redirected to learnus.org - show loading overlay
         if (wasOnLoginPage.current && !isSSOCredentialsPage && !isLoginPage && !isLoggingOutRef.current) {
+            addDebugLog('overlay_on', { url });
             setIsAuthenticating(true);
         }
 
@@ -195,7 +270,7 @@ export default function LoginScreen({
             setIsAuthenticating(false);
         }
 
-        if (url.includes('/login/logout.php')) {
+        if (isLogoutPage) {
             hasLoggedOut.current = false;
             setIsAuthenticating(false);
             wasOnLoginPage.current = false;
@@ -216,6 +291,13 @@ export default function LoginScreen({
         if (isLoggingOutRef.current) return;
         const url = event.nativeEvent.url || currentUrlRef.current;
         addDebugLog('loadEnd', { url });
+        // The logout chain ends on https://ys.learnus.org/, which is byte-identical to a
+        // successful login landing. Only an explicit flag can tell them apart, and relying
+        // on the isLoggingOut timer means a slow logout silently logs the user back in.
+        if (isLogoutUrl(url) || loggedOutAwaitingLogin.current) {
+            addDebugLog('loadEnd_skipped_after_logout', { url });
+            return;
+        }
         const isAuthenticatedPage =
             url === 'https://ys.learnus.org/' ||
             url === 'https://ys.learnus.org' ||
@@ -320,6 +402,13 @@ export default function LoginScreen({
                 addDebugLog('api_error', { data: e?.message || String(e) });
                 setIsAuthenticating(false);
                 wasOnLoginPage.current = true;
+                // A network failure here is indistinguishable from a rejected login unless
+                // we say so — this is what made the dead-API-URL bug invisible.
+                setAuthError(
+                    e?.message === 'Network Error'
+                        ? '서버에 연결하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.'
+                        : '로그인 처리 중 문제가 발생했습니다. 다시 시도해 주세요.'
+                );
             }
         }
     };
@@ -366,7 +455,18 @@ export default function LoginScreen({
                     },
                 ]}
             >
-                <View style={styles.logoContainer}>
+                {/* Long-pressing the logo opens the manual demo login used for store review */}
+                <TouchableOpacity
+                    style={styles.logoContainer}
+                    activeOpacity={1}
+                    delayLongPress={2000}
+                    onLongPress={() => {
+                        setDemoUsername('');
+                        setDemoPassword('');
+                        setDemoError(null);
+                        setShowDemoLogin(true);
+                    }}
+                >
                     <View style={styles.logoGradient}>
                         <Ionicons name="school" size={24} color={colors.textInverse} />
                     </View>
@@ -374,7 +474,7 @@ export default function LoginScreen({
                         <Text style={styles.logoTitle}>LearnUs Connect</Text>
                         <Text style={styles.logoSubtitle}>연세대학교 학습관리</Text>
                     </View>
-                </View>
+                </TouchableOpacity>
             </Animated.View>
 
             {/* WebView Container */}
@@ -457,6 +557,61 @@ export default function LoginScreen({
                     )}
                 </View>
             </View>
+
+            {/* Manual demo login for store review — no network, local mock data only */}
+            <Modal
+                visible={showDemoLogin}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setShowDemoLogin(false)}
+            >
+                <View style={styles.debugModalBackdrop}>
+                    <View style={styles.demoModalCard}>
+                        <Text style={styles.demoModalTitle}>수동 로그인</Text>
+
+                        <TextInput
+                            style={styles.demoInput}
+                            value={demoUsername}
+                            onChangeText={setDemoUsername}
+                            placeholder="아이디"
+                            placeholderTextColor={colors.textTertiary}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                        />
+                        <TextInput
+                            style={styles.demoInput}
+                            value={demoPassword}
+                            onChangeText={setDemoPassword}
+                            placeholder="비밀번호"
+                            placeholderTextColor={colors.textTertiary}
+                            secureTextEntry
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            onSubmitEditing={submitDemoLogin}
+                        />
+
+                        {demoError && <Text style={styles.demoErrorText}>{demoError}</Text>}
+
+                        <TouchableOpacity style={styles.demoSubmitButton} onPress={submitDemoLogin}>
+                            <Text style={styles.demoSubmitText}>로그인</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setShowDemoLogin(false)}>
+                            <Text style={styles.demoCancelText}>취소</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Auth error — the overlay hides the WebView, so failures must be stated here */}
+            {authError && (
+                <View style={styles.authErrorBanner}>
+                    <Ionicons name="alert-circle" size={16} color={colors.error} />
+                    <Text style={styles.authErrorText}>{authError}</Text>
+                    <TouchableOpacity onPress={() => setAuthError(null)} accessibilityLabel="닫기">
+                        <Ionicons name="close" size={16} color={colors.error} />
+                    </TouchableOpacity>
+                </View>
+            )}
 
             {/* Footer Hint */}
             <View style={styles.footer}>
@@ -665,6 +820,77 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
     footerText: {
         ...typography.caption,
         color: colors.textTertiary,
+    },
+    authErrorBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.s,
+        backgroundColor: colors.errorLight,
+        borderColor: colors.error,
+        borderWidth: 1,
+        borderRadius: layout.borderRadius.l,
+        paddingVertical: Spacing.s,
+        paddingHorizontal: Spacing.m,
+        marginHorizontal: Spacing.m,
+        marginBottom: Spacing.s,
+    },
+    authErrorText: {
+        ...typography.caption,
+        color: colors.error,
+        flex: 1,
+    },
+
+    // Manual demo login (store review)
+    demoModalCard: {
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.xl,
+        padding: Spacing.xl,
+        marginHorizontal: Spacing.l,
+        // The backdrop centres its children, so without an explicit width the card
+        // shrinks to its longest line of text.
+        width: '100%',
+        maxWidth: 340,
+        borderWidth: 1,
+        borderColor: colors.border,
+        ...layout.shadow.lg,
+    },
+    demoModalTitle: {
+        ...typography.header3,
+        color: colors.textPrimary,
+        marginBottom: Spacing.l,
+    },
+    demoInput: {
+        ...typography.body2,
+        color: colors.textPrimary,
+        backgroundColor: colors.background,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: layout.borderRadius.m,
+        paddingHorizontal: Spacing.m,
+        paddingVertical: Spacing.s,
+        marginBottom: Spacing.s,
+    },
+    demoErrorText: {
+        ...typography.caption,
+        color: colors.error,
+        marginBottom: Spacing.s,
+    },
+    demoSubmitButton: {
+        backgroundColor: colors.primary,
+        borderRadius: layout.borderRadius.m,
+        paddingVertical: Spacing.m,
+        alignItems: 'center',
+        marginTop: Spacing.s,
+    },
+    demoSubmitText: {
+        ...typography.button,
+        color: colors.textInverse,
+    },
+    demoCancelText: {
+        ...typography.caption,
+        color: colors.textTertiary,
+        textAlign: 'center',
+        marginTop: Spacing.m,
     },
 
     // Debug

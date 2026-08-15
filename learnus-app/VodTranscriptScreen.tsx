@@ -28,6 +28,7 @@ import {
     TOUR_MOCK_SUMMARIES,
     TOUR_MOCK_TRANSCRIPTS,
 } from './constants/tourMockData';
+import { isDemoMode } from './services/demoMode';
 
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ const SummaryCard = ({ vodMoodleId, styles, colors }: { vodMoodleId: number; sty
     const load = async () => {
         setLoading(true);
         try {
-            if (FORCE_MOCK_MODE) {
+            if (FORCE_MOCK_MODE || isDemoMode()) {
                 setSummary(TOUR_MOCK_SUMMARIES[vodMoodleId] || TOUR_DEFAULT_MOCK_SUMMARY);
                 Animated.timing(fadeIn, { toValue: 1, duration: 300, useNativeDriver: true }).start();
                 return;
@@ -229,7 +230,7 @@ export default function VodTranscriptScreen() {
         setStatusInfo(null);
         setShowTranscribeProgress(false);
         try {
-            if (FORCE_MOCK_MODE) {
+            if (FORCE_MOCK_MODE || isDemoMode()) {
                 setTranscript(TOUR_MOCK_TRANSCRIPTS[vodMoodleId] || TOUR_DEFAULT_MOCK_TRANSCRIPT);
                 setLoading(false);
                 return;

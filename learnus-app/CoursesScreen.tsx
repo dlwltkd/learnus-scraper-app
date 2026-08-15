@@ -26,6 +26,7 @@ import EmptyState from './components/EmptyState';
 import { useTourRef } from './hooks/useTourRef';
 import { useTour } from './context/TourContext';
 import { TOUR_MOCK_COURSES, FORCE_MOCK_MODE } from './constants/tourMockData';
+import { isDemoMode } from './services/demoMode';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -190,7 +191,7 @@ export default function CoursesScreen() {
     useEffect(() => { loadCourses(); }, []);
 
     useEffect(() => {
-        const mockActive = tourActive || FORCE_MOCK_MODE;
+        const mockActive = tourActive || FORCE_MOCK_MODE || isDemoMode();
         tourActiveRef.current = mockActive;
         if (mockActive) {
             setCourses(TOUR_MOCK_COURSES);

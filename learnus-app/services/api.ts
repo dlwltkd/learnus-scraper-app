@@ -1,6 +1,18 @@
 import axios from 'axios';
 import EventSource from 'react-native-sse';
 import { secureStorage } from './secureStorage';
+import { isDemoMode } from './demoMode';
+
+// Shape-appropriate empty responses for demo mode, so screens render their normal empty
+// state instead of an error. Screens with real mock data (dashboard, courses, lectures,
+// transcripts) short-circuit before reaching the network at all.
+function demoEmptyPayload(url?: string): unknown {
+    if (!url) return {};
+    if (url.includes('/notifications')) return [];
+    if (url.includes('/flashcards/decks')) return [];
+    if (url.includes('/courses')) return [];
+    return {};
+}
 
 const AUTH_TOKEN_KEY = 'auth_token';
 
@@ -55,6 +67,19 @@ export const setupAxiosInterceptors = (onUnauthenticated: () => void) => {
 };
 
 api.interceptors.request.use(request => {
+    // Demo mode (store review) has no server account. Swap in an adapter that resolves
+    // locally so nothing reaches the API, no 401 can cascade into a forced logout, and
+    // callers get an empty payload instead of an error toast.
+    if (isDemoMode()) {
+        request.adapter = async () => ({
+            data: demoEmptyPayload(request.url),
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config: request,
+        });
+        return request;
+    }
     if (authToken) {
         request.headers['X-API-Token'] = authToken;
     }
@@ -64,6 +89,10 @@ api.interceptors.request.use(request => {
 api.interceptors.response.use(
     response => response,
     error => {
+        // Demo mode never has a server session; a 401 here must not force a logout.
+        if (isDemoMode()) {
+            return Promise.reject(error);
+        }
         if (error.response && error.response.status === 401) {
             console.log('Session expired (401), triggering logout...');
             if (onSessionExpired) {

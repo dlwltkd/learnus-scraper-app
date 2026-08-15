@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, ReactNode, useEffect, useRe
 import { AppState, AppStateStatus } from 'react-native';
 import { secureStorage } from '../services/secureStorage';
 import { login as apiLogin, setupAxiosInterceptors, clearAuthToken, validateSession } from '../services/api';
+import { DEMO_TOKEN, isDemoMode, setDemoMode } from '../services/demoMode';
 import { useToast } from './ToastContext';
 
 interface AuthContextType {
@@ -39,6 +40,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     const checkMoodleSession = async () => {
+        // Demo mode has no server session to validate; checking would log the reviewer out.
+        if (isDemoMode()) return;
         try {
             const result = await validateSession();
             if (!result.valid) {
@@ -73,6 +76,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             return;
         }
 
+        // Demo session — restore without contacting the server.
+        if (storedCookie === DEMO_TOKEN) {
+            setDemoMode(true);
+            setIsLoggedIn(true);
+            setIsLoading(false);
+            return;
+        }
+
         // Has token - keep loading while validating
         try {
             console.log("AuthContext: Restoring session...");
@@ -98,6 +109,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const login = async (cookie: string) => {
         console.log("AuthContext: Login requested");
+        if (cookie === DEMO_TOKEN) {
+            setDemoMode(true);
+            await secureStorage.setItem('userToken', DEMO_TOKEN);
+            setIsLoggedIn(true);
+            setAutoLogout(false);
+            return;
+        }
         try {
             await apiLogin(cookie);
             await secureStorage.setItem('userToken', cookie);
@@ -111,6 +129,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const logout = async () => {
         console.log("AuthContext: Logout requested");
+        setDemoMode(false);
         try {
             await secureStorage.removeItem('userToken');
             await clearAuthToken();

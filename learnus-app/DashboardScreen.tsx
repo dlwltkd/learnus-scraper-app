@@ -36,6 +36,7 @@ import ItemRow from './components/ItemRow';
 import { useTourRef } from './hooks/useTourRef';
 import { useTour } from './context/TourContext';
 import { TOUR_MOCK_OVERVIEW, FORCE_MOCK_MODE } from './constants/tourMockData';
+import { isDemoMode } from './services/demoMode';
 
 if (Platform.OS === 'android') {
     if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -506,7 +507,7 @@ const DashboardScreen = () => {
     const aiSectionRef = useTourRef('dashboard-ai-section');
 
     useEffect(() => {
-        const mockActive = tourActive || FORCE_MOCK_MODE;
+        const mockActive = tourActive || FORCE_MOCK_MODE || isDemoMode();
         tourActiveRef.current = mockActive;
         if (mockActive) {
             setData(TOUR_MOCK_OVERVIEW);
