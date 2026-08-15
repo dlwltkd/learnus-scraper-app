@@ -2,6 +2,20 @@
 
 Scope: entire repository. Read this file and `CONTRIBUTING.md` before inspecting or changing code. If a nested `AGENTS.md` exists, its rules add to or override this file for that subtree.
 
+## Documentation map
+
+- `README.md`: product overview and repository entry point.
+- `docs/README.md`: task-oriented documentation index.
+- `docs/architecture.md`: runtime components, source boundaries, and data flows.
+- `CONTRIBUTING.md`: development setup, change workflow, and validation.
+- `docs/deployment.md`: current server and mobile release paths.
+- `docs/mobile-builds.md` and `learnus-app/README.md`: native build guidance and app source map.
+- `docs/runbooks/`: operational recovery procedures.
+- `docs/incidents/`: evidence and follow-up from dated incidents.
+- `docs/legal/`: user-facing privacy policy and terms of service.
+
+Keep detailed guidance in its owning document and link to it instead of copying it into multiple files. Keep this contract accurate when architecture, schema, commands, or invariants change.
+
 ## Session bootstrap
 
 1. Run `git status --short` and preserve unrelated user changes.

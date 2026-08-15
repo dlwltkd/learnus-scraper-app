@@ -2,6 +2,8 @@
 
 `AGENTS.md` is the repository operating contract and technical context source. Read it before starting and keep it accurate whenever architecture, schema, commands, or invariants change.
 
+Use [docs/README.md](docs/README.md) to find architecture, deployment, recovery, and mobile build guidance. This file owns the local development workflow and validation requirements.
+
 ## Workflow
 
 1. Inspect `git status --short`; preserve unrelated changes.
@@ -47,6 +49,8 @@ npm run start
 ```
 
 Use `npm run android`, `npm run ios`, or `npm run web` for the target platform. Configure `EXPO_PUBLIC_API_URL` outside source control when the API is not at `http://localhost:8000`.
+
+Safe backend and worker environment keys are listed in `.env.example`. Never copy real values into documentation or source control.
 
 ## Change requirements
 
