@@ -1,3 +1,18 @@
+from unittest.mock import patch
+
+
+class _AuthenticatedMoodleClient:
+    def __init__(self, base_url):
+        self.session = type(
+            "Session",
+            (),
+            {"cookies": type("Cookies", (), {"get_dict": lambda self: {"MoodleSession": "abc"}})()},
+        )()
+
+    def login(self, username, password):
+        return None
+
+
 def test_missing_token_returns_401(client):
     resp = client.get("/courses")
     assert resp.status_code == 401
@@ -52,3 +67,18 @@ def test_preferences_update(client, test_user, auth_headers):
 def test_sync_session_no_cookies(client):
     resp = client.post("/auth/sync-session", json={"cookies": ""})
     assert resp.status_code == 400
+
+
+def test_login_does_not_persist_plaintext_password(client, db):
+    with patch("api.MoodleClient", _AuthenticatedMoodleClient):
+        resp = client.post(
+            "/auth/login",
+            json={"username": "new-user", "password": "plaintext-secret"},
+        )
+
+    assert resp.status_code == 200
+    from database import User
+
+    user = db.query(User).filter(User.username == "new-user").one()
+    assert user.moodle_password is None
+    assert "plaintext-secret" not in user.moodle_cookies

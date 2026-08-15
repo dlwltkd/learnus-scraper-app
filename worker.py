@@ -16,6 +16,7 @@ from datetime import datetime
 from database import init_db, Job, VodTranscript, User, VOD, Course
 from ai_service import AIService
 from moodle_client import MoodleClient
+from parsing import parse_cookie_string as _parse_cookie_string
 from scheduler import check_notices_job, sync_dashboard_job, check_session_health_job, watch_vods_for_user
 from apscheduler.schedulers.background import BackgroundScheduler
 from exponent_server_sdk import PushClient, PushMessage
@@ -42,16 +43,6 @@ signal.signal(signal.SIGTERM, _handle_signal)
 signal.signal(signal.SIGINT, _handle_signal)
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-
-def _parse_cookie_string(raw: str) -> dict:
-    cookies = {}
-    for item in raw.split(';'):
-        item = item.strip()
-        if '=' in item:
-            k, v = item.split('=', 1)
-            cookies[k.strip()] = v.strip()
-    return cookies
-
 
 def _append_transcribe_timing_log(row: dict):
     if not TRANSCRIBE_TIMING_LOG_ENABLED:

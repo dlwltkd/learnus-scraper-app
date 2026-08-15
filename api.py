@@ -2,7 +2,6 @@ import os
 from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -16,6 +15,28 @@ import uuid
 import json
 from datetime import datetime, timedelta
 import re
+from parsing import parse_cookie_string as _parse_cookie_string, parse_date
+from schemas import (
+    AssignmentResponse,
+    AssignmentStatusUpdateRequest,
+    BoardResponse,
+    ChatRequest,
+    CourseActiveUpdate,
+    CourseResponse,
+    DashboardOverviewResponse,
+    FlashcardDeckResponse,
+    GenerateFlashcardsRequest,
+    LabsSettingsUpdateRequest,
+    LoginDebugReportRequest,
+    LoginRequest,
+    ManualTranscribeRequest,
+    PostResponse,
+    PreferencesRequest,
+    PushTokenRequest,
+    SaveDeckRequest,
+    SessionSyncRequest,
+    VODResponse,
+)
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger('urllib3').setLevel(logging.WARNING)
@@ -100,21 +121,6 @@ def get_current_user(token: str = Depends(api_key_header), db: Session = Depends
         raise HTTPException(status_code=401, detail="Invalid Authentication Token")
     return user
 
-def _parse_cookie_string(raw: str) -> dict:
-    """Parse a raw cookie string into a dict, preserving keyless tokens as empty-value entries."""
-    cookies = {}
-    for item in raw.split(';'):
-        item = item.strip()
-        if not item:
-            continue
-        if '=' in item:
-            k, v = item.split('=', 1)
-            cookies[k.strip()] = v.strip()
-        else:
-            # Keyless token (e.g. device UUID) — store with empty value so it's included in requests
-            cookies[item] = ''
-    return cookies
-
 def get_moodle_client(user: User):
     client = MoodleClient("https://ys.learnus.org")
     if user.moodle_cookies:
@@ -143,118 +149,6 @@ def _is_transcribe_limit_bypassed(user: User) -> bool:
     user_keys = {user.username or "", user.moodle_username or "", user.api_token or ""}
     return any(k in bypass_users for k in user_keys if k) or any(k in bypass_tokens for k in user_keys if k)
 
-class CourseResponse(BaseModel):
-    id: int
-    name: str
-    is_active: bool
-
-class CourseActiveUpdate(BaseModel):
-    is_active: bool
-
-class AssignmentResponse(BaseModel):
-    id: int
-    title: str
-    course_id: Optional[int] = None
-    course_name: Optional[str] = None
-    due_date: Optional[str]
-    is_completed: bool
-    completion_overridden: bool = False
-    url: str
-
-class VODResponse(BaseModel):
-    id: int
-    title: str
-    course_id: Optional[int] = None
-    course_name: Optional[str] = None
-    start_date: Optional[str]
-    end_date: Optional[str]
-    is_completed: bool
-    url: str
-
-class PostResponse(BaseModel):
-    id: int
-    title: str
-    writer: str
-    date: str
-    url: str
-    content: Optional[str]
-
-class BoardResponse(BaseModel):
-    id: int
-    title: str
-    url: str
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-class SessionSyncRequest(BaseModel):
-    cookies: str
-    user_id: Optional[int] = None
-
-class PushTokenRequest(BaseModel):
-    token: str
-    device_name: Optional[str] = None
-
-class PreferencesRequest(BaseModel):
-    new_assignment: bool = True
-    new_vod: bool = True
-    notice: bool = True
-
-class ChatRequest(BaseModel):
-    messages: list  # [{role: "user"|"assistant", content: str}, ...]
-
-class ManualTranscribeRequest(BaseModel):
-    media_url: Optional[str] = None
-
-class LoginDebugReportRequest(BaseModel):
-    device_info: Optional[str] = None
-    logs: list
-
-class FlashcardItem(BaseModel):
-    front: str
-    back: str
-
-class GenerateFlashcardsRequest(BaseModel):
-    count: int = 10
-
-class SaveDeckRequest(BaseModel):
-    name: str
-    vod_moodle_id: int
-    cards: List[FlashcardItem]
-
-class AssignmentStatusUpdateRequest(BaseModel):
-    is_completed: bool
-    lock_override: bool = True
-
-class LabsSettingsUpdateRequest(BaseModel):
-    auto_watch_enabled: bool
-
-class FlashcardDeckResponse(BaseModel):
-    id: int
-    name: str
-    vod_moodle_id: int
-    course_name: Optional[str]
-    card_count: int
-    created_at: str
-
-# Date Parser helper...
-class StatsResponse(BaseModel):
-    total_assignments_due: int
-    completed_assignments_due: int
-    missed_assignments_count: int
-    missed_vods_count: int
-
-class DashboardOverviewResponse(BaseModel):
-    stats: StatsResponse
-    upcoming_assignments: List[AssignmentResponse]
-    missed_assignments: List[AssignmentResponse]
-    available_vods: List[VODResponse]
-    missed_vods: List[VODResponse]
-    unchecked_vods: List[VODResponse]
-    upcoming_vods: List[VODResponse]
-    summary: Optional[str] = None
-
 def _labs_payload(user: User) -> dict:
     return {
         "labs_unlocked": bool(user.labs_unlocked),
@@ -264,41 +158,6 @@ def _labs_payload(user: User) -> dict:
 def _require_auto_watch_enabled(user: User):
     if not user.auto_watch_enabled:
         raise HTTPException(status_code=403, detail="Auto watch is disabled")
-
-def parse_date(date_str):
-    if not date_str or date_str == 'None': return None
-    date_str = date_str.replace('&nbsp;', ' ').rstrip('.')
-    date_str = " ".join(date_str.split())
-    # Further cleanup for potentially trailing dots after split/join or specific formats
-    date_str = date_str.rstrip('.')
-
-    try: return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-    except: pass
-    try: return datetime.strptime(date_str, "%Y-%m-%d %H:%M")
-    except: pass
-    try: return datetime.strptime(date_str, "%Y-%m-%d")
-    except: pass
-    try:
-        clean = re.sub(r'[년월일\(\)요일]', ' ', date_str)
-        clean = " ".join(clean.split())
-        return datetime.strptime(clean, "%Y %m %d %H:%M")
-    except: pass
-    try:
-        clean = re.sub(r'^[A-Za-z]+,\s*', '', date_str)
-        return datetime.strptime(clean, "%d %B %Y, %I:%M %p")
-    except: pass
-    try:
-        clean = re.sub(r'\([A-Za-z]+\)', '', date_str)
-        clean = re.sub(r'\((\d{1,2}:\d{2}\s*[ap]m)\)', r' \1', clean, flags=re.IGNORECASE)
-        clean = " ".join(clean.split())
-        current_year = datetime.now().year
-        try: return datetime.strptime(f"{current_year} {clean}", "%Y %b %d %I:%M %p")
-        except: pass
-        try: return datetime.strptime(f"{current_year} {clean}", "%Y %b %d %I:%M%p")
-        except: pass
-    except: pass
-
-    return None
 
 @app.post("/auth/login")
 @limiter.limit("5/minute", key_func=get_remote_address)
@@ -319,7 +178,9 @@ def login(request: Request, creds: LoginRequest, db: Session = Depends(get_db)):
     else:
         if not user.api_token: user.api_token = str(uuid.uuid4())
             
-    user.moodle_password = creds.password
+    # Authentication only needs the resulting Moodle session cookies. Clear any
+    # legacy plaintext password the next time the user signs in.
+    user.moodle_password = None
     user.moodle_cookies = cookies_json
     db.commit()
     db.refresh(user)

@@ -27,7 +27,7 @@ class User(Base):
     
     # Push Notifications
     push_token = Column(String, nullable=True)
-    notification_preferences = Column(JSON, default={})
+    notification_preferences = Column(JSON, default=dict)
     notifications_initialized = Column(Boolean, default=False)  # False = first sync pending (no notifications)
 
     # Session health
@@ -297,7 +297,6 @@ def init_db(db_url=None):
 
     # Migration: add notifications_initialized column if it doesn't exist yet.
     # Existing users are marked True (already past first sync); new users default False.
-    existing_cols = [col['name'] for col in inspector.get_columns('users')]
     existing_cols = [col['name'] for col in inspector.get_columns('users')]
     if 'notifications_initialized' not in existing_cols:
         with engine.connect() as conn:

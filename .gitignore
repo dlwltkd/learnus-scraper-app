@@ -77,8 +77,7 @@ Thumbs.db
 
 #claude
 .claude/
-agent.md   
-AGENTS.md
+agent.md
 # Documentation
 DEPLOYMENT.md
 learnus-app/image.png
