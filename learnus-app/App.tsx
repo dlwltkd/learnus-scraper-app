@@ -41,7 +41,7 @@ import TourOverlay from './components/TourOverlay';
 import NotificationOnboarding from './components/NotificationOnboarding';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { getDashboardOverview, registerPushToken, checkAppVersion } from './services/api';
+import { getDashboardOverview, registerPushToken, checkAppVersion, hasAuthToken } from './services/api';
 import { APP_VERSION } from './constants/version';
 
 const NOTIF_PROMPT_DISMISSED_KEY = 'notif_prompt_dismissed_at';
@@ -83,6 +83,8 @@ function TabNavigator() {
   const [badges, setBadges] = React.useState<Record<string, number>>({});
 
   const fetchBadge = async () => {
+    // Skip while signed out or mid-login: a tokenless poll returns 401.
+    if (!hasAuthToken()) return;
     try {
       const data = await getDashboardOverview();
       if (data?.available_vods) {

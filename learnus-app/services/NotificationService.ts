@@ -138,8 +138,12 @@ export async function saveNotificationResponseToHistory(notification: Notificati
 
 export async function checkAndScheduleNotifications() {
     try {
-        // Ensure we have the auth token loaded for API requests
-        await loadAuthToken();
+        // Ensure we have the auth token loaded for API requests. If there is none the user
+        // is signed out — polling anyway returns 401 and used to surface as "세션 만료".
+        const token = await loadAuthToken();
+        if (!token) {
+            return { result: BackgroundFetch.BackgroundFetchResult.NoData, count: 0, details: [] };
+        }
 
         const settings = await getSettings();
         if (!settings) return { result: BackgroundFetch.BackgroundFetchResult.NoData, count: 0, details: [] };

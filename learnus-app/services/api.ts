@@ -53,6 +53,10 @@ export const setAuthToken = async (token: string | null) => {
     }
 };
 
+// True once a token is in memory. Pollers use this to avoid firing requests during the
+// gaps around login and logout, which would come back 401.
+export const hasAuthToken = () => Boolean(authToken);
+
 export const clearAuthToken = async () => {
     authToken = null;
     try {
@@ -94,9 +98,17 @@ api.interceptors.response.use(
             return Promise.reject(error);
         }
         if (error.response && error.response.status === 401) {
-            console.log('Session expired (401), triggering logout...');
-            if (onSessionExpired) {
-                onSessionExpired();
+            // Only a request that actually carried a token can represent an expired
+            // session. Without this check, any poll that fires while the token is absent
+            // (during login, or right after logout) reports "세션 만료" and forces a logout.
+            const sentToken = Boolean(error.config?.headers?.['X-API-Token']);
+            if (sentToken) {
+                console.log('Session expired (401), triggering logout...');
+                if (onSessionExpired) {
+                    onSessionExpired();
+                }
+            } else {
+                console.log('401 on a request with no auth token — ignoring, not a session expiry');
             }
         }
         return Promise.reject(error);
