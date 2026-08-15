@@ -94,7 +94,7 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 ENABLE_DEBUG = os.getenv("ENABLE_DEBUG", "false").lower() == "true" 
 
 
-FORCE_UPDATE_MIN_VERSION = "0.4.1"
+FORCE_UPDATE_MIN_VERSION = "0.6.0"
 
 @app.get("/version")
 def get_version():
