@@ -185,6 +185,7 @@ export const syncAllActiveCourses = async () => {
 
 export interface LabsSettings {
     labs_unlocked: boolean;
+    brain_enabled: boolean;
     auto_watch_enabled: boolean;
 }
 
@@ -198,8 +199,10 @@ export const unlockLabs = async (): Promise<LabsSettings> => {
     return response.data;
 };
 
-export const updateLabsSettings = async (autoWatchEnabled: boolean): Promise<LabsSettings> => {
-    const response = await api.put('/settings/labs', { auto_watch_enabled: autoWatchEnabled });
+export const updateLabsSettings = async (
+    settings: { auto_watch_enabled?: boolean; brain_enabled?: boolean }
+): Promise<LabsSettings> => {
+    const response = await api.put('/settings/labs', settings);
     return response.data;
 };
 
@@ -457,3 +460,51 @@ export const checkAppVersion = async (): Promise<{ version: string | null; force
 };
 
 export default api;
+
+// ── Course brain ────────────────────────────────────────────────────────────────
+
+export type LibraryItemType = 'file' | 'label' | 'vod' | 'assignment' | 'board';
+
+export interface LibraryItem {
+    type: LibraryItemType;
+    id: number;
+    moodle_id: number;
+    title: string;
+    /** True when this item's text is part of the corpus the brain can answer from. */
+    in_corpus: boolean;
+    chars: number;
+    url?: string | null;
+    kind?: string | null;        // file: pdf | ipynb | label | ...
+    pages?: number | null;       // file
+    captioned_pages?: number;    // file
+    status?: string | null;
+    duration?: number | null;    // vod, seconds
+    completed?: boolean;         // vod, assignment
+    due_date?: string | null;    // assignment
+    posts?: number;              // board
+}
+
+export interface LibrarySection {
+    section: number | null;
+    week: string;
+    count: number;
+    items: LibraryItem[];
+}
+
+export interface CourseLibrary {
+    course: { id: number; moodle_id: number; name: string };
+    stats: {
+        files: number; vods: number; assignments: number; boards: number; posts: number;
+        corpus_chars: number; in_corpus: number; total_items: number;
+    };
+    sections: LibrarySection[];
+}
+
+export const getCourseLibrary = async (courseId: number): Promise<CourseLibrary> => {
+    const response = await api.get(`/courses/${courseId}/library`);
+    return response.data;
+};
+
+/** Absolute URL for a rendered PDF page, for use in <Image source={{uri}} />. */
+export const filePageUrl = (fileId: number, pageNo: number): string =>
+    `${API_URL}/files/${fileId}/page/${pageNo}`;

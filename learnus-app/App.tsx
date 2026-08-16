@@ -27,6 +27,8 @@ import VodTranscriptScreen from './VodTranscriptScreen';
 import FlashcardStudyScreen from './FlashcardStudyScreen';
 import FlashcardDeckListScreen from './FlashcardDeckListScreen';
 import LabsScreen from './LabsScreen';
+import CourseLibraryScreen from './CourseLibraryScreen';
+import LibraryItemScreen from './LibraryItemScreen';
 
 import CustomTabBar from './components/TabBar';
 import { Spacing } from './constants/theme';
@@ -399,6 +401,16 @@ function AppContent() {
                 name="Labs"
                 component={LabsScreen}
                 options={{ title: '개발자 옵션' }}
+              />
+              <Stack.Screen
+                name="CourseLibrary"
+                component={CourseLibraryScreen}
+                options={{ title: '강의 자료' }}
+              />
+              <Stack.Screen
+                name="LibraryItem"
+                component={LibraryItemScreen}
+                options={{ title: '' }}
               />
             </>
           )}

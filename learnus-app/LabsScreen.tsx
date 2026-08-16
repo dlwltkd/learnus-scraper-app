@@ -11,9 +11,10 @@ import { useToast } from './context/ToastContext';
 export default function LabsScreen() {
     const { colors, typography, layout, isDark } = useTheme();
     const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
-    const { autoWatchEnabled, setAutoWatchEnabled, isLoading } = useLabs();
+    const { autoWatchEnabled, setAutoWatchEnabled, brainEnabled, setBrainEnabled, isLoading } = useLabs();
     const { showError } = useToast();
     const [saving, setSaving] = useState(false);
+    const [savingBrain, setSavingBrain] = useState(false);
 
     const handleToggle = async (enabled: boolean) => {
         setSaving(true);
@@ -23,6 +24,17 @@ export default function LabsScreen() {
             showError('오류', '설정을 저장할 수 없어요. 다시 시도해주세요.');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleBrainToggle = async (enabled: boolean) => {
+        setSavingBrain(true);
+        try {
+            await setBrainEnabled(enabled);
+        } catch (e) {
+            showError('오류', '설정을 저장할 수 없어요. 다시 시도해주세요.');
+        } finally {
+            setSavingBrain(false);
         }
     };
 
@@ -67,6 +79,26 @@ export default function LabsScreen() {
                         value={autoWatchEnabled}
                         onValueChange={handleToggle}
                         disabled={saving}
+                        trackColor={{ false: colors.border, true: colors.primary }}
+                        thumbColor="#fff"
+                    />
+                </View>
+
+                {/* Separate from 자동 시청 on purpose: turning this on authorises the app to
+                    transcribe lectures and spend API credit, which is a different decision
+                    from showing a watch button. The description says so plainly. */}
+                <View style={styles.card}>
+                    <View style={styles.toggleText}>
+                        <Text style={styles.toggleTitle}>강의 브레인</Text>
+                        <Text style={styles.toggleDescription}>
+                            강의 자료·동영상·과제를 학습해 질문에 답하고, 주차별로 정리해서 보여줘요.
+                            만들 때 강의를 자동으로 텍스트 변환하며 시간이 걸려요.
+                        </Text>
+                    </View>
+                    <Switch
+                        value={brainEnabled}
+                        onValueChange={handleBrainToggle}
+                        disabled={savingBrain}
                         trackColor={{ false: colors.border, true: colors.primary }}
                         thumbColor="#fff"
                     />

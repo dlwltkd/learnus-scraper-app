@@ -81,7 +81,7 @@ export default function CourseDetailScreen() {
     const navigation = useNavigation();
     const { course } = route.params as { course: any };
     const { showSuccess, showError } = useToast();
-    const { autoWatchEnabled } = useLabs();
+    const { autoWatchEnabled, brainEnabled } = useLabs();
     const { colors, typography, layout, isDark } = useTheme();
     const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
 
@@ -244,6 +244,25 @@ export default function CourseDetailScreen() {
                     </View>
                 </View>
 
+                {/* Course brain. Hidden entirely unless the lab toggle is on, like the
+                    auto-watch controls — an experiment should not advertise itself. */}
+                {brainEnabled && (
+                    <TouchableOpacity
+                        style={styles.brainRow}
+                        activeOpacity={0.6}
+                        onPress={() => (navigation as any).navigate('CourseLibrary', {
+                            courseId: course.id,
+                            courseName: course.name,
+                        })}
+                    >
+                        <View style={styles.brainText}>
+                            <Text style={styles.brainTitle}>강의 자료 둘러보기</Text>
+                            <Text style={styles.brainSubtitle}>주차별로 정리된 자료·강의·과제</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                )}
+
                 {/* Boards Section */}
                 {boards.length > 0 && (
                     <View style={styles.section}>
@@ -380,6 +399,21 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         ...typography.header2,
         marginBottom: Spacing.l,
     },
+    brainRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.m,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.l,
+        borderWidth: 1,
+        borderColor: colors.border,
+        paddingHorizontal: Spacing.m,
+        paddingVertical: 14,
+        marginBottom: Spacing.xl,
+    },
+    brainText: { flex: 1, gap: 2 },
+    brainTitle: { ...typography.subtitle1 },
+    brainSubtitle: { ...typography.caption },
     statsRow: {
         flexDirection: 'row',
         justifyContent: 'space-around',
