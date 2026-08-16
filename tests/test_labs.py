@@ -8,6 +8,7 @@ def test_labs_settings_default_disabled(client, auth_headers, test_user):
     assert resp.json() == {
         "labs_unlocked": False,
         "auto_watch_enabled": False,
+        "brain_enabled": False,
     }
 
 
@@ -18,6 +19,7 @@ def test_unlock_labs_enables_settings_menu_flag(client, auth_headers, test_user)
     assert resp.json() == {
         "labs_unlocked": True,
         "auto_watch_enabled": False,
+        "brain_enabled": False,
     }
 
 
@@ -44,6 +46,7 @@ def test_auto_watch_toggle_after_unlock(client, auth_headers, test_user):
     assert resp.json() == {
         "labs_unlocked": True,
         "auto_watch_enabled": True,
+        "brain_enabled": False,
     }
 
 
