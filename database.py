@@ -171,8 +171,23 @@ class FileResource(Base):
     week = Column(String, nullable=True)
     
     is_completed = Column(Boolean, default=False)
+
+    # The downloaded original, kept as the source of truth. Extraction is lossy and its
+    # quality keeps improving, so holding the file means every future pass is a local
+    # re-run rather than a re-download needing a live LearnUs session.
     local_path = Column(String, nullable=True)
-    
+    file_bytes = Column(Integer, nullable=True)
+    file_kind = Column(String, nullable=True)          # pdf | ipynb | txt | ...
+
+    # Extracted text, plus captions folded in for pages whose content was visual.
+    content = Column(Text, nullable=True)
+    content_chars = Column(Integer, nullable=True)
+    page_count = Column(Integer, nullable=True)
+    captioned_pages = Column(Integer, default=0)
+    extract_status = Column(String, nullable=True)     # ok | empty | unsupported | too_large | error
+    extract_error = Column(Text, nullable=True)
+    extracted_at = Column(DateTime, nullable=True)
+
     course = relationship("Course", back_populates="files")
 
 class Board(Base):
@@ -401,6 +416,21 @@ def init_db(db_url=None):
     # created before it exists on disk without the column and every VOD query fails.
     if 'vods' in refreshed_tables:
         _add_column_if_missing('vods', 'duration', "ALTER TABLE vods ADD COLUMN duration INTEGER")
+
+    # Migration: downloaded originals and their extracted text.
+    if 'files' in refreshed_tables:
+        for _col, _ddl in (
+            ('file_bytes',      "ALTER TABLE files ADD COLUMN file_bytes INTEGER"),
+            ('file_kind',       "ALTER TABLE files ADD COLUMN file_kind VARCHAR"),
+            ('content',         "ALTER TABLE files ADD COLUMN content TEXT"),
+            ('content_chars',   "ALTER TABLE files ADD COLUMN content_chars INTEGER"),
+            ('page_count',      "ALTER TABLE files ADD COLUMN page_count INTEGER"),
+            ('captioned_pages', "ALTER TABLE files ADD COLUMN captioned_pages INTEGER DEFAULT 0"),
+            ('extract_status',  "ALTER TABLE files ADD COLUMN extract_status VARCHAR"),
+            ('extract_error',   "ALTER TABLE files ADD COLUMN extract_error TEXT"),
+            ('extracted_at',    "ALTER TABLE files ADD COLUMN extracted_at TIMESTAMP"),
+        ):
+            _add_column_if_missing('files', _col, _ddl)
 
     # Migration: add transcription status columns
     refreshed_tables = sa_inspect(engine).get_table_names()
