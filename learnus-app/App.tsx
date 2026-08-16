@@ -28,6 +28,7 @@ import FlashcardStudyScreen from './FlashcardStudyScreen';
 import FlashcardDeckListScreen from './FlashcardDeckListScreen';
 import LabsScreen from './LabsScreen';
 import CourseLibraryScreen from './CourseLibraryScreen';
+import CourseBrainChatScreen from './CourseBrainChatScreen';
 import LibraryItemScreen from './LibraryItemScreen';
 
 import CustomTabBar from './components/TabBar';
@@ -411,6 +412,11 @@ function AppContent() {
                 name="LibraryItem"
                 component={LibraryItemScreen}
                 options={{ title: '' }}
+              />
+              <Stack.Screen
+                name="CourseBrainChat"
+                component={CourseBrainChatScreen}
+                options={{ title: '강의 브레인' }}
               />
             </>
           )}

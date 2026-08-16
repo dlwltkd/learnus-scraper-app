@@ -553,3 +553,64 @@ export const getLibraryItem = async (
     const response = await api.get(`/courses/${courseId}/library/${itemType}/${itemId}`);
     return response.data;
 };
+
+export interface BrainCitation {
+    ref: string;                 // "S3"
+    type: LibraryItemType;
+    id: number;
+    title: string;
+    week?: string | null;
+}
+
+export interface BrainStreamCallbacks {
+    onToken: (token: string) => void;
+    onDone: (citations: BrainCitation[]) => void;
+    onError: (error: string) => void;
+}
+
+/** Streamed, course-grounded answer. Returns a cancel function. */
+export const chatWithCourseBrain = (
+    courseId: number,
+    messages: ChatMessage[],
+    callbacks: BrainStreamCallbacks,
+): (() => void) => {
+    const es = new EventSource<'message' | 'done' | 'error'>(
+        `${API_URL}/courses/${courseId}/brain/chat`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(authToken ? { 'X-API-Token': authToken } : {}),
+            },
+            body: JSON.stringify({ messages }),
+        },
+    );
+
+    es.addEventListener('message', (event: any) => {
+        if (!event.data) return;
+        try {
+            const data = JSON.parse(event.data);
+            if (data.token) callbacks.onToken(data.token);
+        } catch {}
+    });
+
+    es.addEventListener('done', (event: any) => {
+        let citations: BrainCitation[] = [];
+        try {
+            if (event.data) citations = JSON.parse(event.data).citations || [];
+        } catch {}
+        callbacks.onDone(citations);
+        es.close();
+    });
+
+    es.addEventListener('error', (event: any) => {
+        let message = '연결이 끊어졌어요.';
+        try {
+            if (event.data) message = JSON.parse(event.data).error || message;
+        } catch {}
+        callbacks.onError(message);
+        es.close();
+    });
+
+    return () => es.close();
+};

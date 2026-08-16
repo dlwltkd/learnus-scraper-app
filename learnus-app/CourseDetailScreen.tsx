@@ -263,6 +263,23 @@ export default function CourseDetailScreen() {
                     </TouchableOpacity>
                 )}
 
+                {brainEnabled && (
+                    <TouchableOpacity
+                        style={styles.brainRow}
+                        activeOpacity={0.6}
+                        onPress={() => (navigation as any).navigate('CourseBrainChat', {
+                            courseId: course.id,
+                            courseName: course.name,
+                        })}
+                    >
+                        <View style={styles.brainText}>
+                            <Text style={styles.brainTitle}>강의 브레인에게 질문하기</Text>
+                            <Text style={styles.brainSubtitle}>자료를 근거로 답하고 출처를 알려줘요</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                )}
+
                 {/* Boards Section */}
                 {boards.length > 0 && (
                     <View style={styles.section}>
