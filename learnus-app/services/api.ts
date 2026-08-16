@@ -57,6 +57,9 @@ export const setAuthToken = async (token: string | null) => {
 // gaps around login and logout, which would come back 401.
 export const hasAuthToken = () => Boolean(authToken);
 
+/** The raw token, for requests that bypass axios — e.g. <Image> loading a page render. */
+export const getAuthToken = () => authToken;
+
 export const clearAuthToken = async () => {
     authToken = null;
     try {
@@ -505,6 +508,48 @@ export const getCourseLibrary = async (courseId: number): Promise<CourseLibrary>
     return response.data;
 };
 
-/** Absolute URL for a rendered PDF page, for use in <Image source={{uri}} />. */
-export const filePageUrl = (fileId: number, pageNo: number): string =>
-    `${API_URL}/files/${fileId}/page/${pageNo}`;
+/**
+ * Image source for a rendered PDF page.
+ *
+ * Returns headers alongside the uri because <Image> does not go through the axios
+ * instance and so never picks up the auth interceptor — without them every page request
+ * is unauthenticated and comes back 401, which renders as a silently blank image.
+ */
+export const filePageSource = (fileId: number, pageNo: number) => ({
+    uri: `${API_URL}/files/${fileId}/page/${pageNo}`,
+    headers: authToken ? { 'X-API-Token': authToken } : undefined,
+});
+
+export interface LibraryPost {
+    id: number; title: string; writer?: string | null; date?: string | null;
+    content?: string | null; url?: string | null;
+}
+
+export interface LibraryItemDetail {
+    type: LibraryItemType;
+    id: number;
+    title: string;
+    week?: string | null;
+    kind?: string | null;
+    pages?: number | null;
+    captioned_pages?: number;
+    /** Extracted text / instructions / transcript, depending on type. */
+    content?: string | null;
+    summary?: string | null;
+    chars: number;
+    status?: string | null;
+    error?: string | null;
+    due_date?: string | null;
+    completed?: boolean;
+    duration?: number | null;
+    posts?: LibraryPost[];
+    url?: string | null;
+    moodle_id?: number;
+}
+
+export const getLibraryItem = async (
+    courseId: number, itemType: string, itemId: number,
+): Promise<LibraryItemDetail> => {
+    const response = await api.get(`/courses/${courseId}/library/${itemType}/${itemId}`);
+    return response.data;
+};

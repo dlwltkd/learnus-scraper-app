@@ -210,7 +210,7 @@ export default function CourseLibraryScreen() {
                                             key={`${item.type}-${item.id}`}
                                             style={[styles.row, index > 0 && styles.rowBorderTop]}
                                             activeOpacity={0.6}
-                                            onPress={() => navigation.navigate('LibraryItem', { item, courseName })}
+                                            onPress={() => navigation.navigate('LibraryItem', { item, courseId, courseName })}
                                         >
                                             <Ionicons
                                                 name={TYPE_ICON[item.type]}

@@ -287,6 +287,73 @@ def build_library(db, course) -> dict:
     }
 
 
+def get_item_detail(db, course, item_type: str, item_id: int) -> dict | None:
+    """
+    The actual content behind one library row.
+
+    Kept out of the library listing on purpose — bodies are large and the tree is meant to
+    stay cheap — but a row that opens to nothing but its own title is useless, so every
+    type resolves to something readable here.
+    """
+    from database import Assignment, VOD, VodTranscript, FileResource, Board, Post
+
+    if item_type in ('file', 'label'):
+        row = db.query(FileResource).filter_by(id=item_id, course_id=course.id).first()
+        if not row:
+            return None
+        return {
+            'type': item_type, 'id': row.id, 'title': row.title, 'week': row.week,
+            'kind': row.file_kind, 'pages': row.page_count,
+            'captioned_pages': row.captioned_pages or 0,
+            'content': row.content, 'chars': row.content_chars or 0,
+            'status': row.extract_status, 'error': row.extract_error, 'url': row.url,
+        }
+
+    if item_type == 'assignment':
+        row = db.query(Assignment).filter_by(id=item_id, course_id=course.id).first()
+        if not row:
+            return None
+        return {
+            'type': 'assignment', 'id': row.id, 'title': row.title, 'week': row.week,
+            'due_date': row.due_date, 'completed': bool(row.is_completed),
+            'content': row.description, 'chars': len(row.description or ''),
+            'url': row.url,
+        }
+
+    if item_type == 'vod':
+        row = db.query(VOD).filter_by(id=item_id, course_id=course.id).first()
+        if not row:
+            return None
+        transcript = db.query(VodTranscript).filter_by(moodle_id=row.moodle_id).first()
+        return {
+            'type': 'vod', 'id': row.id, 'title': row.title, 'week': row.week,
+            'duration': row.duration, 'completed': bool(row.is_completed),
+            'summary': transcript.summary if transcript else None,
+            'content': transcript.transcript if transcript else None,
+            'chars': len(transcript.transcript) if (transcript and transcript.transcript) else 0,
+            'status': (transcript.status if transcript else None) or 'not_transcribed',
+            'url': row.url, 'moodle_id': row.moodle_id,
+        }
+
+    if item_type == 'board':
+        row = db.query(Board).filter_by(id=item_id, course_id=course.id).first()
+        if not row:
+            return None
+        posts = db.query(Post).filter_by(board_id=row.id).all()
+        return {
+            'type': 'board', 'id': row.id, 'title': row.title, 'week': row.week,
+            'url': row.url,
+            'posts': [
+                {'id': p.id, 'title': p.title, 'writer': p.writer, 'date': p.date,
+                 'content': p.content, 'url': p.url}
+                for p in posts
+            ],
+            'chars': sum(len(p.content or '') for p in posts),
+        }
+
+    return None
+
+
 def fetch_assignment_descriptions(client, db, course, force: bool = False) -> dict:
     """
     Fill in assignment instructions, one request per assignment.

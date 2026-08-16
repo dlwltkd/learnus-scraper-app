@@ -16,8 +16,8 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { Spacing } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
 import { useTheme } from './context/ThemeContext';
-import { filePageUrl } from './services/api';
-import type { LibraryItem } from './services/api';
+import { filePageSource, getLibraryItem } from './services/api';
+import type { LibraryItem, LibraryItemDetail } from './services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -36,17 +36,31 @@ export default function LibraryItemScreen() {
     );
     const navigation = useNavigation<any>();
     const route = useRoute();
-    const { item, courseName } = route.params as { item: LibraryItem; courseName?: string };
+    const { item, courseId, courseName } = route.params as { item: LibraryItem; courseId: number; courseName?: string };
 
     const [page, setPage] = useState(1);
     const [pageLoading, setPageLoading] = useState(true);
+    const [detail, setDetail] = useState<LibraryItemDetail | null>(null);
+    const [loadingDetail, setLoadingDetail] = useState(true);
 
     const isPdf = item.type === 'file' && item.kind === 'pdf' && !!item.pages;
     const pageCount = item.pages || 0;
 
     useEffect(() => {
         navigation.setOptions({ title: item.title?.slice(0, 28) || '자료' });
-    }, [navigation, item.title]);
+        let alive = true;
+        (async () => {
+            try {
+                const d = await getLibraryItem(courseId, item.type, item.id);
+                if (alive) setDetail(d);
+            } catch (e) {
+                console.log('Failed to load item detail', e);
+            } finally {
+                if (alive) setLoadingDetail(false);
+            }
+        })();
+        return () => { alive = false; };
+    }, [navigation, item.title, item.type, item.id, courseId]);
 
     const goToPage = (next: number) => {
         if (next < 1 || next > pageCount) return;
@@ -88,7 +102,7 @@ export default function LibraryItemScreen() {
                                 </View>
                             )}
                             <Image
-                                source={{ uri: filePageUrl(item.id, page) }}
+                                source={filePageSource(item.id, page)}
                                 style={styles.pageImage}
                                 resizeMode="contain"
                                 onLoadEnd={() => setPageLoading(false)}
@@ -117,8 +131,52 @@ export default function LibraryItemScreen() {
                     </View>
                 )}
 
-                {item.type === 'label' && (
-                    <Text style={styles.body}>{item.title}</Text>
+                {loadingDetail && (
+                    <ActivityIndicator style={styles.detailLoading} color={colors.primary} />
+                )}
+
+                {/* Board: the posts themselves. A row that opened to nothing but its own
+                    title was the whole problem — an announcement is its text. */}
+                {detail?.posts && detail.posts.length > 0 && (
+                    <View style={styles.posts}>
+                        {detail.posts.map(post => (
+                            <View key={post.id} style={styles.post}>
+                                <Text style={styles.postTitle}>{post.title}</Text>
+                                <Text style={styles.postMeta}>
+                                    {[post.writer, post.date].filter(Boolean).join(' · ')}
+                                </Text>
+                                {!!post.content && <Text style={styles.postBody}>{post.content.trim()}</Text>}
+                            </View>
+                        ))}
+                    </View>
+                )}
+                {detail?.type === 'board' && detail.posts?.length === 0 && (
+                    <Text style={styles.emptyBody}>아직 글이 없어요.</Text>
+                )}
+
+                {/* Assignment instructions, lecture transcript, label text, extracted
+                    slide text — all the same shape: readable body copy. */}
+                {detail?.type === 'vod' && !!detail.summary && (
+                    <View style={styles.summaryBox}>
+                        <Text style={styles.summaryLabel}>요약</Text>
+                        <Text style={styles.body}>{detail.summary.trim()}</Text>
+                    </View>
+                )}
+
+                {detail?.type !== 'board' && !!detail?.content && (
+                    <View style={styles.bodyBlock}>
+                        {detail.type === 'file' && <Text style={styles.bodyLabel}>추출된 텍스트</Text>}
+                        {detail.type === 'vod' && <Text style={styles.bodyLabel}>강의 스크립트</Text>}
+                        <Text style={styles.body} selectable>{detail.content.trim()}</Text>
+                    </View>
+                )}
+
+                {!loadingDetail && detail && !detail.content && !detail.posts?.length && (
+                    <Text style={styles.emptyBody}>
+                        {detail.status === 'not_transcribed'
+                            ? '아직 텍스트로 변환되지 않았어요.'
+                            : '표시할 내용이 없어요.'}
+                    </Text>
                 )}
 
                 {item.chars > 0 && (
@@ -180,6 +238,33 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         pagerBtnDisabled: { opacity: 0.35 },
         pagerText: { ...typography.subtitle2, fontVariant: ['tabular-nums'] },
 
-        body: { ...typography.body1, marginTop: Spacing.l, lineHeight: 24 },
+        detailLoading: { marginTop: Spacing.xl },
+
+        posts: { marginTop: Spacing.l, gap: Spacing.m },
+        post: {
+            backgroundColor: colors.surface,
+            borderRadius: layout.borderRadius.m,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: Spacing.m,
+            gap: 4,
+        },
+        postTitle: { ...typography.subtitle1 },
+        postMeta: { ...typography.caption },
+        postBody: { ...typography.body2, color: colors.textPrimary, lineHeight: 22, marginTop: 6 },
+
+        summaryBox: {
+            marginTop: Spacing.l,
+            backgroundColor: colors.surfaceMuted,
+            borderRadius: layout.borderRadius.m,
+            padding: Spacing.m,
+        },
+        summaryLabel: { ...typography.caption, color: colors.textSecondary, marginBottom: 4 },
+
+        bodyBlock: { marginTop: Spacing.l },
+        bodyLabel: { ...typography.caption, color: colors.textSecondary, marginBottom: Spacing.s },
+        emptyBody: { ...typography.body2, color: colors.textTertiary, marginTop: Spacing.xl, textAlign: 'center' },
+
+        body: { ...typography.body1, lineHeight: 24 },
         corpusNote: { ...typography.caption, marginTop: Spacing.l },
     });

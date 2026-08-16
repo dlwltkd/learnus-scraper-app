@@ -297,6 +297,26 @@ def get_course_library(
     return course_brain.build_library(db, course)
 
 
+@app.get("/courses/{course_id}/library/{item_type}/{item_id}")
+def get_course_library_item(
+    course_id: int,
+    item_type: str,
+    item_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """The content behind one library row — post bodies, instructions, transcript, text."""
+    course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
+    if not course:
+        raise HTTPException(404, "Course not found")
+
+    import course_brain
+    detail = course_brain.get_item_detail(db, course, item_type, item_id)
+    if not detail:
+        raise HTTPException(404, "Item not found")
+    return detail
+
+
 @app.get("/files/{file_id}/page/{page_no}")
 def get_file_page(
     file_id: int,
