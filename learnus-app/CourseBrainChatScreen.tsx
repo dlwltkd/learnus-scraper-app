@@ -20,6 +20,8 @@ import { Spacing } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
 import { useTheme } from './context/ThemeContext';
 import { BlinkingCursor, SelectableMarkdown, createMarkdownStyles } from './AIChatModal';
+import VodWebViewer from './components/VodWebViewer';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     chatWithCourseBrain,
     filePageSource,
@@ -40,6 +42,12 @@ const CITE_PATTERN = /\[S\d+\]/g;
 /** The model's request to show a slide at this point: [[slide:S14:12]] */
 const SLIDE_PATTERN = /\[\[slide:(S\d+):(\d+)\]\]/g;
 
+/** The model's request to play a lecture from a moment: [[vod:S8@12:00]] */
+const VOD_PATTERN = /\[\[vod:(S\d+)@(\d{1,2}):(\d{2})(?::(\d{2}))?\]\]/g;
+
+/** Both markers, so one pass can split prose around either. */
+const EMBED_PATTERN = /\[\[slide:(S\d+):(\d+)\]\]|\[\[vod:(S\d+)@(\d{1,2}):(\d{2})(?::(\d{2}))?\]\]/g;
+
 const CHIP_ICON: Record<LibraryItemType, keyof typeof Ionicons.glyphMap> = {
     file: 'document-text-outline',
     label: 'information-circle-outline',
@@ -50,17 +58,31 @@ const CHIP_ICON: Record<LibraryItemType, keyof typeof Ionicons.glyphMap> = {
 
 type Segment =
     | { kind: 'text'; text: string }
-    | { kind: 'slide'; ref: string; page: number };
+    | { kind: 'slide'; ref: string; page: number }
+    | { kind: 'vod'; ref: string; seconds: number; label: string };
 
-/** Split an answer into prose and the slides the model asked to show inside it. */
+/** Split an answer into prose and the artifacts the model asked to show inside it. */
 function splitAnswer(body: string): Segment[] {
     const segments: Segment[] = [];
     let last = 0;
-    SLIDE_PATTERN.lastIndex = 0;
+    EMBED_PATTERN.lastIndex = 0;
     let match: RegExpExecArray | null;
-    while ((match = SLIDE_PATTERN.exec(body)) !== null) {
+    while ((match = EMBED_PATTERN.exec(body)) !== null) {
         if (match.index > last) segments.push({ kind: 'text', text: body.slice(last, match.index) });
-        segments.push({ kind: 'slide', ref: match[1], page: parseInt(match[2], 10) });
+        if (match[1]) {
+            segments.push({ kind: 'slide', ref: match[1], page: parseInt(match[2], 10) });
+        } else {
+            const [h, m, sec] = match[6] !== undefined
+                ? [parseInt(match[4], 10), parseInt(match[5], 10), parseInt(match[6], 10)]
+                : [0, parseInt(match[4], 10), parseInt(match[5], 10)];
+            segments.push({
+                kind: 'vod',
+                ref: match[3],
+                seconds: h * 3600 + m * 60 + sec,
+                label: match[6] !== undefined ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+                                              : `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`,
+            });
+        }
         last = match.index + match[0].length;
     }
     if (last < body.length) segments.push({ kind: 'text', text: body.slice(last) });
@@ -96,6 +118,7 @@ export default function CourseBrainChatScreen() {
     const [library, setLibrary] = useState<CourseLibrary | null>(null);
     const [openCite, setOpenCite] = useState<string | null>(null);
     const [citePages, setCitePages] = useState<Record<string, { fileId: number; page: number } | null>>({});
+    const [player, setPlayer] = useState<{ url: string; title: string; cookies: string; startAt: number } | null>(null);
 
     const scrollRef = useRef<ScrollView>(null);
     const cancelRef = useRef<(() => void) | null>(null);
@@ -190,6 +213,14 @@ export default function CourseBrainChatScreen() {
         }
     }, [courseId, openCite, citePages]);
 
+    /** Play a cited lecture from the moment the answer drew on. */
+    const playFrom = useCallback(async (citation: BrainCitation, seconds: number) => {
+        const item = itemFor('vod', citation.id);
+        const url = item?.url || `https://ys.learnus.org/mod/vod/viewer.php?id=${item?.moodle_id}`;
+        const cookies = (await AsyncStorage.getItem('userToken')) || '';
+        setPlayer({ url, title: citation.title, cookies, startAt: seconds });
+    }, [itemFor]);
+
     const renderArtifact = (
         key: string,
         fileId: number,
@@ -223,7 +254,7 @@ export default function CourseBrainChatScreen() {
                         style={markdownStyles}
                         onLinkPress={(url: string) => { Linking.openURL(url).catch(() => {}); return false; }}
                     >
-                        {body.replace(SLIDE_PATTERN, '') || ' '}
+                        {body.replace(EMBED_PATTERN, '') || ' '}
                     </Markdown>
                     <BlinkingCursor colors={colors} />
                 </View>
@@ -236,7 +267,30 @@ export default function CourseBrainChatScreen() {
                 return text ? <SelectableMarkdown key={`t${i}`} content={text} isDark={isDark} /> : null;
             }
             const citation = turn.citations?.find(c => c.ref === segment.ref);
-            if (!citation || citation.type !== 'file') return null;
+            if (!citation) return null;
+
+            if (segment.kind === 'vod') {
+                if (citation.type !== 'vod') return null;
+                return (
+                    <TouchableOpacity
+                        key={`v${i}`}
+                        style={styles.vodArtifact}
+                        activeOpacity={0.85}
+                        onPress={() => playFrom(citation, segment.seconds)}
+                    >
+                        <View style={styles.vodPlay}>
+                            <Ionicons name="play" size={20} color={colors.primaryForeground} />
+                        </View>
+                        <View style={styles.vodText}>
+                            <Text style={styles.vodTitle} numberOfLines={2}>{citation.title}</Text>
+                            <Text style={styles.vodTime}>{segment.label}부터 재생</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                );
+            }
+
+            if (citation.type !== 'file') return null;
             return renderArtifact(
                 `s${i}`,
                 citation.id,
@@ -376,6 +430,16 @@ export default function CourseBrainChatScreen() {
                     </TouchableOpacity>
                 </View>
             </KeyboardAvoidingView>
+
+            {player && (
+                <VodWebViewer
+                    url={player.url}
+                    title={player.title}
+                    cookies={player.cookies}
+                    startAt={player.startAt}
+                    onClose={() => setPlayer(null)}
+                />
+            )}
         </SafeAreaView>
     );
 }
@@ -474,6 +538,25 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
             borderTopColor: colors.divider,
         },
         artifactLabel: { ...typography.caption, flex: 1 },
+
+        vodArtifact: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: Spacing.m,
+            backgroundColor: colors.surface,
+            borderRadius: layout.borderRadius.l,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: Spacing.m,
+        },
+        vodPlay: {
+            width: 40, height: 40, borderRadius: 20,
+            alignItems: 'center', justifyContent: 'center',
+            backgroundColor: colors.primary,
+        },
+        vodText: { flex: 1, gap: 2 },
+        vodTitle: { ...typography.subtitle2, color: colors.textPrimary },
+        vodTime: { ...typography.caption, color: colors.primary },
 
         inputBar: {
             flexDirection: 'row',

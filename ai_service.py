@@ -29,6 +29,16 @@ TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
 # both paths now share the value chat has been using in production.
 TRANSCRIPT_CONTEXT_CHARS = 80000
 
+# Audio is split into fixed-length chunks before transcription, so each chunk's index is
+# its start time — timestamps for free, from work already being done.
+#
+# The transcription models that replaced whisper-1 dropped `timestamp_granularities`
+# entirely, and whisper-1 costs twice as much with a higher word error rate. Since these
+# are Korean/English lectures where transcript quality is the corpus, the chunk length is
+# what buys precision instead: 120s gives ±2 minutes, enough to jump to the right part of
+# a lecture, at no extra cost — billing is per minute of audio, not per request.
+TRANSCRIBE_CHUNK_SECONDS = 120
+
 # Text model for every chat/summary/flashcard call.
 #
 # gpt-5.6-luna: 1.05M context, $0.20/1M input but $0.02/1M cached — a tenth, versus half
@@ -51,6 +61,13 @@ VISION_MODEL = TEXT_MODEL
 # simple figure, which "low" reads fine; a dense diagram with small axis labels is where
 # it would lose detail, and that is the case to escalate if captions ever look thin.
 VISION_DETAIL = "low"
+
+
+def _format_timestamp(seconds: int) -> str:
+    """MM:SS, or H:MM:SS past an hour — the form a player's scrubber shows."""
+    hours, rem = divmod(int(seconds), 3600)
+    minutes, secs = divmod(rem, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes:02d}:{secs:02d}"
 
 
 def _extract_usage(response) -> dict:
@@ -296,7 +313,7 @@ Rules:
             raise RuntimeError(f"ffmpeg failed: {stderr_text}")
         return duration_seconds
 
-    def _split_audio_chunks(self, audio_path: str, chunk_dir: str, segment_seconds: int = 600) -> list[str]:
+    def _split_audio_chunks(self, audio_path: str, chunk_dir: str, segment_seconds: int = TRANSCRIBE_CHUNK_SECONDS) -> list[str]:
         pattern = os.path.join(chunk_dir, "chunk_%03d.mp3")
         result = subprocess.run(
             [
@@ -350,7 +367,7 @@ Rules:
             )
 
             with tempfile.TemporaryDirectory(prefix="transcribe_chunks_") as chunk_dir:
-                chunks = self._split_audio_chunks(tmp_path, chunk_dir, segment_seconds=600)
+                chunks = self._split_audio_chunks(tmp_path, chunk_dir)
                 if not chunks:
                     chunks = [tmp_path]
                 logger.info(f"Audio split into {len(chunks)} chunk(s)")
@@ -368,7 +385,10 @@ Rules:
                         )
                     text = response.strip() if isinstance(response, str) else str(response).strip()
                     if text:
-                        texts.append(text)
+                        # Chunk index is its start time, so every passage carries a
+                        # timestamp the reader can jump to.
+                        start = (idx - 1) * TRANSCRIBE_CHUNK_SECONDS
+                        texts.append(f"[{_format_timestamp(start)}] {text}")
                     chunk_s = time.perf_counter() - chunk_t0
                     logger.info(f"Chunk {idx}/{total} transcribed in {chunk_s:.1f}s (chars={len(text)})")
                     emit("transcribing", int((idx / total) * 100), f"{idx}/{total}")
@@ -487,6 +507,15 @@ Showing a slide:
   exists, embed it instead of illustrating it yourself.
 - Never embed a page that is only text — a picture of a sentence helps nobody.
 - At most two per answer. One well-chosen figure beats a gallery.
+
+Pointing at a moment in a lecture video:
+- Lecture scripts are timestamped: a passage starting [12:00] was said 12 minutes in.
+- When the answer comes from something said in a video, write [[vod:S8@12:00]] on its own
+  line, using that passage's timestamp. The reader can then play from that point.
+- Use the timestamp of the passage you actually drew on, not the start of the lecture.
+- Timestamps mark the start of a two-minute stretch, so treat them as approximate and
+  never claim a precise second.
+- At most two per answer, same as slides.
 
 === COURSE MATERIAL ===
 {corpus}

@@ -12,9 +12,11 @@ interface VodWebViewerProps {
     title: string;
     cookies: string;
     onClose: () => void;
+    /** Seconds to start playback from, when opened from a cited moment. */
+    startAt?: number;
 }
 
-export default function VodWebViewer({ url, title, cookies, onClose }: VodWebViewerProps) {
+export default function VodWebViewer({ url, title, cookies, onClose, startAt }: VodWebViewerProps) {
     const { colors, typography, layout, isDark } = useTheme();
     const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const [loading, setLoading] = useState(true);
@@ -24,6 +26,26 @@ export default function VodWebViewer({ url, title, cookies, onClose }: VodWebVie
             .map(c => `document.cookie = ${JSON.stringify(c + '; domain=ys.learnus.org; path=/')};`)
             .join('\n') + '\ntrue;'
         : 'true;';
+
+    // The player is video.js over HLS, so seeking means setting currentTime on the <video>
+    // once it exists. It is created after page load and after the stream is attached, so
+    // this polls briefly rather than firing once and missing.
+    const seekScript = startAt && startAt > 0 ? `
+(function () {
+  var target = ${Math.floor(startAt)};
+  var tries = 0;
+  var timer = setInterval(function () {
+    tries++;
+    var v = document.querySelector('video');
+    if (v && !isNaN(v.duration) && v.duration > 0) {
+      try { v.currentTime = Math.min(target, v.duration - 1); v.play(); } catch (e) {}
+      clearInterval(timer);
+    } else if (tries > 60) {
+      clearInterval(timer);
+    }
+  }, 500);
+})();
+true;` : undefined;
 
     return (
         <Modal animationType="slide" statusBarTranslucent>
@@ -39,6 +61,7 @@ export default function VodWebViewer({ url, title, cookies, onClose }: VodWebVie
                     source={{ uri: url, headers: { Cookie: cookies } }}
                     style={{ flex: 1 }}
                     injectedJavaScriptBeforeContentLoaded={cookieScript}
+                    injectedJavaScript={seekScript}
                     onLoadStart={() => setLoading(true)}
                     onLoadEnd={() => setLoading(false)}
                     allowsInlineMediaPlayback
