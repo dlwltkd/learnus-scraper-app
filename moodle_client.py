@@ -337,7 +337,7 @@ class MoodleClient:
             if "login/index.php" in response.url or "Log in to the site" in html:
                 raise Exception("Session expired or invalid. Please login again.")
             
-            contents = {'announcements': [], 'assignments': [], 'files': [], 'boards': [], 'vods': []}
+            contents = {'announcements': [], 'assignments': [], 'files': [], 'boards': [], 'vods': [], 'folders': []}
             section_map = self._build_section_map(html)
             
             announcement_items = re.finditer(r'<li class="article-list-item">\s*<a href="([^"]+)">.*?<div class="article-subject"[^>]*title="([^"]+)">.*?<div class="article-date">([^<]+)</div>', html, re.DOTALL)
@@ -366,7 +366,10 @@ class MoodleClient:
 
                 category = None
                 if 'modtype_assign' in activity_type_str: category = 'assignments'
-                elif 'modtype_ubfile' in activity_type_str: category = 'files'
+                # `resource` is stock Moodle's file module; `ubfile` is the Yonsei variant.
+                # Only the latter was matched, so plain file resources were being dropped.
+                elif 'modtype_ubfile' in activity_type_str or 'modtype_resource' in activity_type_str: category = 'files'
+                elif 'modtype_folder' in activity_type_str: category = 'folders'
                 elif 'modtype_ubboard' in activity_type_str: category = 'boards'
                 elif 'modtype_vod' in activity_type_str or 'modtype_laby' in activity_type_str: category = 'vods'
                 elif 'modtype_quiz' in activity_type_str or 'quiz' in activity_type_str: category = 'assignments'
@@ -426,11 +429,99 @@ class MoodleClient:
                         else:
                             date_only_match = re.search(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})', inner_html)
                             item_data['deadline_text'] = date_only_match.group(1) if date_only_match else None
-                    contents[category].append(item_data)
+                    if category == 'folders':
+                        # A folder is a container, not a document. Expand it into its
+                        # files so each is separately stored, extracted and citable, and
+                        # inherit the folder's week so they land in the right place.
+                        for contained in self.get_folder_files(module_id):
+                            contained['section'] = item_data.get('section')
+                            contained['week'] = item_data.get('week')
+                            contents['files'].append(contained)
+                    else:
+                        contents[category].append(item_data)
             return contents
         except Exception as e:
             self.logger.error(f"Failed to get contents: {e}")
             raise
+
+    def get_folder_files(self, folder_module_id):
+        """
+        Enumerate the files inside a Moodle `folder` module.
+
+        Folders were matched by no branch in the course parser, so their contents were
+        invisible — and they are not marginal: one course carries 13 folders, each holding
+        ~3 PDFs, all of them 강의안 lecture notes. That is the single highest-value content
+        type on the course, and none of it was reaching the database.
+
+        Contained files get a derived id (folder id * 100 + index) so each is individually
+        addressable and stable across syncs, since Moodle exposes no module id for them.
+        """
+        url = f"{self.base_url}/mod/folder/view.php?id={folder_module_id}"
+        try:
+            page = self.session.get(url, timeout=30).text
+        except Exception as e:
+            self.logger.warning(f"get_folder_files failed for {folder_module_id}: {e}")
+            return []
+
+        name_match = re.search(r'<h2[^>]*>(.*?)</h2>', page, re.DOTALL)
+        folder_name = re.sub(r'<[^>]+>', '', name_match.group(1)).strip() if name_match else 'folder'
+
+        from urllib.parse import unquote
+        files = []
+        for index, file_url in enumerate(dict.fromkeys(re.findall(r'https://[^"]*pluginfile\.php/[^"?]+', page))):
+            filename = unquote(file_url.rsplit('/', 1)[-1])
+            files.append({
+                'id': int(folder_module_id) * 100 + index,
+                'name': f"{folder_name} / {filename}",
+                'url': file_url,
+                'is_completed': False,
+                'has_tracking': False,
+            })
+        return files
+
+    def get_assignment_detail(self, url):
+        """
+        Fetch an assignment's instructions.
+
+        The course page only carries a title and a deadline, so anything asking "what do I
+        actually have to do for HW3?" had nothing to work from. The body lives in the
+        activity's own page, in the standard Moodle `#intro` container — verified present
+        on every assignment across the sample course, yielding 180-830 characters of real
+        instructions.
+
+        Costs one request per assignment, so callers should fetch lazily and store the
+        result rather than doing this on every sync.
+        """
+        try:
+            response = self.session.get(url, timeout=30)
+            response.raise_for_status()
+            page = response.text
+
+            match = (
+                re.search(r'<div[^>]*id="intro"[^>]*>(.*?)</div>\s*</div>', page, re.DOTALL)
+                or re.search(r'<div[^>]*class="[^"]*no-overflow[^"]*"[^>]*>(.*?)</div>', page, re.DOTALL)
+            )
+            if not match:
+                return {'description': None, 'attachments': []}
+
+            text = re.sub(r'<br\s*/?>', '\n', match.group(1))
+            text = re.sub(r'</p>', '\n', text)
+            text = re.sub(r'<[^>]+>', ' ', text)
+            text = html_lib.unescape(text)
+            text = re.sub(r'[ \t]+', ' ', text)
+            text = re.sub(r'\n{3,}', '\n\n', text).strip()
+
+            # Instructor-supplied handouts only. A student's own uploaded submission also
+            # appears as a pluginfile link and is not part of the assignment's content.
+            attachments = [
+                u for u in dict.fromkeys(re.findall(r'https://[^"]*pluginfile\.php[^"]*', page))
+                if 'assignsubmission' not in u
+            ]
+
+            return {'description': text or None, 'attachments': attachments}
+        except Exception as e:
+            self.logger.warning(f"get_assignment_detail failed for {url}: {e}")
+            return {'description': None, 'attachments': []}
 
     def get_assignment_deadline(self, url):
         try:

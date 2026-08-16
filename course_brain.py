@@ -174,6 +174,41 @@ def build_file(session, file_row, course_moodle_id: int, ai_service=None,
     return report
 
 
+def fetch_assignment_descriptions(client, db, course, force: bool = False) -> dict:
+    """
+    Fill in assignment instructions, one request per assignment.
+
+    Deliberately part of the brain build rather than the regular sync: sync runs on a
+    schedule for every course, and adding a page fetch per assignment there would slow a
+    frequent path to populate a field only the brain reads. Skips anything already
+    fetched, so the cost is one-time.
+    """
+    from database import Assignment
+
+    rows = db.query(Assignment).filter_by(course_id=course.id).all()
+    summary = {'total': len(rows), 'fetched': 0, 'skipped': 0, 'empty': 0}
+
+    for row in rows:
+        if row.description and not force:
+            summary['skipped'] += 1
+            continue
+        if not row.url:
+            summary['empty'] += 1
+            continue
+
+        detail = client.get_assignment_detail(row.url)
+        row.description = detail.get('description')
+        row.description_fetched_at = datetime.now()
+        db.commit()
+
+        if row.description:
+            summary['fetched'] += 1
+        else:
+            summary['empty'] += 1
+
+    return summary
+
+
 def build_course_files(session, db, course, ai_service=None, caption: bool = True,
                        force: bool = False, on_progress=None) -> dict:
     """

@@ -117,6 +117,12 @@ class Assignment(Base):
     # Which course section (week) this sits under, captured at scrape time.
     section = Column(Integer, nullable=True)
     week = Column(String, nullable=True)
+
+    # The activity's own instructions, fetched lazily from its page. The course listing
+    # carries only a title and a deadline, which is not enough to answer what the work
+    # actually is.
+    description = Column(Text, nullable=True)
+    description_fetched_at = Column(DateTime, nullable=True)
     
     course = relationship("Course", back_populates="assignments")
 
@@ -416,6 +422,13 @@ def init_db(db_url=None):
     # created before it exists on disk without the column and every VOD query fails.
     if 'vods' in refreshed_tables:
         _add_column_if_missing('vods', 'duration', "ALTER TABLE vods ADD COLUMN duration INTEGER")
+
+    # Migration: assignment instructions, fetched from the activity page.
+    if 'assignments' in refreshed_tables:
+        _add_column_if_missing('assignments', 'description',
+                               "ALTER TABLE assignments ADD COLUMN description TEXT")
+        _add_column_if_missing('assignments', 'description_fetched_at',
+                               "ALTER TABLE assignments ADD COLUMN description_fetched_at TIMESTAMP")
 
     # Migration: downloaded originals and their extracted text.
     if 'files' in refreshed_tables:
