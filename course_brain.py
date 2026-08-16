@@ -39,6 +39,40 @@ def file_dir(course_moodle_id: int, file_moodle_id: int) -> str:
     return os.path.join(FILES_ROOT, str(course_moodle_id), str(file_moodle_id))
 
 
+def _discard_dir(path: str) -> None:
+    import shutil
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except Exception as e:
+        logger.warning(f"could not discard {path}: {e}")
+
+
+def render_page(file_row, course_moodle_id: int, page_no: int) -> str | None:
+    """
+    Get a PNG of one page, rendering it if it isn't cached yet.
+
+    Page images are treated as a cache rather than stored output: the original PDF is the
+    source of truth, and a page regenerates in roughly 0.6-1.8s depending on document
+    size. First view pays that, repeat views are served from disk, and the whole cache
+    can be deleted at any time to reclaim space without losing anything.
+
+    Returns a path, or None if the file has no stored original to render from.
+    """
+    if not file_row.local_path or not os.path.exists(file_row.local_path):
+        return None
+    if (file_row.file_kind or '') != 'pdf':
+        return None
+
+    cache_dir = os.path.join(file_dir(course_moodle_id, file_row.moodle_id), 'cache')
+    import glob as _glob
+    existing = _glob.glob(os.path.join(cache_dir, f"p{page_no:04d}*.png"))
+    if existing:
+        return existing[0]
+
+    rendered = ce.render_pdf_pages(file_row.local_path, [page_no], cache_dir)
+    return rendered.get(page_no)
+
+
 def build_file(session, file_row, course_moodle_id: int, ai_service=None,
                caption: bool = True, force: bool = False) -> dict:
     """
@@ -97,14 +131,19 @@ def build_file(session, file_row, course_moodle_id: int, ai_service=None,
             if caption and ai_service is not None:
                 targets = ce.sparse_pages(pages)[:MAX_CAPTIONS_PER_FILE]
                 if targets:
-                    renders = ce.render_pdf_pages(local_path, targets,
-                                                  os.path.join(target_dir, 'pages'))
+                    render_dir = os.path.join(target_dir, 'pages')
+                    renders = ce.render_pdf_pages(local_path, targets, render_dir)
                     for page_no, image_path in sorted(renders.items()):
                         text, _usage = ai_service.caption_slide(
                             image_path, file_row.title or '', page_no)
                         if text:
                             captions[page_no] = text
                             captioned += 1
+
+                    # Renders were scaffolding for captioning and are ~half the on-disk
+                    # footprint. They regenerate from the stored PDF in under two seconds
+                    # (see render_page), so keeping them permanently buys nothing.
+                    _discard_dir(render_dir)
 
             content = ce.assemble_pdf_text(pages, captions)
         else:

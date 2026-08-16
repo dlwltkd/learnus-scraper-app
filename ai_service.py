@@ -399,7 +399,10 @@ Rules:
             "Describe what the slide conveys, in 1-3 sentences, so a student searching their "
             "notes could find it. Name the concepts, terms, axes, labels and relationships "
             "actually shown. Transcribe any readable text in the figure. Do not describe "
-            "styling, colours or layout, and do not begin with phrases like 'This slide shows'."
+            "styling, colours or layout, and do not begin with phrases like 'This slide shows'.\n\n"
+            "If the slide carries no substantive content — a title card, a section divider, a "
+            "photo used decoratively, or a slide whose only text is already stated plainly — "
+            "reply with exactly: NONE"
         )
 
         try:
@@ -418,6 +421,14 @@ Rules:
             )
             usage = _extract_usage(response)
             caption = (response.choices[0].message.content or "").strip()
+
+            # A title card captioned as "there are no additional concepts present" is pure
+            # corpus noise: it costs context, dilutes retrieval, and says nothing. Roughly
+            # a quarter of sparse pages are dividers like this, so the model is asked to
+            # decline them outright and anything too short to carry meaning is dropped too.
+            if caption.rstrip('.').strip().upper() == "NONE" or len(caption) < 25:
+                return "", {"model": VISION_MODEL, **usage}
+
             return caption, {"model": VISION_MODEL, **usage}
         except Exception as e:
             logger.warning(f"caption_slide failed for {image_path}: {e}")
