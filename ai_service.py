@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 # response formats (no verbose_json/srt/vtt, no timestamp_granularities).
 TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
 
+# How much of a lecture transcript we hand to the model.
+#
+# Summarization used to cap at 12,000 characters while chat used 80,000. Korean
+# transcripts of a one-hour lecture run well past 30,000 characters, so the summary
+# was silently describing only the opening stretch of each lecture and calling it the
+# whole thing. The cap was never a model limit — gpt-4o-mini takes 128K tokens — so
+# both paths now share the value chat has been using in production.
+TRANSCRIPT_CONTEXT_CHARS = 80000
+
 
 def _extract_usage(response) -> dict:
     """Extract token usage from an OpenAI response."""
@@ -366,7 +375,7 @@ Line 3+: 2-3 sentences describing what was specifically covered in this lecture.
 Keep it concise and natural. Focus on content, not on the fact that it's a lecture.
 
 Transcript:
-{transcript[:12000]}"""
+{transcript[:TRANSCRIPT_CONTEXT_CHARS]}"""
 
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
@@ -387,7 +396,7 @@ Transcript:
         Returns the assistant's reply.
         """
         # Truncate transcript to fit within context window
-        truncated = transcript[:80000]
+        truncated = transcript[:TRANSCRIPT_CONTEXT_CHARS]
 
         system_prompt = f"""You are a Korean academic assistant helping a student understand a lecture.
 You answer based on the lecture transcript provided below. You can:
@@ -423,7 +432,7 @@ Lecture: {lecture_title}
 
     def chat_about_transcript_stream(self, transcript: str, course_name: str, lecture_title: str, messages: list):
         """Streaming version of chat_about_transcript. Yields token strings."""
-        truncated = transcript[:80000]
+        truncated = transcript[:TRANSCRIPT_CONTEXT_CHARS]
 
         system_prompt = f"""You are a Korean academic assistant helping a student understand a lecture.
 You answer based on the lecture transcript provided below. You can:
@@ -467,7 +476,7 @@ Lecture: {lecture_title}
         Returns (cards_list, usage_dict) where cards_list is [{front, back}, ...].
         """
         count = max(1, min(count, 20))
-        truncated = transcript[:12000]
+        truncated = transcript[:TRANSCRIPT_CONTEXT_CHARS]
 
         prompt = f"""Based on this lecture transcript, generate exactly {count} flashcards for study purposes.
 
