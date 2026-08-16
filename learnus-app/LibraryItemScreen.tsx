@@ -110,6 +110,22 @@ export default function LibraryItemScreen() {
                             />
                         </View>
 
+                        {/* Neighbouring pages, mounted offscreen purely to pull them into
+                            the image cache. Image.prefetch cannot carry the auth header,
+                            so a hidden <Image> is the way to warm the client; the server
+                            warms its own render cache in parallel. */}
+                        <View style={styles.prefetch} pointerEvents="none">
+                            {[page - 1, page + 1, page + 2]
+                                .filter(n => n >= 1 && n <= pageCount && n !== page)
+                                .map(n => (
+                                    <Image
+                                        key={n}
+                                        source={filePageSource(item.id, n)}
+                                        style={styles.prefetchImage}
+                                    />
+                                ))}
+                        </View>
+
                         <View style={styles.pager}>
                             <TouchableOpacity
                                 onPress={() => goToPage(page - 1)}
@@ -237,6 +253,8 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
             borderWidth: 1, borderColor: colors.border,
         },
         pagerBtnDisabled: { opacity: 0.35 },
+        prefetch: { position: 'absolute', width: 0, height: 0, opacity: 0, overflow: 'hidden' },
+        prefetchImage: { width: 1, height: 1 },
         pagerText: { ...typography.subtitle2, fontVariant: ['tabular-nums'] },
 
         detailLoading: { marginTop: Spacing.xl },

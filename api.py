@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 from typing import List, Optional
@@ -321,6 +321,7 @@ def get_course_library_item(
 def get_file_page(
     file_id: int,
     page_no: int,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -350,6 +351,15 @@ def get_file_page(
     path = course_brain.render_page(file_row, course.moodle_id, page_no)
     if not path:
         raise HTTPException(404, "No stored original to render from")
+
+    # Warm the pages either side after responding. Paging through a deck is the common
+    # case, and a cold render is the entire ~1-2s delay; doing it in the background means
+    # the next tap is a disk read. Reads primitives so it survives the session closing.
+    background_tasks.add_task(
+        course_brain.warm_pages,
+        file_row.local_path, file_row.file_kind, course.moodle_id, file_row.moodle_id,
+        [page_no + 1, page_no + 2, page_no - 1], file_row.page_count,
+    )
 
     return FileResponse(path, media_type="image/png")
 

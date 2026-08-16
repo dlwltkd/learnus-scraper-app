@@ -73,6 +73,39 @@ def render_page(file_row, course_moodle_id: int, page_no: int) -> str | None:
     return rendered.get(page_no)
 
 
+def warm_pages(local_path: str, file_kind: str, course_moodle_id: int, file_moodle_id: int,
+               pages: list[int], page_count: int | None = None) -> None:
+    """
+    Render neighbouring pages into the cache ahead of being asked for them.
+
+    A cold page costs ~1-2s to rasterise, which is the whole delay when paging through a
+    deck. Warming the pages either side turns every subsequent tap into a disk read.
+    Takes primitives rather than a model row because it runs after the request's database
+    session has closed.
+    """
+    if not local_path or file_kind != 'pdf' or not os.path.exists(local_path):
+        return
+
+    cache_dir = os.path.join(file_dir(course_moodle_id, file_moodle_id), 'cache')
+    import glob as _glob
+
+    wanted = []
+    for page_no in pages:
+        if page_no < 1 or (page_count and page_no > page_count):
+            continue
+        if _glob.glob(os.path.join(cache_dir, f"p{page_no:04d}*.png")):
+            continue
+        wanted.append(page_no)
+
+    if not wanted:
+        return
+    try:
+        ce.render_pdf_pages(local_path, wanted, cache_dir)
+    except Exception as e:
+        # Warming is best-effort; a failure just means the page renders on demand.
+        logger.warning(f"page warm failed for {local_path}: {e}")
+
+
 def build_file(session, file_row, course_moodle_id: int, ai_service=None,
                caption: bool = True, force: bool = False) -> dict:
     """
