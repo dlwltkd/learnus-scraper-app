@@ -41,7 +41,18 @@ export default function LabsScreen() {
                     <View style={styles.headerIcon}>
                         <Ionicons name="flask" size={28} color={colors.primary} />
                     </View>
-                    <Text style={styles.title}>개잘자 옵션</Text>
+                    {/* One line, and allowed to shrink to stay there. At large system
+                        font scales this wrapped, stranding "옵션" on its own line;
+                        capping lines alone just traded that for a "개발자 옵…" ellipsis,
+                        so the text needs room to scale down instead. */}
+                    <Text
+                        style={styles.title}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.6}
+                    >
+                        개발자 옵션
+                    </Text>
                     <Text style={styles.subtitle}>개발 및 테스트용 실험실 기능입니다.</Text>
                 </View>
 

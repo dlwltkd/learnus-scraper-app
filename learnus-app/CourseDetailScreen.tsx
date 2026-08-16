@@ -163,7 +163,7 @@ export default function CourseDetailScreen() {
             showSuccess('시청 시작', '백그라운드에서 강의를 시청하고 있어요.');
         } catch (e: any) {
             if (e?.response?.status === 403) {
-                showError('비활성화됨', '설정의 개잘자 옵션에서 자동 시청을 켜주세요.');
+                showError('비활성화됨', '설정의 개발자 옵션에서 자동 시청을 켜주세요.');
             } else if (e?.response?.status === 409) {
                 showError('진행 중', '전체 시청이 이미 실행 중이에요. 완료 후 다시 시도해주세요.');
             } else {

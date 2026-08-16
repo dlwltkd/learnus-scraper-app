@@ -398,7 +398,7 @@ function AppContent() {
               <Stack.Screen
                 name="Labs"
                 component={LabsScreen}
-                options={{ title: '개잘자 옵션' }}
+                options={{ title: '개발자 옵션' }}
               />
             </>
           )}

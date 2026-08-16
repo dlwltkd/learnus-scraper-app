@@ -301,7 +301,7 @@ export default function SettingsScreen() {
                         <SettingItem
                             icon="flask-outline"
                             iconColor={colors.warning}
-                            title="개잘자 옵션"
+                            title="개발자 옵션"
                             subtitle={autoWatchEnabled ? '자동 시청 켜짐' : '자동 시청 꺼짐'}
                             onPress={() => (navigation as any).navigate('Labs')}
                             isFirst

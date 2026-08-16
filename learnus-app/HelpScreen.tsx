@@ -79,7 +79,7 @@ export default function HelpScreen() {
         tapCountRef.current = 0;
         try {
             await unlockLabs();
-            showSuccess('실험실 활성화', '설정에서 개잘자 옵션을 확인할 수 있어요.');
+            showSuccess('실험실 활성화', '설정에서 개발자 옵션을 확인할 수 있어요.');
         } catch (e) {
             showError('오류', '실험실 기능을 활성화할 수 없어요.');
         }
