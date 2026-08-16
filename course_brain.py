@@ -88,6 +88,13 @@ def build_file(session, file_row, course_moodle_id: int, ai_service=None,
         report['chars'] = file_row.content_chars or len(file_row.content)
         return report
 
+    # Labels carry their text inline from the course page and have no URL to fetch, so
+    # there is nothing for a rebuild to do — including a forced one.
+    if not file_row.url:
+        report['status'] = 'skipped'
+        report['chars'] = file_row.content_chars or len(file_row.content or '')
+        return report
+
     target_dir = file_dir(course_moodle_id, file_row.moodle_id)
     os.makedirs(target_dir, exist_ok=True)
 

@@ -337,7 +337,7 @@ class MoodleClient:
             if "login/index.php" in response.url or "Log in to the site" in html:
                 raise Exception("Session expired or invalid. Please login again.")
             
-            contents = {'announcements': [], 'assignments': [], 'files': [], 'boards': [], 'vods': [], 'folders': []}
+            contents = {'announcements': [], 'assignments': [], 'files': [], 'boards': [], 'vods': [], 'folders': [], 'labels': []}
             section_map = self._build_section_map(html)
             
             announcement_items = re.finditer(r'<li class="article-list-item">\s*<a href="([^"]+)">.*?<div class="article-subject"[^>]*title="([^"]+)">.*?<div class="article-date">([^<]+)</div>', html, re.DOTALL)
@@ -370,6 +370,11 @@ class MoodleClient:
                 # Only the latter was matched, so plain file resources were being dropped.
                 elif 'modtype_ubfile' in activity_type_str or 'modtype_resource' in activity_type_str: category = 'files'
                 elif 'modtype_folder' in activity_type_str: category = 'folders'
+                # A label is inline text printed straight onto the course page. It has no
+                # link and no page of its own, which is why it matched nothing — but the
+                # text is often the instructor talking to the class ("no quiz this week,
+                # everyone gets full marks"), which is exactly what students ask about.
+                elif 'modtype_label' in activity_type_str: category = 'labels'
                 elif 'modtype_ubboard' in activity_type_str: category = 'boards'
                 elif 'modtype_vod' in activity_type_str or 'modtype_laby' in activity_type_str: category = 'vods'
                 elif 'modtype_quiz' in activity_type_str or 'quiz' in activity_type_str: category = 'assignments'
@@ -429,7 +434,25 @@ class MoodleClient:
                         else:
                             date_only_match = re.search(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})', inner_html)
                             item_data['deadline_text'] = date_only_match.group(1) if date_only_match else None
-                    if category == 'folders':
+                    if category == 'labels':
+                        body = re.search(r'<div class="contentwithoutlink[^"]*"[^>]*>(.*?)</div>\s*</div>\s*</div>',
+                                         inner_html, re.DOTALL)
+                        text = body.group(1) if body else inner_html
+                        text = re.sub(r'<br\s*/?>', '\n', text)
+                        text = re.sub(r'</p>', '\n', text)
+                        text = re.sub(r'<[^>]+>', ' ', text)
+                        text = html_lib.unescape(text)
+                        text = re.sub(r'[ \t]+', ' ', text)
+                        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+
+                        if len(text) >= 15:
+                            # No download to do — the text is already here, so it is stored
+                            # inline and the corpus build skips fetching it.
+                            item_data['name'] = (text.split('\n')[0][:60] or '안내').strip()
+                            item_data['url'] = None
+                            item_data['inline_content'] = text
+                            contents['files'].append(item_data)
+                    elif category == 'folders':
                         # A folder is a container, not a document. Expand it into its
                         # files so each is separately stored, extracted and citable, and
                         # inherit the folder's week so they land in the right place.
@@ -642,6 +665,14 @@ class MoodleClient:
             fres.url = item['url']
             fres.section = item.get('section')
             fres.week = item.get('week')
+            # Label text lives on the course page itself, so it is complete at sync time
+            # and needs no download or extraction pass.
+            if item.get('inline_content'):
+                fres.content = item['inline_content']
+                fres.content_chars = len(item['inline_content'])
+                fres.file_kind = 'label'
+                fres.extract_status = 'ok'
+                fres.extracted_at = datetime.now()
             fres.is_completed = item['is_completed']
 
         for item in contents['boards']:
