@@ -193,6 +193,32 @@ def extract_ipynb(data: bytes) -> str:
     return _clean("\n\n".join(parts))
 
 
+def html_to_text(raw: str | None) -> str:
+    """
+    Flatten stored HTML into readable text.
+
+    Board posts are kept as HTML because the post detail screen renders them in a WebView,
+    but everywhere else the markup is noise: it renders literally in a plain <Text>, and
+    it burns corpus tokens on `<p></p>` that carry no meaning for a model.
+    """
+    if not raw:
+        return ''
+
+    import html as html_lib
+
+    text = re.sub(r'(?is)<(script|style)[^>]*>.*?</\1>', ' ', raw)
+    text = re.sub(r'(?i)<br\s*/?>', '\n', text)
+    text = re.sub(r'(?i)</(p|div|li|tr|h[1-6])>', '\n', text)
+    text = re.sub(r'(?i)<li[^>]*>', '• ', text)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = html_lib.unescape(text)
+    text = text.replace('\xa0', ' ')
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r' *\n *', '\n', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 def extract_plain(data: bytes) -> str:
     return _clean(data.decode('utf-8', errors='replace'))
 

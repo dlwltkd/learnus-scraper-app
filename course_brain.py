@@ -343,12 +343,14 @@ def get_item_detail(db, course, item_type: str, item_id: int) -> dict | None:
         return {
             'type': 'board', 'id': row.id, 'title': row.title, 'week': row.week,
             'url': row.url,
+            # Posts are stored as HTML for the WebView-based detail screen; flatten it
+            # here so it reads as text and does not spend corpus tokens on markup.
             'posts': [
                 {'id': p.id, 'title': p.title, 'writer': p.writer, 'date': p.date,
-                 'content': p.content, 'url': p.url}
+                 'content': ce.html_to_text(p.content), 'url': p.url}
                 for p in posts
             ],
-            'chars': sum(len(p.content or '') for p in posts),
+            'chars': sum(len(ce.html_to_text(p.content)) for p in posts),
         }
 
     return None
