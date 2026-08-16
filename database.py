@@ -113,6 +113,10 @@ class Assignment(Base):
     is_completed = Column(Boolean, default=False)
     completion_overridden = Column(Boolean, default=False)
     url = Column(String)
+
+    # Which course section (week) this sits under, captured at scrape time.
+    section = Column(Integer, nullable=True)
+    week = Column(String, nullable=True)
     
     course = relationship("Course", back_populates="assignments")
 
@@ -129,6 +133,10 @@ class VOD(Base):
     is_completed = Column(Boolean, default=False)
     has_tracking = Column(Boolean, default=True)
     url = Column(String)
+
+    # Which course section (week) this sits under, captured at scrape time.
+    section = Column(Integer, nullable=True)
+    week = Column(String, nullable=True)
     duration = Column(Integer, nullable=True)  # video duration in seconds, scraped from course page
 
     course = relationship("Course", back_populates="vods")
@@ -157,6 +165,10 @@ class FileResource(Base):
     
     title = Column(String)
     url = Column(String)
+
+    # Which course section (week) this sits under, captured at scrape time.
+    section = Column(Integer, nullable=True)
+    week = Column(String, nullable=True)
     
     is_completed = Column(Boolean, default=False)
     local_path = Column(String, nullable=True)
@@ -172,6 +184,10 @@ class Board(Base):
     
     title = Column(String)
     url = Column(String)
+
+    # Which course section (week) this sits under, captured at scrape time.
+    section = Column(Integer, nullable=True)
+    week = Column(String, nullable=True)
     
     course = relationship("Course", back_populates="boards")
     posts = relationship("Post", back_populates="board", cascade="all, delete-orphan")
@@ -369,6 +385,22 @@ def init_db(db_url=None):
             'completion_overridden',
             "ALTER TABLE assignments ADD COLUMN completion_overridden BOOLEAN DEFAULT FALSE",
         )
+
+    # Migration: record which course section (week) each item belongs to.
+    #
+    # Only recoverable while parsing the course page — the activity markup carries no
+    # back reference to its section, so anything synced before this migration has NULL
+    # until its course is re-synced.
+    refreshed_tables = sa_inspect(engine).get_table_names()
+    for _tbl in ('assignments', 'vods', 'files', 'boards'):
+        if _tbl in refreshed_tables:
+            _add_column_if_missing(_tbl, 'section', f"ALTER TABLE {_tbl} ADD COLUMN section INTEGER")
+            _add_column_if_missing(_tbl, 'week', f"ALTER TABLE {_tbl} ADD COLUMN week VARCHAR")
+
+    # Migration: vods.duration was added to the model without one, so any database
+    # created before it exists on disk without the column and every VOD query fails.
+    if 'vods' in refreshed_tables:
+        _add_column_if_missing('vods', 'duration', "ALTER TABLE vods ADD COLUMN duration INTEGER")
 
     # Migration: add transcription status columns
     refreshed_tables = sa_inspect(engine).get_table_names()

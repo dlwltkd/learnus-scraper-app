@@ -293,6 +293,40 @@ class MoodleClient:
             self.logger.error(f"Scraping failed: {e}")
             raise
 
+    def _build_section_map(self, html):
+        """
+        Map each module id -> the course section (week) it sits in.
+
+        Moodle groups activities under <li id="section-N" class="section main ...">, with
+        the display name in a .sectionname element — "Week 6 [06 October - 12 October]",
+        or "Course Summary" for section 0. The activity lists themselves carry no back
+        reference to their section, so the only way to recover it is positionally: walk
+        the section boundaries and claim every module id that falls between them.
+
+        Week is the most natural axis a student asks along ("what did week 6 cover?"), and
+        it is only available here at scrape time — nothing downstream can reconstruct it.
+        """
+        section_starts = [
+            (m.start(), int(m.group(1)))
+            for m in re.finditer(r'<li[^>]*id="section-(\d+)"[^>]*class="[^"]*section\s+main', html)
+        ]
+
+        mapping = {}
+        for idx, (pos, section_num) in enumerate(section_starts):
+            end = section_starts[idx + 1][0] if idx + 1 < len(section_starts) else len(html)
+            block = html[pos:end]
+
+            name_match = (
+                re.search(r'class="[^"]*sectionname"[^>]*>(.*?)</span>', block, re.DOTALL)
+                or re.search(r'<h3[^>]*class="[^"]*sectionname[^"]*"[^>]*>(.*?)</h3>', block, re.DOTALL)
+            )
+            name = re.sub(r'<[^>]+>', '', name_match.group(1)).strip() if name_match else f"Section {section_num}"
+
+            for module_id in re.findall(r'id="module-(\d+)"', block):
+                mapping[int(module_id)] = {'section': section_num, 'week': name}
+
+        return mapping
+
     def get_course_contents(self, course_id):
         url = f"{self.base_url}/course/view.php?id={course_id}"
         self.logger.info(f"Fetching course contents from: {url}")
@@ -304,6 +338,7 @@ class MoodleClient:
                 raise Exception("Session expired or invalid. Please login again.")
             
             contents = {'announcements': [], 'assignments': [], 'files': [], 'boards': [], 'vods': []}
+            section_map = self._build_section_map(html)
             
             announcement_items = re.finditer(r'<li class="article-list-item">\s*<a href="([^"]+)">.*?<div class="article-subject"[^>]*title="([^"]+)">.*?<div class="article-date">([^<]+)</div>', html, re.DOTALL)
             for match in announcement_items:
@@ -350,7 +385,13 @@ class MoodleClient:
                         item_url = f"{self.base_url}/mod/vod/viewer.php?id={module_id}"
                     is_completed = 'completion-auto-y' in inner_html or 'completion-manual-y' in inner_html or 'text-success' in inner_html
                     has_tracking = 'class="autocompletion"' in inner_html or category != 'vods'
-                    item_data = {'id': int(module_id), 'name': name, 'url': item_url, 'is_completed': is_completed, 'has_tracking': has_tracking}
+                    section_info = section_map.get(int(module_id), {})
+                    item_data = {
+                        'id': int(module_id), 'name': name, 'url': item_url,
+                        'is_completed': is_completed, 'has_tracking': has_tracking,
+                        'section': section_info.get('section'),
+                        'week': section_info.get('week'),
+                    }
                     
                     if category == 'vods':
                         date_match = re.search(r'(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s*~\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})', inner_html)
@@ -466,6 +507,8 @@ class MoodleClient:
                 db_session.add(assign)
             assign.title = item['name']
             assign.url = item['url']
+            assign.section = item.get('section')
+            assign.week = item.get('week')
             if not assign.completion_overridden:
                 assign.is_completed = item['is_completed']
             deadline = item.get('deadline_text')
@@ -490,6 +533,8 @@ class MoodleClient:
                 db_session.add(vod)
             vod.title = item['name']
             vod.url = item['url']
+            vod.section = item.get('section')
+            vod.week = item.get('week')
             vod.is_completed = item['is_completed']
             vod.has_tracking = item['has_tracking']
             vod.start_date = item.get('start_date')
@@ -504,6 +549,8 @@ class MoodleClient:
                 db_session.add(fres)
             fres.title = item['name']
             fres.url = item['url']
+            fres.section = item.get('section')
+            fres.week = item.get('week')
             fres.is_completed = item['is_completed']
 
         for item in contents['boards']:
@@ -513,6 +560,8 @@ class MoodleClient:
                 db_session.add(board)
             board.title = item['name']
             board.url = item['url']
+            board.section = item.get('section')
+            board.week = item.get('week')
             db_session.commit()
             posts = self.get_board_posts(item['id'])
             for p_item in posts:
