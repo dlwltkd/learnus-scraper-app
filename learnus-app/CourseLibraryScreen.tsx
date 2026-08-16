@@ -20,6 +20,7 @@ import type { ColorScheme, TypographyType, LayoutType } from './constants/theme'
 import { useTheme } from './context/ThemeContext';
 import { getCourseLibrary } from './services/api';
 import type { CourseLibrary, LibraryItem, LibraryItemType } from './services/api';
+import { shortenWeek } from './utils/week';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -43,28 +44,6 @@ const FILTERS: { key: 'all' | LibraryItemType; label: string }[] = [
     { key: 'assignment', label: '과제' },
     { key: 'board', label: '공지' },
 ];
-
-const MONTHS: Record<string, number> = {
-    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
-    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
-};
-
-/**
- * Compress the bracketed date range Moodle puts in section names.
- *
- * "Week 6 [06 October - 12 October]" reads slowly and eats the full row width; the dates
- * matter but their spelling does not. Korean sections ("12주차 [11월17일 - 11월23일]") are
- * already compact and pass through untouched.
- */
-function shortenWeek(week: string): string {
-    const match = week.match(/^(.*?)\s*\[\s*(\d{1,2})\s+([A-Za-z]+)\s*[-–]\s*(\d{1,2})\s+([A-Za-z]+)\s*\]$/);
-    if (!match) return week;
-    const [, label, d1, m1, d2, m2] = match;
-    const a = MONTHS[m1.toLowerCase()];
-    const b = MONTHS[m2.toLowerCase()];
-    if (!a || !b) return week;
-    return `${label.trim()} · ${a}/${d1}–${b}/${d2}`;
-}
 
 function itemMeta(item: LibraryItem): string {
     switch (item.type) {
@@ -156,9 +135,11 @@ export default function CourseLibraryScreen() {
                     />
                 }
             >
-                {/* Provenance, stated plainly: what the brain can and cannot answer from. */}
+                {/* Provenance, stated plainly: what the brain can and cannot answer from.
+                    Counts boards rather than posts so these four numbers add up to the
+                    denominator on the line below; each board's post count is on its row. */}
                 <Text style={styles.provenance}>
-                    자료 {stats.files} · 강의 {stats.vods} · 과제 {stats.assignments} · 공지 {stats.posts}
+                    자료 {stats.files} · 강의 {stats.vods} · 과제 {stats.assignments} · 공지 {stats.boards}
                 </Text>
                 <Text style={styles.provenanceSub}>
                     {stats.in_corpus}/{stats.total_items}개 학습됨
@@ -215,13 +196,14 @@ export default function CourseLibraryScreen() {
                                             <Ionicons
                                                 name={TYPE_ICON[item.type]}
                                                 size={20}
-                                                color={item.in_corpus ? colors.textSecondary : colors.textTertiary}
+                                                color={colors.textSecondary}
                                             />
                                             <View style={styles.rowText}>
-                                                <Text
-                                                    style={[styles.rowTitle, !item.in_corpus && styles.rowTitleMuted]}
-                                                    numberOfLines={2}
-                                                >
+                                                {/* Title keeps full weight even when the brain has not
+                                                    learned the item: the file still opens and reads
+                                                    normally, and dimming it read as disabled. The
+                                                    caption below carries the state instead. */}
+                                                <Text style={styles.rowTitle} numberOfLines={2}>
                                                     {item.title}
                                                 </Text>
                                                 {/* Not-yet-learned items stay visible and say why. A
@@ -297,7 +279,6 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         rowBorderTop: { borderTopWidth: 1, borderTopColor: colors.divider },
         rowText: { flex: 1, gap: 2 },
         rowTitle: { ...typography.body1, fontSize: 15 },
-        rowTitleMuted: { color: colors.textTertiary },
         rowPending: { ...typography.caption, color: colors.textTertiary },
         rowMeta: { ...typography.caption, color: colors.textTertiary },
 

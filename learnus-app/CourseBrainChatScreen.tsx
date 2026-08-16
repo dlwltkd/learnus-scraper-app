@@ -29,6 +29,7 @@ import {
     getLibraryItem,
 } from './services/api';
 import type { BrainCitation, CourseLibrary, LibraryItem, LibraryItemType } from './services/api';
+import { weekLabelKo } from './utils/week';
 
 interface Turn {
     role: 'user' | 'assistant';
@@ -145,7 +146,7 @@ export default function CourseBrainChatScreen() {
         const out: string[] = [];
         const weeks = library.sections.filter(s => s.section && s.section > 0);
         const mid = weeks[Math.floor(weeks.length / 2)];
-        if (mid) out.push(`${mid.week.split('·')[0].trim()}에는 뭘 배웠나요?`);
+        if (mid) out.push(`${weekLabelKo(mid.week)}에는 뭘 배웠나요?`);
         const assignment = library.sections.flatMap(s => s.items).find(i => i.type === 'assignment');
         if (assignment) out.push(`${assignment.title}는 뭘 제출해야 하나요?`);
         out.push('이 과목 평가 방식이 어떻게 되나요?');
@@ -309,7 +310,10 @@ export default function CourseBrainChatScreen() {
                 <View style={styles.provenanceBar}>
                     <View style={styles.dot} />
                     <Text style={styles.provenance} numberOfLines={1}>
-                        자료 {stats.files} · 강의 {stats.vods} · 과제 {stats.assignments} 기준으로 답해요
+                        {/* 공지 belongs here: the body copy below promises the brain
+                            answers from announcements too, so leaving them out of the
+                            count contradicted it. */}
+                        자료 {stats.files} · 강의 {stats.vods} · 과제 {stats.assignments} · 공지 {stats.posts} 기준으로 답해요
                     </Text>
                 </View>
             )}

@@ -118,12 +118,8 @@ const CourseCard = ({ item, index, onPress, onSync, syncing }: CourseCardProps) 
                 <View style={[styles.accentBar, { backgroundColor: color }]} />
 
                 <View style={styles.cardContent}>
-                    {/* Icon */}
-                    <View style={[styles.iconContainer, { backgroundColor: color + '15' }]}>
-                        <Ionicons name="book" size={24} color={color} />
-                    </View>
-
-                    {/* Course info */}
+                    {/* Course info. No icon here: the glyph was identical in every
+                        row, and the accent bar already carries the course colour. */}
                     <View style={styles.courseInfo}>
                         {courseCode && (
                             <Text style={[styles.courseCode, { color }]}>{courseCode}</Text>
@@ -260,13 +256,8 @@ export default function CoursesScreen() {
                 style={{ paddingHorizontal: 0 }}
             />
 
-            {/* Quick stats */}
-            <View style={styles.statsContainer}>
-                <View style={styles.statPill}>
-                    <Ionicons name="book" size={14} color={colors.primary} />
-                    <Text style={styles.statText}>{activeCourses.length} 강의</Text>
-                </View>
-            </View>
+            {/* The "N 강의" pill used to sit here. It restated the "N개의 활성 강의"
+                subtitle directly above it, and as the only pill it filtered nothing. */}
         </View>
     );
 
@@ -326,24 +317,6 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
     headerContainer: {
         marginBottom: Spacing.m,
     },
-    statsContainer: {
-        flexDirection: 'row',
-        marginTop: Spacing.s,
-    },
-    statPill: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: colors.primaryLighter,
-        paddingHorizontal: Spacing.m,
-        paddingVertical: Spacing.xs,
-        borderRadius: layout.borderRadius.full,
-        gap: 6,
-    },
-    statText: {
-        ...typography.caption,
-        color: colors.primary,
-        fontWeight: '600',
-    },
     listContent: {
         paddingHorizontal: Spacing.l,
         paddingBottom: Spacing.xxl,
@@ -365,15 +338,10 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
     cardContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: Spacing.m,
-    },
-    iconContainer: {
-        width: 52,
-        height: 52,
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: Spacing.m,
+        paddingHorizontal: Spacing.m,
+        // The 52pt icon tile used to set the row height; keep it explicit so
+        // rows stay comfortable to tap now that the tile is gone.
+        paddingVertical: Spacing.s + 4,
     },
     courseInfo: {
         flex: 1,

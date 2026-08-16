@@ -36,10 +36,9 @@ interface SectionHeaderProps {
 }
 
 const SectionHeader = ({ title, icon, iconColor, count, styles }: SectionHeaderProps & { styles: any }) => (
+    // No icon: a section header is already a header, and the glyph only ever
+    // restated the title beside it.
     <View style={styles.sectionHeader}>
-        <View style={[styles.sectionIconContainer, { backgroundColor: (iconColor || '#000') + '15' }]}>
-            <Ionicons name={icon} size={18} color={iconColor} />
-        </View>
         <Text style={styles.sectionTitle}>{title}</Text>
         {count !== undefined && count > 0 && (
             <View style={styles.countPill}>
@@ -63,9 +62,8 @@ const BoardItem = ({ board, onPress, isFirst, isLast, colors, styles }: { board:
         onPress={onPress}
         activeOpacity={0.7}
     >
-        <View style={styles.boardIconContainer}>
-            <Ionicons name="chatbubble-outline" size={18} color={colors.primary} />
-        </View>
+        {/* No icon: every row in this group is a board, so the glyph repeated
+            without telling the rows apart. */}
         <Text style={styles.boardTitle} numberOfLines={1}>
             {board.title}
         </Text>
@@ -322,7 +320,6 @@ export default function CourseDetailScreen() {
                             <ItemRow
                                 key={vod.id}
                                 title={vod.title}
-                                courseName={course.name}
                                 meta={formatDeadline(vod.end_date) || undefined}
                                 state={getVodState(vod)}
                                 type="vod"
@@ -348,7 +345,6 @@ export default function CourseDetailScreen() {
                             <ItemRow
                                 key={a.id}
                                 title={a.title}
-                                courseName={course.name}
                                 meta={a.due_date ? `마감: ${a.due_date}` : undefined}
                                 state={getAssignmentState(a)}
                                 type="assignment"
@@ -462,14 +458,6 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         alignItems: 'center',
         marginBottom: Spacing.m,
     },
-    sectionIconContainer: {
-        width: 32,
-        height: 32,
-        borderRadius: 10,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: Spacing.s,
-    },
     sectionTitle: {
         ...typography.header3,
         flex: 1,
@@ -511,15 +499,6 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
     boardItemBorder: {
         borderBottomWidth: 1,
         borderBottomColor: colors.divider,
-    },
-    boardIconContainer: {
-        width: 36,
-        height: 36,
-        borderRadius: 12,
-        backgroundColor: colors.primaryLighter,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: Spacing.m,
     },
     boardTitle: {
         ...typography.subtitle1,

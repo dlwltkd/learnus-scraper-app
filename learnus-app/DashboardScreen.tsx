@@ -61,17 +61,17 @@ const StatItem = ({ label, value, total, color, icon }: StatItemProps) => {
     const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const resolvedColor = color ?? colors.primary;
     return (
+        // Number leads, label follows: the number is the content, and this now
+        // matches the stat card on the course detail screen. The icon tile is
+        // gone because the label beside it already said the same thing.
         <View style={styles.statItem}>
-            <View style={[styles.statIconContainer, { backgroundColor: resolvedColor + '15' }]}>
-                <Ionicons name={icon} size={20} color={resolvedColor} />
-            </View>
-            <Text style={styles.statLabel}>{label}</Text>
             <View style={styles.statValueRow}>
                 <Text style={[styles.statValue, { color: resolvedColor }]}>{value}</Text>
                 {total !== undefined && (
                     <Text style={styles.statTotal}>/{total}</Text>
                 )}
             </View>
+            <Text style={styles.statLabel}>{label}</Text>
         </View>
     );
 };
@@ -516,9 +516,7 @@ const SectionHeader = ({
                 activeOpacity={isCollapsible ? 0.7 : 1}
                 disabled={!isCollapsible}
             >
-                <View style={[styles.sectionIconContainer, { backgroundColor: resolvedIconColor + '15' }]}>
-                    <Ionicons name={icon} size={18} color={resolvedIconColor} />
-                </View>
+                {/* No icon: the glyph only ever restated the title beside it. */}
                 <Text style={styles.sectionTitle}>{title}</Text>
                 {isCollapsible && isCollapsed && count !== undefined && count > 0 && (
                     <View style={styles.countBadge}>

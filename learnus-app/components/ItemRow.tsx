@@ -10,7 +10,8 @@ export type ItemType = 'assignment' | 'vod';
 
 interface ItemRowProps {
     title: string;
-    courseName: string;
+    /** Omitted on course-scoped screens, where the name is already the screen title. */
+    courseName?: string;
     meta?: string;
     state: ItemState;
     type: ItemType;
@@ -114,7 +115,9 @@ export default function ItemRow({ title, courseName, meta, state, type, onWebPre
 
             {/* Content */}
             <View style={styles.content}>
-                <Text style={[styles.courseName, isCompleted && { color: colors.textTertiary }]} numberOfLines={1}>{courseName}</Text>
+                {courseName ? (
+                    <Text style={[styles.courseName, isCompleted && { color: colors.textTertiary }]} numberOfLines={1}>{courseName}</Text>
+                ) : null}
                 <Text style={[styles.title, isCompleted && { color: colors.textSecondary, fontWeight: '500' }]} numberOfLines={1}>{title}</Text>
                 {meta ? (
                     <View style={styles.metaRow}>
