@@ -13,12 +13,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Markdown from 'react-native-markdown-display';
+import { Linking } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 
 import { Spacing } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
 import { useTheme } from './context/ThemeContext';
-import LinkedText from './components/LinkedText';
 import {
     chatWithCourseBrain,
     filePageSource,
@@ -59,6 +60,24 @@ export default function CourseBrainChatScreen() {
     const [library, setLibrary] = useState<CourseLibrary | null>(null);
     const [openCite, setOpenCite] = useState<string | null>(null);
     const [citePages, setCitePages] = useState<Record<string, { fileId: number; page: number } | null>>({});
+
+    const markdownStyles = useMemo(() => ({
+        body: { ...typography.body1, fontSize: 16, lineHeight: 25, color: colors.textPrimary },
+        paragraph: { marginTop: 0, marginBottom: Spacing.s },
+        strong: { fontWeight: '700' as const, color: colors.textPrimary },
+        bullet_list: { marginBottom: Spacing.s },
+        ordered_list: { marginBottom: Spacing.s },
+        list_item: { marginBottom: 2 },
+        code_inline: {
+            backgroundColor: colors.surfaceMuted, color: colors.textPrimary,
+            paddingHorizontal: 4, borderRadius: 4,
+        },
+        fence: { backgroundColor: colors.surfaceMuted, borderWidth: 0, borderRadius: 8 },
+        link: { color: colors.primary, textDecorationLine: 'underline' as const },
+        heading1: { ...typography.header3, marginTop: Spacing.s, marginBottom: 4 },
+        heading2: { ...typography.subtitle1, marginTop: Spacing.s, marginBottom: 4 },
+        heading3: { ...typography.subtitle1, marginTop: Spacing.s, marginBottom: 4 },
+    }), [colors, typography]);
 
     const scrollRef = useRef<ScrollView>(null);
     const cancelRef = useRef<(() => void) | null>(null);
@@ -197,9 +216,16 @@ export default function CourseBrainChatScreen() {
                         <View key={index} style={styles.assistantBlock}>
                             {/* The markers are provenance for the chips below; leaving them
                                 inline shreds Korean prose mid-sentence. */}
-                            <LinkedText style={styles.assistantText} selectable>
+                            {/* Markdown, because the model emits bold and lists and they
+                                render as literal asterisks otherwise. Citation markers are
+                                stripped — they are provenance for the chips below, and
+                                inline they shred Korean prose mid-sentence. */}
+                            <Markdown
+                                style={markdownStyles}
+                                onLinkPress={(url: string) => { Linking.openURL(url).catch(() => {}); return false; }}
+                            >
                                 {turn.text.replace(CITE_PATTERN, '').replace(/ +([.,])/g, '$1')}
-                            </LinkedText>
+                            </Markdown>
 
                             {streaming && index === turns.length - 1 && !turn.text && (
                                 <ActivityIndicator style={styles.thinking} color={colors.textTertiary} />
