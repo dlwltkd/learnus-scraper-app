@@ -35,7 +35,7 @@ const QUICK_ACTIONS = [
 ];
 
 
-function BlinkingCursor({ colors }: { colors: ColorScheme }) {
+export function BlinkingCursor({ colors }: { colors: ColorScheme }) {
     const opacity = useRef(new Animated.Value(1)).current;
     useEffect(() => {
         const anim = Animated.loop(
@@ -123,7 +123,7 @@ function buildHtml(content: string, isDark: boolean): string {
 </html>`;
 }
 
-function SelectableMarkdown({ content, isDark }: { content: string; isDark: boolean }) {
+export function SelectableMarkdown({ content, isDark }: { content: string; isDark: boolean }) {
     const [height, setHeight] = useState(40);
 
     const onMessage = (e: any) => {
@@ -460,7 +460,7 @@ export default function AIChatModal({ visible, onClose, vodMoodleId, title, cour
     );
 }
 
-const createMarkdownStyles = (colors: ColorScheme, isDark: boolean) => StyleSheet.create({
+export const createMarkdownStyles = (colors: ColorScheme, isDark: boolean) => StyleSheet.create({
     body: { color: colors.textPrimary, fontSize: 14, lineHeight: 23 },
     heading1: { fontSize: 20, fontWeight: '700', marginTop: 16, marginBottom: 6 },
     heading2: { fontSize: 17, fontWeight: '700', marginTop: 14, marginBottom: 5 },
