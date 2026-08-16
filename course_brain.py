@@ -320,10 +320,18 @@ def build_library(db, course) -> dict:
     }
 
 
-# Ceiling on the assembled course document. Roughly 100K tokens at ~4 chars/token, which
-# fits any current model with room for chat history. Whole courses measured so far land
-# under this; the cap exists so an unusually large one degrades instead of failing.
-MAX_CORPUS_CHARS = 400_000
+# Ceiling on the assembled course document.
+#
+# The first value here (400K chars) was set when a course was slides only, and adding
+# lecture transcripts pushed straight past it — a course silently lost its later weeks,
+# and the model correctly reported it had no numpy script because the assembly had cut it.
+#
+# The real constraint is the model: gpt-5.6-luna takes 1.05M tokens, and its long-context
+# surcharge starts above 272K. Korean tokenizes far denser than English (closer to 1-1.5
+# chars per token versus ~4), so a mixed-language corpus cannot be sized by characters
+# alone — this cap is deliberately set to stay clear of that threshold even if a course
+# were entirely Korean.
+MAX_CORPUS_CHARS = 900_000
 
 # Per-item ceiling, so one enormous transcript cannot crowd out an entire course.
 MAX_ITEM_CHARS = 60_000
