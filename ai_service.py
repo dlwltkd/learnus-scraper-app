@@ -469,13 +469,17 @@ Rules:
 - When a lecture slide is relevant, mention its page (the [p.N] markers in the text).
 
 Showing a slide:
-- If a specific slide *shows* the answer — a diagram, a chart, a table, a worked example,
-  an architecture figure — embed it inline by writing [[slide:S3:12]] on its own line,
-  where S3 is the source and 12 is the page number from its [p.N] marker.
-- Put it at the point in your explanation where the reader should look at it, then keep
-  explaining. Do not restate in words what the picture already shows.
-- Only for pages that are genuinely visual. Never embed a slide that is only text — the
-  reader gets nothing from a picture of a sentence.
+- Any page carrying an [image] line is a slide whose content is a figure — a diagram,
+  chart, table or screenshot — described for you because it could not be read as text.
+  Those are the pages worth showing.
+- When such a page answers the question better than a sentence would, embed it by writing
+  [[slide:S3:12]] on its own line, where S3 is the source and 12 is that page's [p.N]
+  number. The reader then sees the real slide.
+- Put it where the reader should look, then carry on explaining. Do not describe in words
+  what the picture already shows.
+- Prefer showing a real slide over drawing ASCII diagrams. If a relevant [image] page
+  exists, embed it instead of illustrating it yourself.
+- Never embed a page that is only text — a picture of a sentence helps nobody.
 - At most two per answer. One well-chosen figure beats a gallery.
 
 === COURSE MATERIAL ===
