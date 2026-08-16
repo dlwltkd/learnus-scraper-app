@@ -29,6 +29,17 @@ TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
 # both paths now share the value chat has been using in production.
 TRANSCRIPT_CONTEXT_CHARS = 80000
 
+# Vision model for describing lecture slides whose content is a diagram rather than text.
+# Runs once per sparse page at build time, never at query time, so answers stay text-only.
+VISION_MODEL = "gpt-4o-mini"
+
+# Measured on a rendered lecture slide: "high" costs 36,862 input tokens per image versus
+# 2,860 for "low" — 13x — and produced a caption that was word-for-word equivalent. Across
+# a course that is $1.35 vs $0.11. Sparse slides are overwhelmingly large text over a
+# simple figure, which "low" reads fine; a dense diagram with small axis labels is where
+# it would lose detail, and that is the case to escalate if captions ever look thin.
+VISION_DETAIL = "low"
+
 
 def _extract_usage(response) -> dict:
     """Extract token usage from an OpenAI response."""
@@ -359,6 +370,58 @@ Rules:
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+    def caption_slide(self, image_path: str, lecture_title: str = "", page_no: int = 0) -> tuple[str, dict]:
+        """
+        Describe one visually dense lecture slide so its content becomes searchable text.
+
+        These are pages where text extraction found almost nothing — a title over a
+        diagram, a chart, a screenshot. The caption is written to be *retrieved*, not
+        admired: it names the concepts and relationships shown, because a student will
+        search for "backprop diagram", not for "a blue figure with arrows".
+
+        Returns (caption, usage). Never raises — a slide that fails to caption simply
+        contributes no text, and the page image is still stored as an artifact.
+        """
+        import base64
+
+        try:
+            with open(image_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+        except Exception as e:
+            logger.warning(f"caption_slide could not read {image_path}: {e}")
+            return "", {"model": VISION_MODEL, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+        context = f'from the lecture "{lecture_title}"' if lecture_title else "from a lecture"
+        prompt = (
+            f"This is slide {page_no} {context}. Its text could not be extracted because the "
+            "content is visual.\n\n"
+            "Describe what the slide conveys, in 1-3 sentences, so a student searching their "
+            "notes could find it. Name the concepts, terms, axes, labels and relationships "
+            "actually shown. Transcribe any readable text in the figure. Do not describe "
+            "styling, colours or layout, and do not begin with phrases like 'This slide shows'."
+        )
+
+        try:
+            response = self.client.chat.completions.create(
+                model=VISION_MODEL,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url",
+                         "image_url": {"url": f"data:image/png;base64,{b64}", "detail": VISION_DETAIL}},
+                    ],
+                }],
+                max_tokens=220,
+                temperature=0.2,
+            )
+            usage = _extract_usage(response)
+            caption = (response.choices[0].message.content or "").strip()
+            return caption, {"model": VISION_MODEL, **usage}
+        except Exception as e:
+            logger.warning(f"caption_slide failed for {image_path}: {e}")
+            return "", {"model": VISION_MODEL, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
     def summarize_transcript(self, transcript: str, course_name: str) -> str:
         """

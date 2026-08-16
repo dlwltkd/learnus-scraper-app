@@ -33,6 +33,9 @@ services:
     restart: always
     volumes:
       - ./api_debug.log:/app/api_debug.log
+      # Downloaded course material. Must be a volume: without it every rebuild wipes
+      # the corpus and it can only be refetched with a live LearnUs session.
+      - course_files:/app/course_files
 
   worker:
     build: .
@@ -49,6 +52,7 @@ services:
     restart: always
     volumes:
       - ./error_log:/app/error_log
+      - course_files:/app/course_files
     stop_grace_period: 10m  # give worker up to 10min to finish a transcription before force-kill
 
   db:
@@ -67,3 +71,4 @@ services:
 volumes:
   postgres_data:
   caddy_data:
+  course_files:
