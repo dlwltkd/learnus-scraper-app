@@ -207,6 +207,25 @@ def html_to_text(raw: str | None) -> str:
     import html as html_lib
 
     text = re.sub(r'(?is)<(script|style)[^>]*>.*?</\1>', ' ', raw)
+
+    # Keep the destination of a link. Stripping tags outright threw the href away, so an
+    # announcement saying "submit here" lost the only thing that mattered. The URL is
+    # appended only when the visible text does not already contain it, to avoid
+    # "https://x (https://x)" for links that were pasted as their own address.
+    def _keep_href(match):
+        href = html_lib.unescape(match.group(1)).strip()
+        label = re.sub(r'<[^>]+>', '', match.group(2)).strip()
+        label = html_lib.unescape(label)
+        if not href or href.startswith(('#', 'javascript:')):
+            return label
+        if not label:
+            return href
+        if href in label or label in href:
+            return label
+        return f"{label} ({href})"
+
+    text = re.sub(r'(?is)<a[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', _keep_href, text)
+
     text = re.sub(r'(?i)<br\s*/?>', '\n', text)
     text = re.sub(r'(?i)</(p|div|li|tr|h[1-6])>', '\n', text)
     text = re.sub(r'(?i)<li[^>]*>', '• ', text)

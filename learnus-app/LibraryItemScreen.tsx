@@ -16,6 +16,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { Spacing } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
 import { useTheme } from './context/ThemeContext';
+import LinkedText from './components/LinkedText';
 import { filePageSource, getLibraryItem } from './services/api';
 import type { LibraryItem, LibraryItemDetail } from './services/api';
 
@@ -145,7 +146,7 @@ export default function LibraryItemScreen() {
                                 <Text style={styles.postMeta}>
                                     {[post.writer, post.date].filter(Boolean).join(' · ')}
                                 </Text>
-                                {!!post.content && <Text style={styles.postBody}>{post.content.trim()}</Text>}
+                                {!!post.content && <LinkedText style={styles.postBody} selectable>{post.content.trim()}</LinkedText>}
                             </View>
                         ))}
                     </View>
@@ -159,7 +160,7 @@ export default function LibraryItemScreen() {
                 {detail?.type === 'vod' && !!detail.summary && (
                     <View style={styles.summaryBox}>
                         <Text style={styles.summaryLabel}>요약</Text>
-                        <Text style={styles.body}>{detail.summary.trim()}</Text>
+                        <LinkedText style={styles.body}>{detail.summary.trim()}</LinkedText>
                     </View>
                 )}
 
@@ -167,7 +168,7 @@ export default function LibraryItemScreen() {
                     <View style={styles.bodyBlock}>
                         {detail.type === 'file' && <Text style={styles.bodyLabel}>추출된 텍스트</Text>}
                         {detail.type === 'vod' && <Text style={styles.bodyLabel}>강의 스크립트</Text>}
-                        <Text style={styles.body} selectable>{detail.content.trim()}</Text>
+                        <LinkedText style={styles.body} selectable>{detail.content.trim()}</LinkedText>
                     </View>
                 )}
 
