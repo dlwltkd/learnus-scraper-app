@@ -444,6 +444,53 @@ Rules:
             logger.warning(f"caption_slide failed for {image_path}: {e}")
             return "", {"model": VISION_MODEL, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
+    def chat_about_course_stream(self, corpus: str, course_name: str, messages: list):
+        """
+        Answer questions grounded in a whole course, citing where each claim came from.
+
+        The corpus goes first and unchanged in the system message, so it is a byte-identical
+        prefix on every question about this course — that is what lets the provider's prompt
+        cache bill it at a tenth of the rate after the first turn. Anything varying (the
+        question, the history) must come after it or the cache never hits.
+
+        Yields ("token", str) then ("usage", dict), matching the VOD chat stream.
+        """
+        system_prompt = f"""You are a study assistant for the Yonsei course "{course_name}".
+
+Everything you know about this course is below. Each source is introduced by a marker like
+[S3]. Answer only from these sources.
+
+Rules:
+- Answer in Korean (해요체), concise and direct.
+- Cite the sources you used by writing their markers inline, e.g. [S3] or [S3][S7].
+- Cite only sources you actually used. Do not invent markers.
+- If the sources do not cover the question, say so plainly and name what is missing.
+  Never guess at course content.
+- When a lecture slide is relevant, mention its page (the [p.N] markers in the text).
+
+=== COURSE MATERIAL ===
+{corpus}
+=== END COURSE MATERIAL ==="""
+
+        api_messages = [{"role": "system", "content": system_prompt}]
+        api_messages.extend(messages)
+
+        response = self.client.chat.completions.create(
+            model=TEXT_MODEL,
+            messages=api_messages,
+            max_completion_tokens=1200,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+
+        usage_info = {"model": TEXT_MODEL, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        for chunk in response:
+            if chunk.usage:
+                usage_info = {"model": TEXT_MODEL, **_extract_usage(chunk)}
+            if chunk.choices and chunk.choices[0].delta.content:
+                yield "token", chunk.choices[0].delta.content
+        yield "usage", usage_info
+
     def summarize_transcript(self, transcript: str, course_name: str) -> str:
         """
         Summarizes a lecture transcript as natural text.

@@ -320,6 +320,140 @@ def build_library(db, course) -> dict:
     }
 
 
+# Ceiling on the assembled course document. Roughly 100K tokens at ~4 chars/token, which
+# fits any current model with room for chat history. Whole courses measured so far land
+# under this; the cap exists so an unusually large one degrades instead of failing.
+MAX_CORPUS_CHARS = 400_000
+
+# Per-item ceiling, so one enormous transcript cannot crowd out an entire course.
+MAX_ITEM_CHARS = 60_000
+
+_TYPE_LABEL = {
+    'file': '강의자료',
+    'label': '안내',
+    'vod': '강의 스크립트',
+    'assignment': '과제',
+    'board': '게시판',
+}
+
+
+def assemble_corpus(db, course) -> tuple[str, list[dict]]:
+    """
+    The whole course as one document, plus the source list its citations refer to.
+
+    Ordered by week and rendered as markdown so the structure the student sees in the
+    library is the structure the model reads. Every item is introduced by a stable `[S<n>]`
+    marker; the model is told to cite those, and the returned source list maps each back to
+    a real row so the app can turn a citation into a tappable destination.
+
+    Assembly is deterministic — same corpus, same bytes — which is what lets the provider's
+    prompt cache treat it as a repeated prefix across every question about this course.
+    """
+    from database import Assignment, VOD, VodTranscript, FileResource, Board, Post
+
+    files = db.query(FileResource).filter_by(course_id=course.id).all()
+    vods = db.query(VOD).filter_by(course_id=course.id).all()
+    assignments = db.query(Assignment).filter_by(course_id=course.id).all()
+    boards = db.query(Board).filter_by(course_id=course.id).all()
+    transcripts = {
+        t.moodle_id: t for t in db.query(VodTranscript).filter(
+            VodTranscript.moodle_id.in_([v.moodle_id for v in vods] or [0])
+        ).all()
+    }
+
+    buckets: dict[int, list[dict]] = {}
+
+    def add(section, week, entry):
+        buckets.setdefault(
+            section if section is not None else 9999,
+            {'week': week or '기타', 'items': []},
+        )
+        bucket = buckets[section if section is not None else 9999]
+        if week and bucket['week'] == '기타':
+            bucket['week'] = week
+        bucket['items'].append(entry)
+
+    for f in files:
+        if not f.content:
+            continue
+        add(f.section, f.week, {
+            'type': 'label' if f.file_kind == 'label' else 'file',
+            'id': f.id, 'title': f.title, 'body': f.content, 'week': f.week,
+        })
+
+    for v in vods:
+        t = transcripts.get(v.moodle_id)
+        if not (t and t.transcript):
+            continue
+        add(v.section, v.week, {
+            'type': 'vod', 'id': v.id, 'title': v.title, 'body': t.transcript, 'week': v.week,
+        })
+
+    for a in assignments:
+        parts = []
+        if a.due_date:
+            parts.append(f"마감: {a.due_date}")
+        if a.description:
+            parts.append(a.description)
+        if not parts:
+            continue
+        add(a.section, a.week, {
+            'type': 'assignment', 'id': a.id, 'title': a.title,
+            'body': "\n".join(parts), 'week': a.week,
+        })
+
+    for b in boards:
+        posts = db.query(Post).filter_by(board_id=b.id).all()
+        rendered = []
+        for p in posts:
+            text = ce.html_to_text(p.content)
+            if not text:
+                continue
+            head = " · ".join(x for x in (p.title, p.writer, p.date) if x)
+            rendered.append(f"[{head}]\n{text}")
+        if not rendered:
+            continue
+        add(b.section, b.week, {
+            'type': 'board', 'id': b.id, 'title': b.title,
+            'body': "\n\n".join(rendered), 'week': b.week,
+        })
+
+    lines = [f"# {course.name}", ""]
+    sources: list[dict] = []
+    total = len(lines[0])
+    ref_no = 0
+
+    for key in sorted(buckets):
+        bucket = buckets[key]
+        if not bucket['items']:
+            continue
+        header = f"## {bucket['week']}"
+        lines.append(header)
+        lines.append("")
+        total += len(header)
+
+        for item in bucket['items']:
+            body = (item['body'] or '').strip()
+            if len(body) > MAX_ITEM_CHARS:
+                body = body[:MAX_ITEM_CHARS] + "\n…(이하 생략)"
+            if total + len(body) > MAX_CORPUS_CHARS:
+                lines.append("(길이 제한으로 이후 자료는 생략되었습니다.)")
+                return "\n".join(lines), sources
+
+            ref_no += 1
+            ref = f"S{ref_no}"
+            sources.append({
+                'ref': ref, 'type': item['type'], 'id': item['id'],
+                'title': item['title'], 'week': item['week'],
+            })
+            lines.append(f"### [{ref}] {_TYPE_LABEL.get(item['type'], item['type'])}: {item['title']}")
+            lines.append(body)
+            lines.append("")
+            total += len(body)
+
+    return "\n".join(lines), sources
+
+
 def get_item_detail(db, course, item_type: str, item_id: int) -> dict | None:
     """
     The actual content behind one library row.

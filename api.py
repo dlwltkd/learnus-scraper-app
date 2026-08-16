@@ -13,7 +13,7 @@ from slowapi.util import get_remote_address
 import logging
 import uuid
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import re
 from parsing import parse_cookie_string as _parse_cookie_string, parse_date
 from schemas import (
@@ -26,6 +26,7 @@ from schemas import (
     DashboardOverviewResponse,
     FlashcardDeckResponse,
     GenerateFlashcardsRequest,
+    BrainChatRequest,
     LabsSettingsUpdateRequest,
     LoginDebugReportRequest,
     LoginRequest,
@@ -295,6 +296,83 @@ def get_course_library(
 
     import course_brain
     return course_brain.build_library(db, course)
+
+
+@app.post("/courses/{course_id}/brain/chat")
+def brain_chat(
+    course_id: int,
+    req: BrainChatRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Streamed answer grounded in the whole course, with the sources it cited.
+
+    Citations are resolved server-side rather than trusted from the model: the answer is
+    scanned for [S<n>] markers and only markers that match a real assembled source are
+    returned, so a hallucinated reference cannot become a tappable link to nowhere.
+    """
+    _require_brain_enabled(user)
+
+    course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
+    if not course:
+        raise HTTPException(404, "Course not found")
+
+    import course_brain
+    corpus, sources = course_brain.assemble_corpus(db, course)
+    if not corpus.strip() or not sources:
+        raise HTTPException(409, "아직 학습된 자료가 없어요. 먼저 강의 자료를 학습시켜주세요.")
+
+    today_str = date.today().isoformat()
+    if user.chat_count_date != today_str:
+        user.chat_count_today = 0
+        user.chat_count_date = today_str
+    if user.chat_count_today >= DAILY_CHAT_LIMIT:
+        raise HTTPException(429, f"일일 AI 채팅 한도({DAILY_CHAT_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
+    user.chat_count_today += 1
+    db.commit()
+
+    user_id = user.id
+    course_name = course.name
+    by_ref = {s['ref']: s for s in sources}
+    messages = [m.model_dump() if hasattr(m, 'model_dump') else dict(m) for m in req.messages]
+
+    def event_generator():
+        answer = []
+        try:
+            for event_type, event_data in AIService().chat_about_course_stream(
+                corpus, course_name, messages
+            ):
+                if event_type == "token":
+                    answer.append(event_data)
+                    yield f"data: {json.dumps({'token': event_data}, ensure_ascii=False)}\n\n"
+                elif event_type == "usage":
+                    usage_db = SessionLocal()
+                    try:
+                        _log_ai_usage(usage_db, user_id, "brain_chat", event_data)
+                    finally:
+                        usage_db.close()
+
+            cited = [by_ref[r] for r in dict.fromkeys(re.findall(r'\[(S\d+)\]', "".join(answer)))
+                     if r in by_ref]
+            yield f"event: done\ndata: {json.dumps({'citations': cited}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"Brain chat failed for course {course_id}: {e}")
+            refund_db = SessionLocal()
+            try:
+                u = refund_db.query(User).filter(User.id == user_id).first()
+                if u:
+                    u.chat_count_today = max(0, u.chat_count_today - 1)
+                    refund_db.commit()
+            finally:
+                refund_db.close()
+            yield f"event: error\ndata: {json.dumps({'error': 'AI 응답 생성 중 오류가 발생했어요.'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/courses/{course_id}/library/{item_type}/{item_id}")

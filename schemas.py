@@ -77,6 +77,10 @@ class ChatRequest(BaseModel):
     messages: list
 
 
+class BrainChatRequest(BaseModel):
+    messages: list
+
+
 class ManualTranscribeRequest(BaseModel):
     media_url: Optional[str] = None
 
