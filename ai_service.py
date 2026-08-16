@@ -13,6 +13,13 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+# Speech-to-text model. Replaced whisper-1, which cost roughly twice as much per
+# minute and had a higher word error rate — the gap being widest on non-English
+# audio, which is all of ours. Same transcriptions endpoint, so the swap is the
+# model string alone; note these gpt-4o models support only "json" and "text"
+# response formats (no verbose_json/srt/vtt, no timestamp_granularities).
+TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
+
 
 def _extract_usage(response) -> dict:
     """Extract token usage from an OpenAI response."""
@@ -280,7 +287,7 @@ Rules:
 
     def transcribe_vod(self, m3u8_url: str, on_stage=None, on_progress=None) -> tuple[str, dict]:
         """
-        Downloads audio from an HLS stream via ffmpeg and transcribes it with Whisper.
+        Downloads audio from an HLS stream via ffmpeg and transcribes it.
         Returns the transcript text, or raises on failure.
         """
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
@@ -324,7 +331,7 @@ Rules:
                     chunk_t0 = time.perf_counter()
                     with open(chunk_path, "rb") as audio_file:
                         response = self.client.audio.transcriptions.create(
-                            model="whisper-1",
+                            model=TRANSCRIBE_MODEL,
                             file=audio_file,
                             response_format="text"
                         )
@@ -339,7 +346,7 @@ Rules:
             transcript = "\n\n".join(texts).strip()
             total_s = time.perf_counter() - start_t
             logger.info(f"AI transcribe complete in {total_s:.1f}s (chars={len(transcript)})")
-            return transcript, {"model": "whisper-1", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            return transcript, {"model": TRANSCRIBE_MODEL, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)

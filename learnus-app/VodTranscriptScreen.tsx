@@ -77,7 +77,7 @@ const getStageMessage = (status?: VodTranscribeStatus | null) => {
     if (!status) return '작업을 준비하고 있어요.';
     if (status.status === 'queued') return '대기열 순서가 되면 바로 시작돼요.';
     if (status.stage === 'extracting_audio') return '강의 스트림에서 음성을 추출하고 있어요.';
-    if (status.stage === 'transcribing') return 'Whisper가 음성을 텍스트로 변환 중이에요.';
+    if (status.stage === 'transcribing') return 'AI가 음성을 텍스트로 변환 중이에요.';
     if (status.stage === 'finalizing') return '결과를 정리하고 화면에 반영하는 중이에요.';
     return '잠시만 기다려 주세요.';
 };

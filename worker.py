@@ -14,7 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from database import init_db, Job, VodTranscript, User, VOD, Course
-from ai_service import AIService
+from ai_service import AIService, TRANSCRIBE_MODEL
 from moodle_client import MoodleClient
 from parsing import parse_cookie_string as _parse_cookie_string
 from scheduler import check_notices_job, sync_dashboard_job, check_session_health_job, watch_vods_for_user
@@ -259,7 +259,7 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
         try:
             from database import AIUsageLog
             db.add(AIUsageLog(
-                user_id=user_id, endpoint="transcribe", model=usage.get("model", "whisper-1"),
+                user_id=user_id, endpoint="transcribe", model=usage.get("model", TRANSCRIBE_MODEL),
                 prompt_tokens=usage.get("prompt_tokens", 0),
                 completion_tokens=usage.get("completion_tokens", 0),
                 total_tokens=usage.get("total_tokens", 0),
@@ -267,7 +267,7 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
             db.commit()
             logger.info(
                 f"Transcribe usage logged job_id={job_id} vod={vod_moodle_id} "
-                f"model={usage.get('model', 'whisper-1')}"
+                f"model={usage.get('model', TRANSCRIBE_MODEL)}"
             )
         except Exception:
             logger.warning(f"Transcribe usage log failed job_id={job_id} vod={vod_moodle_id}")
