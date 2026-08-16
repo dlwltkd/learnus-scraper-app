@@ -29,9 +29,7 @@ import { useUser } from './context/UserContext';
 import { useToast } from './context/ToastContext';
 import { getUnreadCount } from './services/NotificationHistoryService';
 import Card from './components/Card';
-import TypingDots from './TypingDots';
 import Badge, { StatusBadge } from './components/Badge';
-import Button, { IconButton } from './components/Button';
 import ItemRow from './components/ItemRow';
 import { useTourRef } from './hooks/useTourRef';
 import { useTour } from './context/TourContext';
@@ -127,6 +125,61 @@ interface AISummary {
     announcement: { has_new: boolean; summary: string | null };
     insight: string;
 }
+
+// ============================================
+// AI SUMMARY SKELETON
+// ============================================
+//
+// The loading state is the shape of the result: the same card frame, in the same
+// carousel, with grey blocks where the text will land. Previously loading was a
+// static row that looked like a button, so the section changed shape twice on its
+// way to showing anything — once into the "button", once into the cards.
+//
+// The pulse is a single opacity loop shared by every block. Deliberately slow and
+// low-contrast; it should read as "working", not as an animation worth watching.
+const AISummarySkeleton = ({ index }: { index: number }) => {
+    const { colors, typography, layout, isDark } = useTheme();
+    const aiStyles = React.useMemo(() => createAiStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
+    const pulse = useRef(new Animated.Value(0.45)).current;
+
+    useEffect(() => {
+        const loop = Animated.loop(
+            Animated.sequence([
+                Animated.timing(pulse, { toValue: 1, duration: 750, delay: index * 120, useNativeDriver: true }),
+                Animated.timing(pulse, { toValue: 0.45, duration: 750, useNativeDriver: true }),
+            ])
+        );
+        loop.start();
+        return () => loop.stop();
+    }, [pulse, index]);
+
+    const Block = ({ w, h = 12 }: { w: number | string; h?: number }) => (
+        <Animated.View
+            style={[aiStyles.skeletonBlock, { width: w as any, height: h, opacity: pulse }]}
+        />
+    );
+
+    return (
+        <View style={aiStyles.cardShadow}>
+            <View style={aiStyles.card}>
+                <View style={aiStyles.cardContent}>
+                    <View style={aiStyles.cardHeader}>
+                        <Block w="55%" h={14} />
+                        <Block w={44} h={20} />
+                    </View>
+                    <View style={{ gap: 8, marginTop: 10 }}>
+                        <Block w="90%" />
+                        <Block w="70%" />
+                    </View>
+                    <View style={{ gap: 8, marginTop: 18 }}>
+                        <Block w="80%" h={10} />
+                        <Block w="45%" h={10} />
+                    </View>
+                </View>
+            </View>
+        </View>
+    );
+};
 
 // ============================================
 // AI SUMMARY CARD (Fixed Height)
@@ -847,24 +900,37 @@ const DashboardScreen = () => {
                         }
                     />
 
+                    {/* An optional feature shouldn't out-shout the deadlines below it.
+                        This was a full-width primary pill — the loudest thing on Home —
+                        for a section that had no content yet and never said what a
+                        briefing was. It reads as a row now, like everything else, and
+                        the loading state reuses the same container so the section keeps
+                        its shape instead of jumping as it fills in. */}
                     {!loadingAI && aiSummaries.length === 0 && (
-                        <Button
-                            title="요약 생성하기"
+                        <TouchableOpacity
+                            style={styles.aiPromptRow}
                             onPress={loadAISummaries}
-                            variant="primary"
-                            size="md"
-                            icon={<Ionicons name="sparkles" size={18} color={colors.textInverse} />}
-                            style={styles.generateButton}
-                            rounded
-                        />
+                            activeOpacity={0.6}
+                        >
+                            <View style={styles.aiPromptText}>
+                                <Text style={styles.aiPromptTitle}>요약 생성하기</Text>
+                                <Text style={styles.aiPromptSubtitle}>강의별 할 일을 한눈에</Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                        </TouchableOpacity>
                     )}
                     </View>
 
                     {loadingAI && (
-                        <View style={styles.aiLoading}>
-                            <TypingDots size={9} />
-                            <Text style={styles.aiLoadingText}>AI가 요약을 생성하고 있어요...</Text>
-                        </View>
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            scrollEnabled={false}
+                            contentContainerStyle={{ paddingHorizontal: Spacing.l, paddingVertical: 8 }}
+                            style={{ marginHorizontal: -Spacing.l, marginVertical: -8 }}
+                        >
+                            {[0, 1, 2].map(i => <AISummarySkeleton key={i} index={i} />)}
+                        </ScrollView>
                     )}
 
                     {aiSummaries.length > 0 && (
@@ -1052,6 +1118,10 @@ const createAiStyles = (colors: ColorScheme, typography: TypographyType, layout:
         borderRadius: 16,
         backgroundColor: colors.surface,
         ...layout.shadow.default,
+    },
+    skeletonBlock: {
+        backgroundColor: colors.surfaceMuted,
+        borderRadius: 6,
     },
     card: {
         borderRadius: 16,
@@ -1520,18 +1590,31 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         fontWeight: '700',
     },
 
-    // AI Section
-    generateButton: {
-        alignSelf: 'flex-start',
-    },
-    aiLoading: {
+    // AI Section — one container shared by the idle and loading states.
+    //
+    // No icon here on purpose: the section header directly above is already
+    // "✨ AI 브리핑", so a sparkles tile on the row would differentiate nothing.
+    // Icons earn their place by telling siblings apart, not by echoing the parent.
+    aiPromptRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: Spacing.m,
+        gap: Spacing.m,
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.l,
+        borderWidth: 1,
+        borderColor: colors.border,
+        paddingHorizontal: Spacing.m,
+        paddingVertical: 14,
     },
-    aiLoadingText: {
-        ...typography.body2,
-        marginLeft: Spacing.s,
+    aiPromptText: {
+        flex: 1,
+        gap: 4,
+    },
+    aiPromptTitle: {
+        ...typography.subtitle1,
+    },
+    aiPromptSubtitle: {
+        ...typography.caption,
     },
     swipeHint: {
         ...typography.caption,
