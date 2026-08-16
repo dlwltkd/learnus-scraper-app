@@ -468,6 +468,16 @@ Rules:
   Never guess at course content.
 - When a lecture slide is relevant, mention its page (the [p.N] markers in the text).
 
+Showing a slide:
+- If a specific slide *shows* the answer — a diagram, a chart, a table, a worked example,
+  an architecture figure — embed it inline by writing [[slide:S3:12]] on its own line,
+  where S3 is the source and 12 is the page number from its [p.N] marker.
+- Put it at the point in your explanation where the reader should look at it, then keep
+  explaining. Do not restate in words what the picture already shows.
+- Only for pages that are genuinely visual. Never embed a slide that is only text — the
+  reader gets nothing from a picture of a sentence.
+- At most two per answer. One well-chosen figure beats a gallery.
+
 === COURSE MATERIAL ===
 {corpus}
 === END COURSE MATERIAL ==="""
