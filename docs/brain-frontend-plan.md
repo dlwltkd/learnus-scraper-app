@@ -150,14 +150,98 @@ entry point. The screen should look like a well-set document that happens to ans
 
 ---
 
+## 4b. The library — a navigable structure, not just chat
+
+Chat answers questions you know how to ask. A student also needs to *browse* — "where is
+the week 6 handout", "what did I miss", "show me every slide deck". So the brain has two
+faces behind one entry point:
+
+```
+┌──────────────────────────────────┐
+│  컴퓨팅연구개론                    │
+│  ┌──────────┬──────────┐         │
+│  │   대화    │   자료    │         │
+│  └──────────┴──────────┘         │
+```
+
+A segmented control, not two separate destinations — they are two views of one corpus, and
+a citation in chat deep-links straight into the library viewer.
+
+### Structure: by week, because that is what we captured
+
+Every artifact carries `section` + `week`, so the tree builds itself with no extra work:
+
+```
+▸ Week 1 [01 Sep – 07 Sep]                      2
+    📄  Lecture 1-1: Intro                    25p
+    📄  Lecture 1-2: A glimpse of AI/CS       75p
+
+▾ Week 6 [06 Oct – 12 Oct]                      5
+    📄  Lecture 6-1: Introduction to Shell    23p
+    ▶   Video Lecture 6-1: Intro to Shell   28min  ✓
+    ✎   Homework 2: Academic website        ~10/12
+    💬  Class Q&A · 3 posts
+    ⓘ   이번 주는 퀴즈가 없습니다
+
+▸ Week 8 [20 Oct – 26 Oct]                      9
+```
+
+Sections collapse, with a count on the header. Ordered by section index, so it matches the
+course page exactly — the student's existing mental model, not a new one.
+
+A secondary **유형별** (by type) grouping is a filter chip row, not a second tree: 전체 /
+자료 / 강의 / 과제 / 공지. Same list, different predicate.
+
+### Item rows carry state, not decoration
+
+Each row shows what the student needs to triage: page count for decks, duration and watched
+state for videos, due date for assignments, post count for boards. The type glyph is the
+one icon, since here it genuinely differentiates siblings — a week mixes decks, videos,
+assignments and notices, and the glyph is the fastest way to tell them apart.
+
+Anything not yet in the corpus (an untranscribed lecture, a file that failed extraction)
+renders dimmed with a quiet label rather than being hidden. A library that silently omits
+things teaches you not to trust it.
+
+### The artifact viewer
+
+Tapping an item opens the thing itself, by type:
+
+| type | viewer |
+|---|---|
+| PDF | paged view backed by `render_page`, swipe between pages, extracted text available |
+| ipynb | rendered markdown + fenced code |
+| video | existing VOD flow; transcript beside it when present |
+| assignment | instructions, due date, link out to Moodle |
+| board / label | the text |
+
+The PDF viewer is where the render cache earns its place a second time: the same
+`render_page` endpoint that backs inline chat citations backs page-by-page browsing, so
+the two features share one mechanism and one cache.
+
+Every viewer gets one consistent action: **"이 자료에 대해 질문하기"**, which opens chat
+pre-scoped to that artifact. Browsing and asking become one loop instead of two features.
+
+### What this needs from the backend
+
+Beyond what exists: a single `GET /courses/{id}/library` returning the week-grouped tree
+with per-item type, state and corpus status, plus `GET /files/{id}/page/{n}` for rendered
+pages. Both read from tables already populated.
+
+---
+
 ## 5. Order of work
 
-1. Backend: assignment bodies + announcements table (§0) — without these, citations
-   cover only files.
-2. Backend: corpus assembly across all five source types, with per-item provenance.
+1. ~~Backend: assignment bodies + announcements~~ — **done**. Assignment instructions are
+   scraped and stored; announcements turned out to already be captured as board posts.
+   Folder contents, `resource` files and inline `label` text are now scraped too.
+2. Backend: corpus assembly across all source types, with per-item provenance.
 3. Backend: `brain_enabled`, build job, status endpoint, chat endpoint (streaming),
-   `render_page` endpoint.
-4. Frontend: Labs toggle → course detail row → chat screen → citations → inline slides.
+   `library` endpoint, `render_page` endpoint.
+4. Frontend: Labs toggle → course detail row → **library** → artifact viewers →
+   chat screen → citations → inline slides.
 
-Each layer is independently testable, and steps 1–2 are where the actual quality of the
-answers is decided.
+The library is deliberately placed before chat in step 4. It reads from data that already
+exists, needs no model call, and is the fastest way to see whether the corpus is actually
+complete and correctly organised — which is exactly what has to be true before any answer
+built on it can be trusted.

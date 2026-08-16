@@ -181,6 +181,112 @@ def build_file(session, file_row, course_moodle_id: int, ai_service=None,
     return report
 
 
+def build_library(db, course) -> dict:
+    """
+    The course as a navigable structure, grouped by the week each item sits under.
+
+    Costs nothing to derive: every artifact already carries `section` and `week` from the
+    course-page scrape, so the tree is a grouping rather than a computation, and it lands
+    in the same order the course page uses — the student's existing mental model.
+
+    Items missing from the corpus are still listed, marked with why. A library that
+    silently omits an untranscribed lecture teaches the student not to trust it.
+    """
+    from database import Assignment, VOD, VodTranscript, FileResource, Board, Post
+
+    files = db.query(FileResource).filter_by(course_id=course.id).all()
+    vods = db.query(VOD).filter_by(course_id=course.id).all()
+    assignments = db.query(Assignment).filter_by(course_id=course.id).all()
+    boards = db.query(Board).filter_by(course_id=course.id).all()
+
+    transcripts = {
+        t.moodle_id: t
+        for t in db.query(VodTranscript).filter(
+            VodTranscript.moodle_id.in_([v.moodle_id for v in vods] or [0])
+        ).all()
+    }
+    post_counts, post_chars = {}, {}
+    for board in boards:
+        rows = db.query(Post).filter_by(board_id=board.id).all()
+        post_counts[board.id] = len(rows)
+        post_chars[board.id] = sum(len(p.content or '') for p in rows)
+
+    buckets = {}
+
+    def add(section, week, item):
+        key = section if section is not None else 9999
+        bucket = buckets.setdefault(key, {'section': section, 'week': week or '기타', 'items': []})
+        if week and bucket['week'] == '기타':
+            bucket['week'] = week
+        bucket['items'].append(item)
+
+    for f in files:
+        add(f.section, f.week, {
+            'type': 'label' if f.file_kind == 'label' else 'file',
+            'id': f.id, 'moodle_id': f.moodle_id, 'title': f.title,
+            'kind': f.file_kind, 'pages': f.page_count,
+            'chars': f.content_chars or 0,
+            'captioned_pages': f.captioned_pages or 0,
+            'in_corpus': bool(f.content),
+            'status': f.extract_status,
+            'url': f.url,
+        })
+
+    for v in vods:
+        t = transcripts.get(v.moodle_id)
+        add(v.section, v.week, {
+            'type': 'vod',
+            'id': v.id, 'moodle_id': v.moodle_id, 'title': v.title,
+            'duration': v.duration, 'completed': bool(v.is_completed),
+            'in_corpus': bool(t and t.transcript),
+            'status': (t.status if t else None) or 'not_transcribed',
+            'chars': len(t.transcript) if (t and t.transcript) else 0,
+            'url': v.url,
+        })
+
+    for a in assignments:
+        add(a.section, a.week, {
+            'type': 'assignment',
+            'id': a.id, 'moodle_id': a.moodle_id, 'title': a.title,
+            'due_date': a.due_date, 'completed': bool(a.is_completed),
+            'in_corpus': bool(a.description),
+            'chars': len(a.description or ''),
+            'url': a.url,
+        })
+
+    for b in boards:
+        add(b.section, b.week, {
+            'type': 'board',
+            'id': b.id, 'moodle_id': b.moodle_id, 'title': b.title,
+            'posts': post_counts.get(b.id, 0),
+            'chars': post_chars.get(b.id, 0),
+            'in_corpus': post_counts.get(b.id, 0) > 0,
+            'url': b.url,
+        })
+
+    # Course Summary (section 0) first, then weeks in course order, undated last.
+    sections = [buckets[k] for k in sorted(buckets)]
+    for s in sections:
+        s['count'] = len(s['items'])
+        s['items'].sort(key=lambda i: (
+            {'file': 0, 'label': 1, 'vod': 2, 'assignment': 3, 'board': 4}.get(i['type'], 9),
+            (i.get('title') or ''),
+        ))
+
+    total_chars = sum(i.get('chars', 0) for s in sections for i in s['items'])
+    return {
+        'course': {'id': course.id, 'moodle_id': course.moodle_id, 'name': course.name},
+        'stats': {
+            'files': len(files), 'vods': len(vods), 'assignments': len(assignments),
+            'boards': len(boards), 'posts': sum(post_counts.values()),
+            'corpus_chars': total_chars,
+            'in_corpus': sum(1 for s in sections for i in s['items'] if i['in_corpus']),
+            'total_items': sum(len(s['items']) for s in sections),
+        },
+        'sections': sections,
+    }
+
+
 def fetch_assignment_descriptions(client, db, course, force: bool = False) -> dict:
     """
     Fill in assignment instructions, one request per assignment.

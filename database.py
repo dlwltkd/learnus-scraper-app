@@ -44,6 +44,7 @@ class User(Base):
     # Hidden lab settings
     labs_unlocked = Column(Boolean, default=False)
     auto_watch_enabled = Column(Boolean, default=False)
+    brain_enabled = Column(Boolean, default=False)
     
     courses = relationship("Course", back_populates="owner", cascade="all, delete-orphan")
     push_tokens = relationship("PushToken", back_populates="owner", cascade="all, delete-orphan")
@@ -422,6 +423,11 @@ def init_db(db_url=None):
     # created before it exists on disk without the column and every VOD query fails.
     if 'vods' in refreshed_tables:
         _add_column_if_missing('vods', 'duration', "ALTER TABLE vods ADD COLUMN duration INTEGER")
+
+    # Migration: course brain opt-in, separate from auto-watch.
+    if 'users' in refreshed_tables:
+        _add_column_if_missing('users', 'brain_enabled',
+                               "ALTER TABLE users ADD COLUMN brain_enabled BOOLEAN DEFAULT FALSE")
 
     # Migration: assignment instructions, fetched from the activity page.
     if 'assignments' in refreshed_tables:

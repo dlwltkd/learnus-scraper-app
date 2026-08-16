@@ -107,7 +107,8 @@ class AssignmentStatusUpdateRequest(BaseModel):
 
 
 class LabsSettingsUpdateRequest(BaseModel):
-    auto_watch_enabled: bool
+    auto_watch_enabled: bool | None = None
+    brain_enabled: bool | None = None
 
 
 class FlashcardDeckResponse(BaseModel):

@@ -382,7 +382,9 @@ class MoodleClient:
                 
                 if category:
                     name_match = re.search(r'<span class="instancename">(.*?)<', inner_html)
-                    name = re.sub(r'<[^>]+>', '', name_match.group(1)).strip() if name_match else "Unknown"
+                    # Unescape: titles reach us HTML-encoded, so a board called "Class Q&A"
+                    # was being stored — and would have been displayed — as "Class Q&amp;A".
+                    name = html_lib.unescape(re.sub(r'<[^>]+>', '', name_match.group(1))).strip() if name_match else "Unknown"
                     url_match = re.search(r'href="([^"]+)"', inner_html)
                     item_url = url_match.group(1) if url_match else ""
                     if 'modtype_laby' in activity_type_str:

@@ -5,7 +5,7 @@ from fastapi.security import APIKeyHeader
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport, Job, PushToken, NotificationHistory, AIUsageLog, FlashcardDeck, Flashcard
+from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport, Job, PushToken, NotificationHistory, AIUsageLog, FlashcardDeck, Flashcard, FileResource
 from moodle_client import MoodleClient
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -153,7 +153,15 @@ def _labs_payload(user: User) -> dict:
     return {
         "labs_unlocked": bool(user.labs_unlocked),
         "auto_watch_enabled": bool(user.auto_watch_enabled),
+        # Separate consent from auto-watch: enabling the brain authorises transcription
+        # spend and hours of background work, which is a different decision.
+        "brain_enabled": bool(getattr(user, "brain_enabled", False)),
     }
+
+
+def _require_brain_enabled(user: User):
+    if not getattr(user, "brain_enabled", False):
+        raise HTTPException(status_code=403, detail="Course brain is disabled")
 
 def _require_auto_watch_enabled(user: User):
     if not user.auto_watch_enabled:
@@ -256,10 +264,75 @@ def update_labs_settings(
 ):
     if not user.labs_unlocked:
         raise HTTPException(status_code=403, detail="Labs not unlocked")
-    user.auto_watch_enabled = req.auto_watch_enabled
+    # Each toggle is optional so a client can flip one without restating the other.
+    if req.auto_watch_enabled is not None:
+        user.auto_watch_enabled = req.auto_watch_enabled
+    if req.brain_enabled is not None:
+        user.brain_enabled = req.brain_enabled
     db.commit()
     db.refresh(user)
     return _labs_payload(user)
+
+# ============================================================
+# Course Brain
+# ============================================================
+
+@app.get("/courses/{course_id}/library")
+def get_course_library(
+    course_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    The course as a week-grouped tree of everything we hold.
+
+    Derived entirely from already-synced rows, so it is cheap and needs no model call.
+    Items absent from the corpus are included and flagged rather than hidden.
+    """
+    course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
+    if not course:
+        raise HTTPException(404, "Course not found")
+
+    import course_brain
+    return course_brain.build_library(db, course)
+
+
+@app.get("/files/{file_id}/page/{page_no}")
+def get_file_page(
+    file_id: int,
+    page_no: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    A rendered page of a stored PDF, as PNG.
+
+    Backs both inline chat citations and page-by-page browsing in the library. Pages are
+    a cache over the stored original: the first request rasterises (~1-2s), later ones
+    are served from disk, and the cache can be purged freely.
+    """
+    from fastapi.responses import FileResponse
+
+    file_row = (
+        db.query(FileResource)
+        .join(Course, FileResource.course_id == Course.id)
+        .filter(FileResource.id == file_id, Course.owner_id == user.id)
+        .first()
+    )
+    if not file_row:
+        raise HTTPException(404, "File not found")
+    if page_no < 1 or (file_row.page_count and page_no > file_row.page_count):
+        raise HTTPException(400, "Page out of range")
+
+    course = db.query(Course).filter(Course.id == file_row.course_id).first()
+
+    import course_brain
+    path = course_brain.render_page(file_row, course.moodle_id, page_no)
+    if not path:
+        raise HTTPException(404, "No stored original to render from")
+
+    return FileResponse(path, media_type="image/png")
+
 
 # ============================================================
 # Notification History
