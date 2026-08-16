@@ -17,6 +17,7 @@ import type { ColorScheme, TypographyType, LayoutType } from './constants/theme'
 import { useTheme } from './context/ThemeContext';
 import { useToast } from './context/ToastContext';
 import ItemRow from './components/ItemRow';
+import { formatDeadline, formatDate } from './utils/datetime';
 import VodActionSheet from './components/VodActionSheet';
 import VodWebViewer from './components/VodWebViewer';
 import { useLabs } from './context/LabsContext';
@@ -37,7 +38,11 @@ const SectionHeader = ({ title, count, icon, iconColor, isCollapsible, isCollaps
     const styles = React.useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const content = (
         <>
-            <Ionicons name={icon} size={20} color={iconColor || colors.primary} style={{ marginRight: 8 }} />
+            {/* Matches the tile treatment on Dashboard and Course detail. This screen
+                was the only one drawing a bare inline icon instead. */}
+            <View style={[styles.sectionIconContainer, { backgroundColor: (iconColor || colors.primary) + '15' }]}>
+                <Ionicons name={icon} size={18} color={iconColor || colors.primary} />
+            </View>
             <Text style={styles.sectionTitle}>{title}</Text>
             {isCollapsible && isCollapsed && count > 0 && (
                 <View style={styles.countBadge}><Text style={styles.countText}>{count}</Text></View>
@@ -304,7 +309,7 @@ const VideoLecturesScreen = () => {
                                     <ItemRow
                                         title={item.title}
                                         courseName={item.course_name}
-                                        meta={item.end_date ? `~ ${new Date(item.end_date).toLocaleDateString()} 마감` : undefined}
+                                        meta={formatDeadline(item.end_date) || undefined}
                                         state={item.is_completed ? 'completed' : 'pending'}
                                         type="vod"
                                         onMenuPress={() => openActionSheet(item)}
@@ -316,7 +321,7 @@ const VideoLecturesScreen = () => {
                                     key={item.id}
                                     title={item.title}
                                     courseName={item.course_name}
-                                    meta={item.end_date ? `~ ${new Date(item.end_date).toLocaleDateString()} 마감` : undefined}
+                                    meta={formatDeadline(item.end_date) || undefined}
                                     state={item.is_completed ? 'completed' : 'pending'}
                                     type="vod"
                                     onMenuPress={() => openActionSheet(item)}
@@ -335,7 +340,7 @@ const VideoLecturesScreen = () => {
                                 key={item.id}
                                 title={item.title}
                                 courseName={item.course_name}
-                                meta={item.start_date ? `${new Date(item.start_date).toLocaleDateString()} 오픈` : undefined}
+                                meta={item.start_date ? `${formatDate(item.start_date)} 오픈` : undefined}
                                 state="upcoming"
                                 type="vod"
                             />
@@ -352,7 +357,7 @@ const VideoLecturesScreen = () => {
                                 key={item.id}
                                 title={item.title}
                                 courseName={item.course_name}
-                                meta={item.end_date ? `~ ${new Date(item.end_date).toLocaleDateString()} 마감` : undefined}
+                                meta={formatDeadline(item.end_date) || undefined}
                                 state="unchecked"
                                 type="vod"
                                 onMenuPress={() => openActionSheet(item)}
@@ -399,6 +404,14 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
     section: { marginBottom: Spacing.xl },
     sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.m },
     sectionHeaderLeft: { flexDirection: 'row', alignItems: 'center' },
+    sectionIconContainer: {
+        width: 32,
+        height: 32,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: Spacing.s,
+    },
     sectionTitle: { ...typography.header3 },
     countBadge: { backgroundColor: colors.error, borderRadius: 12, paddingHorizontal: 8, paddingVertical: 2, marginLeft: 8 },
     countText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },

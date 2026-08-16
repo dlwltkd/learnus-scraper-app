@@ -222,9 +222,9 @@ export default function CoursesScreen() {
         try {
             await syncCourse(courseId);
             await loadCourses();
-            showSuccess('동기화 완료', '강의 내용이 업데이트되었습니다.');
+            showSuccess('동기화 완료', '강의 내용을 업데이트했어요.');
         } catch (e) {
-            showError('동기화 실패', '강의 내용을 업데이트하지 못했습니다.');
+            showError('동기화 실패', '강의 내용을 업데이트하지 못했어요.');
         } finally {
             setSyncingId(null);
         }
@@ -300,7 +300,7 @@ export default function CoursesScreen() {
                 ListEmptyComponent={
                     <EmptyState
                         icon="book-outline"
-                        title="등록된 강의가 없습니다"
+                        title="등록된 강의가 없어요"
                         description="LearnUs에서 강의를 등록하면 여기에 표시됩니다."
                     />
                 }

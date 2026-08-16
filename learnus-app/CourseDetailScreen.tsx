@@ -23,6 +23,7 @@ import ItemRow from './components/ItemRow';
 import VodActionSheet from './components/VodActionSheet';
 import VodWebViewer from './components/VodWebViewer';
 import { useLabs } from './context/LabsContext';
+import { formatDeadline } from './utils/datetime';
 
 // ============================================
 // SECTION HEADER
@@ -222,11 +223,9 @@ export default function CourseDetailScreen() {
                     />
                 }
             >
-                {/* Course Header */}
+                {/* Course Header — the name is already in the nav bar directly above,
+                    so repeating it here just pushed the actual content down a screen. */}
                 <View style={styles.courseHeader}>
-                    <Text style={styles.courseName} numberOfLines={3}>
-                        {course.name}
-                    </Text>
                     <View style={styles.statsRow}>
                         <View style={styles.statItem}>
                             <Text style={styles.statValue}>{vods.length}</Text>
@@ -281,14 +280,14 @@ export default function CourseDetailScreen() {
                         styles={styles}
                     />
                     {vods.length === 0 ? (
-                        <InlineEmpty message="동영상 강의가 없습니다." />
+                        <InlineEmpty message="동영상 강의가 없어요." />
                     ) : (
                         [...vods].sort((a, b) => (a.end_date ? new Date(a.end_date).getTime() : Infinity) - (b.end_date ? new Date(b.end_date).getTime() : Infinity)).map((vod) => (
                             <ItemRow
                                 key={vod.id}
                                 title={vod.title}
                                 courseName={course.name}
-                                meta={vod.end_date ? `~ ${new Date(vod.end_date).toLocaleDateString()} 마감` : undefined}
+                                meta={formatDeadline(vod.end_date) || undefined}
                                 state={getVodState(vod)}
                                 type="vod"
                                 onMenuPress={() => setActionSheet(vod)}
@@ -307,7 +306,7 @@ export default function CourseDetailScreen() {
                         styles={styles}
                     />
                     {assignments.length === 0 ? (
-                        <InlineEmpty message="과제가 없습니다." />
+                        <InlineEmpty message="과제가 없어요." />
                     ) : (
                         [...assignments].sort((a, b) => (a.due_date ? new Date(a.due_date).getTime() : Infinity) - (b.due_date ? new Date(b.due_date).getTime() : Infinity)).map((a) => (
                             <ItemRow
@@ -385,9 +384,6 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         flexDirection: 'row',
         justifyContent: 'space-around',
         alignItems: 'center',
-        paddingTop: Spacing.m,
-        borderTopWidth: 1,
-        borderTopColor: colors.divider,
     },
     statItem: {
         alignItems: 'center',

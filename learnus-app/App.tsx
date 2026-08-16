@@ -217,7 +217,7 @@ function AppContent() {
         // Optional update — prompt with link to Play Store
         Alert.alert(
           '업데이트 안내',
-          `새로운 버전(${latestVersion})이 있습니다.\n앱을 업데이트해 주세요.`,
+          `새로운 버전(${latestVersion})이 나왔어요.\n앱을 업데이트해 주세요.`,
           [
             { text: '나중에', style: 'cancel' },
             { text: '업데이트', onPress: () => Linking.openURL('https://play.google.com/store/apps/details?id=com.jisang.learnusconnect') },
@@ -254,8 +254,8 @@ function AppContent() {
         <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
         <Text style={[styles.forceUpdateTitle, { color: colors.textPrimary }]}>업데이트 필요</Text>
         <Text style={[styles.forceUpdateMessage, { color: colors.textSecondary }]}>
-          새로운 버전({forceUpdate})이 출시되었습니다.{'\n'}
-          현재 버전({APP_VERSION})은 더 이상 사용할 수 없습니다.{'\n'}
+          새로운 버전({forceUpdate})이 나왔어요.{'\n'}
+          현재 버전({APP_VERSION})은 더 이상 쓸 수 없어요.{'\n'}
           앱을 업데이트해 주세요.
         </Text>
         <TouchableOpacity

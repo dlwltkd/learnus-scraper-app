@@ -84,29 +84,32 @@ const StatItem = ({ label, value, total, color, icon }: StatItemProps) => {
 const CARD_WIDTH = SCREEN_WIDTH * 0.78;
 const CARD_HEIGHT = 195;
 
-const STATUS_CONFIG = {
+// Built from theme colors rather than baked hex. As module-level constants these were
+// light-mode values that never shifted, so in dark mode the AI briefing rendered its
+// status colors at full light-mode saturation against a near-black card.
+const getStatusConfig = (colors: ColorScheme) => ({
     calm: {
-        color: '#10B981',
-        bgColor: 'rgba(16, 185, 129, 0.08)',
-        borderColor: 'rgba(16, 185, 129, 0.2)',
+        color: colors.success,
+        bgColor: colors.successLight,
+        borderColor: colors.successLight,
         icon: 'checkmark-circle' as const,
         label: '여유',
     },
     busy: {
-        color: '#F59E0B',
-        bgColor: 'rgba(245, 158, 11, 0.08)',
-        borderColor: 'rgba(245, 158, 11, 0.2)',
+        color: colors.warning,
+        bgColor: colors.warningLight,
+        borderColor: colors.warningLight,
         icon: 'time' as const,
         label: '바쁨',
     },
     urgent: {
-        color: '#EF4444',
-        bgColor: 'rgba(239, 68, 68, 0.08)',
-        borderColor: 'rgba(239, 68, 68, 0.2)',
+        color: colors.error,
+        bgColor: colors.errorLight,
+        borderColor: colors.errorLight,
         icon: 'alert-circle' as const,
         label: '긴급',
     },
-};
+});
 
 interface SummaryItem {
     title: string;
@@ -135,6 +138,7 @@ const AISummaryCard = ({ summary, onPress, index }: { summary: AISummary; onPres
     const opacityAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
+    const STATUS_CONFIG = getStatusConfig(colors);
     const statusConfig = STATUS_CONFIG[summary.status] || STATUS_CONFIG.calm;
 
     useEffect(() => {
@@ -294,6 +298,7 @@ const AISummaryModal = ({
 
     if (!summary) return null;
 
+    const STATUS_CONFIG = getStatusConfig(colors);
     const statusConfig = STATUS_CONFIG[summary.status] || STATUS_CONFIG.calm;
 
     const renderSection = (
@@ -668,7 +673,7 @@ const DashboardScreen = () => {
             }
         } catch (e) {
             console.error(e);
-            showError('오류', 'AI 요약을 불러오는데 실패했습니다.');
+            showError('오류', 'AI 요약을 불러오지 못했어요.');
         } finally {
             setLoadingAI(false);
         }
@@ -688,9 +693,9 @@ const DashboardScreen = () => {
         try {
             await syncAllActiveCourses();
             await loadDashboard();
-            showSuccess('동기화 완료', '모든 활성 강의가 동기화되었습니다.');
+            showSuccess('동기화 완료', '모든 활성 강의를 동기화했어요.');
         } catch (e) {
-            showError('동기화 실패', '일부 강의 동기화에 실패했습니다.');
+            showError('동기화 실패', '일부 강의를 동기화하지 못했어요.');
         } finally {
             setSyncing(false);
             syncRotation.stopAnimation();
@@ -1301,7 +1306,6 @@ const createModalStyles = (colors: ColorScheme, typography: TypographyType, layo
     emptyText: {
         fontSize: 14,
         color: colors.textTertiary,
-        fontStyle: 'italic',
         paddingVertical: Spacing.s,
     },
     announcementBox: {

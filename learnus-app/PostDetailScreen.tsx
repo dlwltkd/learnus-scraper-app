@@ -51,7 +51,7 @@ export default function PostDetailScreen() {
         }
       } catch (error) {
         if (isMounted) {
-          setLoadError('게시물 내용을 불러오지 못했습니다.');
+          setLoadError('게시물 내용을 불러오지 못했어요.');
         }
       }
     };
@@ -69,7 +69,7 @@ export default function PostDetailScreen() {
     : '';
   const contentHtml = loadError
     ? `<p>${loadError}</p>`
-    : (post?.content || '<p>내용이 없습니다.</p>');
+    : (post?.content || '<p>내용이 없어요.</p>');
 
   // Wrap content in basic HTML structure for WebView
   const htmlContent = `

@@ -75,7 +75,7 @@ export default function BoardScreen() {
                 renderItem={renderItem}
                 keyExtractor={(item) => item.id.toString()}
                 contentContainerStyle={styles.list}
-                ListEmptyComponent={<Text style={styles.emptyText}>게시물이 없습니다.</Text>}
+                ListEmptyComponent={<Text style={styles.emptyText}>게시물이 없어요.</Text>}
             />
         </View>
     );

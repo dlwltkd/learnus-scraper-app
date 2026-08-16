@@ -72,7 +72,7 @@ export default function LoginScreen({
 
     const submitDemoLogin = async () => {
         if (!isDemoCredentials(demoUsername, demoPassword)) {
-            setDemoError('아이디 또는 비밀번호가 올바르지 않습니다.');
+            setDemoError('아이디 또는 비밀번호가 올바르지 않아요.');
             return;
         }
         setDemoError(null);
@@ -179,7 +179,7 @@ export default function LoginScreen({
                 addDebugLog('auth_timeout', { url: currentUrlRef.current });
                 setIsAuthenticating(false);
                 wasOnLoginPage.current = false;
-                setAuthError('로그인을 완료하지 못했습니다. 아래 화면에서 다시 시도해 주세요.');
+                setAuthError('로그인을 완료하지 못했어요. 아래 화면에서 다시 시도해 주세요.');
             }, AUTH_OVERLAY_TIMEOUT_MS);
             return () => {
                 clearTimeout(timer);
@@ -406,8 +406,8 @@ export default function LoginScreen({
                 // we say so — this is what made the dead-API-URL bug invisible.
                 setAuthError(
                     e?.message === 'Network Error'
-                        ? '서버에 연결하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.'
-                        : '로그인 처리 중 문제가 발생했습니다. 다시 시도해 주세요.'
+                        ? '서버에 연결하지 못했어요. 네트워크를 확인한 뒤 다시 시도해 주세요.'
+                        : '로그인 중 문제가 생겼어요. 다시 시도해 주세요.'
                 );
             }
         }

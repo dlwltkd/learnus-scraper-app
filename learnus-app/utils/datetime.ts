@@ -46,3 +46,13 @@ export function formatDeadline(value: string | number | Date | null | undefined)
 
     return `${date.getMonth() + 1}월 ${date.getDate()}일 마감`;
 }
+
+/**
+ * A plain calendar date: "8월 20일". For dates that are not deadlines — a lecture
+ * opening, for instance — where counting down would imply an urgency that isn't there.
+ */
+export function formatDate(value: string | number | Date | null | undefined): string {
+    const date = parseDate(value);
+    if (!date) return '';
+    return `${date.getMonth() + 1}월 ${date.getDate()}일`;
+}

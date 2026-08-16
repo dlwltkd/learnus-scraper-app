@@ -27,32 +27,33 @@ interface ToastProps {
     onHide: () => void;
 }
 
-const TOAST_CONFIG = {
+// Theme-driven, so toasts track dark mode. These were baked light-mode hex values.
+const getToastConfig = (colors: ColorScheme) => ({
     success: {
         icon: 'checkmark-circle' as const,
-        color: '#22C55E',
-        softBg: 'rgba(34, 197, 94, 0.12)',
-        iconBg: 'rgba(34, 197, 94, 0.15)',
+        color: colors.success,
+        softBg: colors.successLight,
+        iconBg: colors.successLight,
     },
     error: {
         icon: 'close-circle' as const,
-        color: '#EF4444',
-        softBg: 'rgba(239, 68, 68, 0.12)',
-        iconBg: 'rgba(239, 68, 68, 0.15)',
+        color: colors.error,
+        softBg: colors.errorLight,
+        iconBg: colors.errorLight,
     },
     info: {
         icon: 'information-circle' as const,
-        color: '#3182F6',
-        softBg: 'rgba(49, 130, 246, 0.12)',
-        iconBg: 'rgba(49, 130, 246, 0.15)',
+        color: colors.primary,
+        softBg: colors.primaryLighter,
+        iconBg: colors.primaryLighter,
     },
     warning: {
         icon: 'alert-circle' as const,
-        color: '#F59E0B',
-        softBg: 'rgba(245, 158, 11, 0.12)',
-        iconBg: 'rgba(245, 158, 11, 0.15)',
+        color: colors.warning,
+        softBg: colors.warningLight,
+        iconBg: colors.warningLight,
     },
-};
+});
 
 const Toast: React.FC<ToastProps> = ({
     visible,
@@ -70,7 +71,7 @@ const Toast: React.FC<ToastProps> = ({
     const opacity = useRef(new Animated.Value(0)).current;
     const scale = useRef(new Animated.Value(0.92)).current;
 
-    const config = TOAST_CONFIG[type];
+    const config = getToastConfig(colors)[type];
 
     useEffect(() => {
         if (visible) {

@@ -129,6 +129,5 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
     inlineText: {
         ...typography.body2,
         color: colors.textTertiary,
-        fontStyle: 'italic',
     },
 });

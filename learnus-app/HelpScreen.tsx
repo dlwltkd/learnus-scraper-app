@@ -67,7 +67,7 @@ export default function HelpScreen() {
 
     const handleLogoPress = async () => {
         if (labsUnlocked) {
-            showInfo('실험실', '이미 실험실 기능이 활성화되어 있습니다.');
+            showInfo('실험실', '이미 실험실 기능이 켜져 있어요.');
             return;
         }
         const now = Date.now();

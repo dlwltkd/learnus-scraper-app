@@ -60,10 +60,10 @@ export default function MyInfoScreen() {
         setIsSaving(true);
         try {
             await updateName(name.trim());
-            showSuccess('저장 완료', '이름이 저장되었습니다.');
+            showSuccess('저장 완료', '이름을 저장했어요.');
             navigation.goBack();
         } catch (e) {
-            showError('오류', '저장에 실패했습니다.');
+            showError('오류', '저장하지 못했어요.');
         } finally {
             setIsSaving(false);
         }

@@ -314,7 +314,7 @@ export default function SettingsScreen() {
                 <SettingSection title="지원">
                     <SettingItem
                         icon="help-circle-outline"
-                        iconColor={colors.success}
+                        iconColor={colors.textSecondary}
                         title="도움말"
                         subtitle="사용 가이드 및 FAQ"
                         onPress={() => (navigation as any).navigate('Help')}
@@ -322,7 +322,7 @@ export default function SettingsScreen() {
                     />
                     <SettingItem
                         icon="chatbubble-outline"
-                        iconColor={colors.primary}
+                        iconColor={colors.textSecondary}
                         title="피드백 보내기"
                         onPress={() => Linking.openURL('mailto:dlwltkd@yonsei.ac.kr')}
                     />

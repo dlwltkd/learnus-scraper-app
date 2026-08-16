@@ -33,7 +33,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log("AuthContext: Session expired, logging out...");
         showAlert(
             "세션 만료",
-            "로그인 세션이 만료되었습니다. 다시 로그인해주세요.",
+            "로그인 세션이 만료됐어요. 다시 로그인해주세요.",
             [{ text: "확인", onPress: () => logout() }],
             'warning'
         );

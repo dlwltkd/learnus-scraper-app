@@ -235,7 +235,7 @@ export async function checkAndScheduleNotifications() {
                 // Schedule for start time
                 if (await scheduleReminder(
                     `강의 오픈 알림`,
-                    `'${v.title}' 강의가 열렸습니다. (${v.course_name})\n~ ${v.end_date || '?'}까지 시청 가능`,
+                    `'${v.title}' 강의가 열렸어요. (${v.course_name})\n~ ${v.end_date || '?'}까지 시청 가능`,
                     startDate,
                     'vod',
                     { courseId: v.course_id, courseName: v.course_name }

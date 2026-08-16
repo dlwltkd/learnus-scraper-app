@@ -673,7 +673,7 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         alignItems: 'center', justifyContent: 'center',
     },
     summaryTitle: { ...typography.subtitle2, color: colors.primary, fontWeight: '700' },
-    courseDesc: { ...typography.caption, color: colors.textSecondary, lineHeight: 18, marginBottom: Spacing.m, fontStyle: 'italic' },
+    courseDesc: { ...typography.caption, color: colors.textSecondary, lineHeight: 18, marginBottom: Spacing.m },
     divider: { height: 1, backgroundColor: colors.divider, marginBottom: Spacing.m },
     lectureDesc: { ...typography.body2, lineHeight: 22, color: colors.textPrimary },
 
