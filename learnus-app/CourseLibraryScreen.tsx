@@ -44,6 +44,28 @@ const FILTERS: { key: 'all' | LibraryItemType; label: string }[] = [
     { key: 'board', label: '공지' },
 ];
 
+const MONTHS: Record<string, number> = {
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+    july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+};
+
+/**
+ * Compress the bracketed date range Moodle puts in section names.
+ *
+ * "Week 6 [06 October - 12 October]" reads slowly and eats the full row width; the dates
+ * matter but their spelling does not. Korean sections ("12주차 [11월17일 - 11월23일]") are
+ * already compact and pass through untouched.
+ */
+function shortenWeek(week: string): string {
+    const match = week.match(/^(.*?)\s*\[\s*(\d{1,2})\s+([A-Za-z]+)\s*[-–]\s*(\d{1,2})\s+([A-Za-z]+)\s*\]$/);
+    if (!match) return week;
+    const [, label, d1, m1, d2, m2] = match;
+    const a = MONTHS[m1.toLowerCase()];
+    const b = MONTHS[m2.toLowerCase()];
+    if (!a || !b) return week;
+    return `${label.trim()} · ${a}/${d1}–${b}/${d2}`;
+}
+
 function itemMeta(item: LibraryItem): string {
     switch (item.type) {
         case 'file':
@@ -177,7 +199,7 @@ export default function CourseLibraryScreen() {
                                     size={16}
                                     color={colors.textTertiary}
                                 />
-                                <Text style={styles.sectionTitle} numberOfLines={1}>{section.week}</Text>
+                                <Text style={styles.sectionTitle} numberOfLines={1}>{shortenWeek(section.week)}</Text>
                                 <Text style={styles.sectionCount}>{section.items.length}</Text>
                             </TouchableOpacity>
 
@@ -254,7 +276,7 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         chipTextActive: { color: colors.primary },
 
         section: { marginTop: Spacing.l },
-        sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.s, paddingVertical: Spacing.s },
+        sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.s, paddingVertical: Spacing.xs, marginBottom: Spacing.s },
         sectionTitle: { ...typography.subtitle1, flex: 1 },
         sectionCount: { ...typography.caption, color: colors.textTertiary },
 
