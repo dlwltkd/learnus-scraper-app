@@ -25,13 +25,25 @@ TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe"
 # Summarization used to cap at 12,000 characters while chat used 80,000. Korean
 # transcripts of a one-hour lecture run well past 30,000 characters, so the summary
 # was silently describing only the opening stretch of each lecture and calling it the
-# whole thing. The cap was never a model limit — gpt-4o-mini takes 128K tokens — so
+# whole thing. The cap was never a model limit — even the old 128K window was ample — so
 # both paths now share the value chat has been using in production.
 TRANSCRIPT_CONTEXT_CHARS = 80000
 
+# Text model for every chat/summary/flashcard call.
+#
+# gpt-5.6-luna: 1.05M context, $0.20/1M input but $0.02/1M cached — a tenth, versus half
+# on gpt-4o-mini. The course corpus is an identical prefix on every question, so the warm
+# path is what matters and it lands ~4x cheaper on a much newer model. The old 128K
+# window was also 91% full at a 117K corpus, leaving no room for chat history.
+#
+# Two API differences from the 4o family, both verified against the live endpoint:
+#   * max_tokens is rejected — it is max_completion_tokens
+#   * temperature only accepts its default; any explicit value 400s
+TEXT_MODEL = "gpt-5.6-luna"
+
 # Vision model for describing lecture slides whose content is a diagram rather than text.
 # Runs once per sparse page at build time, never at query time, so answers stay text-only.
-VISION_MODEL = "gpt-4o-mini"
+VISION_MODEL = TEXT_MODEL
 
 # Measured on a rendered lecture slide: "high" costs 36,862 input tokens per image versus
 # 2,860 for "low" — 13x — and produced a caption that was word-for-word equivalent. Across
@@ -161,13 +173,12 @@ Rules:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=TEXT_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a JSON-only response bot. Return only valid JSON, no explanations."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=400,
-                temperature=0.3
+                max_completion_tokens=400,
             )
 
             usage = _extract_usage(response)
@@ -187,7 +198,7 @@ Rules:
                 "upcoming": {"count": len(upcoming_items), "items": upcoming_items},
                 "announcement": ai_parts.get("announcement", {"has_new": False, "summary": None}),
                 "insight": ai_parts.get("insight", ""),
-                "_usage": {"model": "gpt-4o-mini", **usage},
+                "_usage": {"model": TEXT_MODEL, **usage},
             }
 
         except json.JSONDecodeError as e:
@@ -416,8 +427,7 @@ Rules:
                          "image_url": {"url": f"data:image/png;base64,{b64}", "detail": VISION_DETAIL}},
                     ],
                 }],
-                max_tokens=220,
-                temperature=0.2,
+                max_completion_tokens=220,
             )
             usage = _extract_usage(response)
             caption = (response.choices[0].message.content or "").strip()
@@ -452,16 +462,15 @@ Transcript:
 {transcript[:TRANSCRIPT_CONTEXT_CHARS]}"""
 
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=TEXT_MODEL,
             messages=[
                 {"role": "system", "content": "You are a concise academic summarizer. Write in Korean (해요체). Plain text only, no markdown."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=300,
-            temperature=0.4
+            max_completion_tokens=300,
         )
         usage = _extract_usage(response)
-        return response.choices[0].message.content.strip(), {"model": "gpt-4o-mini", **usage}
+        return response.choices[0].message.content.strip(), {"model": TEXT_MODEL, **usage}
 
     def chat_about_transcript(self, transcript: str, course_name: str, lecture_title: str, messages: list) -> str:
         """
@@ -494,13 +503,12 @@ Lecture: {lecture_title}
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=TEXT_MODEL,
                 messages=api_messages,
-                max_tokens=1000,
-                temperature=0.5,
+                max_completion_tokens=1000,
             )
             usage = _extract_usage(response)
-            return response.choices[0].message.content.strip(), {"model": "gpt-4o-mini", **usage}
+            return response.choices[0].message.content.strip(), {"model": TEXT_MODEL, **usage}
         except Exception as e:
             raise RuntimeError(f"AI chat failed: {e}")
 
@@ -529,17 +537,16 @@ Lecture: {lecture_title}
         api_messages.extend(messages)
 
         response = self.client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=TEXT_MODEL,
             messages=api_messages,
-            max_tokens=1000,
-            temperature=0.5,
+            max_completion_tokens=1000,
             stream=True,
             stream_options={"include_usage": True},
         )
-        usage_info = {"model": "gpt-4o-mini", "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        usage_info = {"model": TEXT_MODEL, "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         for chunk in response:
             if chunk.usage:
-                usage_info = {"model": "gpt-4o-mini", **_extract_usage(chunk)}
+                usage_info = {"model": TEXT_MODEL, **_extract_usage(chunk)}
             if chunk.choices and chunk.choices[0].delta.content:
                 yield "token", chunk.choices[0].delta.content
         yield "usage", usage_info
@@ -569,13 +576,12 @@ Transcript:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=TEXT_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a flashcard generator. Return only valid JSON with a 'cards' array."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=2000,
-                temperature=0.4,
+                max_completion_tokens=2000,
                 response_format={"type": "json_object"},
             )
             usage = _extract_usage(response)
@@ -584,7 +590,7 @@ Transcript:
             cards = parsed.get("cards", [])
             # Validate structure
             cards = [{"front": c["front"], "back": c["back"]} for c in cards if "front" in c and "back" in c]
-            return cards, {"model": "gpt-4o-mini", **usage}
+            return cards, {"model": TEXT_MODEL, **usage}
         except (json.JSONDecodeError, KeyError) as e:
             raise RuntimeError(f"Failed to parse flashcard response: {e}")
         except Exception as e:
@@ -608,13 +614,12 @@ Transcript:
 
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=TEXT_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a concise notification summarizer."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=100,
-                temperature=0.5
+                max_completion_tokens=100,
             )
             usage = _extract_usage(response)
             logger.info(f"summarize_text usage: {usage}")
