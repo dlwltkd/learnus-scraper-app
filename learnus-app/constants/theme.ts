@@ -88,14 +88,6 @@ export const LightColors = {
     glassBackground: 'rgba(255, 255, 255, 0.7)',
     shimmer: 'rgba(255, 255, 255, 0.5)',
 
-    // === GRADIENTS ===
-    gradients: {
-        primary: ['#3182F6', '#5B9DF7'],
-        warm: ['#FF6B4A', '#FF8F73'],
-        cool: ['#6366F1', '#818CF8'],
-        surface: ['#FFFFFF', '#F8FAFC'],
-        hero: ['#3182F6', '#6366F1'],
-    },
 };
 
 // ─── Dark Palette ───────────────────────────────────────────────────────────────
@@ -182,14 +174,6 @@ export const DarkColors: typeof LightColors = {
     glassBackground: 'rgba(30, 33, 43, 0.7)',
     shimmer: 'rgba(255, 255, 255, 0.08)',
 
-    // === GRADIENTS ===
-    gradients: {
-        primary: ['#4A94F7', '#6BABF9'],
-        warm: ['#FF8266', '#FFA08A'],
-        cool: ['#818CF8', '#A5B4FC'],
-        surface: ['#1A1D26', '#22252E'],
-        hero: ['#4A94F7', '#818CF8'],
-    },
 };
 
 // ─── Color type ─────────────────────────────────────────────────────────────────
@@ -201,73 +185,49 @@ export const Colors = LightColors;
 
 // ─── Layout (theme-aware shadows) ───────────────────────────────────────────────
 
+const NO_SHADOW = {
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+};
+
 export const createLayout = (isDark: boolean) => ({
+    // Pulled in from 20/28/36. Icon tiles set their own radius inline and are
+    // deliberately left alone, so they still read as the same component.
     borderRadius: {
         xs: 6,
         s: 10,
-        m: 14,
-        l: 20,
-        xl: 28,
-        xxl: 36,
+        m: 12,
+        l: 14,
+        xl: 16,
+        xxl: 20,
         full: 9999,
     },
 
+    // Cards sit on the page; they do not float above it. Their 1px border already
+    // separates them from the background, so the soft 16-32px drop shadows were doing
+    // nothing except making everything read at the same slightly dated elevation.
+    //
+    // Only `xl` still casts a shadow — it is reserved for things that genuinely float
+    // over the content: modals, action sheets, tooltips, toasts.
     shadow: {
-        sm: {
-            shadowColor: isDark ? '#000' : '#1A1D26',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: isDark ? 0.3 : 0.04,
-            shadowRadius: 8,
-            elevation: isDark ? 1 : 2,
-        },
-        default: {
-            shadowColor: isDark ? '#000' : '#1A1D26',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: isDark ? 0.4 : 0.06,
-            shadowRadius: 16,
-            elevation: isDark ? 2 : 4,
-        },
-        md: {
-            shadowColor: isDark ? '#000' : '#1A1D26',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: isDark ? 0.5 : 0.08,
-            shadowRadius: 24,
-            elevation: isDark ? 3 : 6,
-        },
-        lg: {
-            shadowColor: isDark ? '#000' : '#1A1D26',
-            shadowOffset: { width: 0, height: 12 },
-            shadowOpacity: isDark ? 0.6 : 0.12,
-            shadowRadius: 32,
-            elevation: isDark ? 4 : 8,
-        },
+        sm: NO_SHADOW,
+        default: NO_SHADOW,
+        md: NO_SHADOW,
+        lg: NO_SHADOW,
+        // The blue glow under primary buttons went with the rest.
+        primary: NO_SHADOW,
+        error: NO_SHADOW,
+        inset: NO_SHADOW,
+
         xl: {
-            shadowColor: isDark ? '#000' : '#1A1D26',
-            shadowOffset: { width: 0, height: 20 },
-            shadowOpacity: isDark ? 0.7 : 0.15,
-            shadowRadius: 40,
-            elevation: isDark ? 6 : 12,
-        },
-        primary: {
-            shadowColor: isDark ? '#4A94F7' : '#3182F6',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: isDark ? 0.3 : 0.25,
-            shadowRadius: 20,
-            elevation: isDark ? 4 : 8,
-        },
-        error: {
-            shadowColor: isDark ? '#F87171' : '#EF4444',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: isDark ? 0.3 : 0.2,
-            shadowRadius: 12,
-            elevation: isDark ? 2 : 4,
-        },
-        inset: {
             shadowColor: '#000',
-            shadowOffset: { width: 0, height: -2 },
-            shadowOpacity: isDark ? 0.15 : 0.05,
-            shadowRadius: 4,
-            elevation: 0,
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: isDark ? 0.45 : 0.06,
+            shadowRadius: 8,
+            elevation: isDark ? 4 : 3,
         },
     },
 
@@ -342,11 +302,12 @@ export const createTypography = (colors: ColorScheme) => ({
         lineHeight: 26,
         letterSpacing: -0.3,
     },
+    // Row titles. Was 17 and sat too close to body1 at 16 — the two read as one level.
     subtitle1: {
-        fontSize: 17,
+        fontSize: 16,
         fontWeight: '600' as const,
         color: colors.textPrimary,
-        lineHeight: 24,
+        lineHeight: 22,
         letterSpacing: -0.2,
     },
     subtitle2: {
@@ -369,12 +330,13 @@ export const createTypography = (colors: ColorScheme) => ({
         color: colors.textSecondary,
         lineHeight: 21,
     },
+    // Metadata under row titles. 12 was small enough to read as decoration.
     caption: {
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: '500' as const,
         color: colors.textTertiary,
-        lineHeight: 16,
-        letterSpacing: 0.1,
+        lineHeight: 18,
+        letterSpacing: 0,
     },
     overline: {
         fontSize: 11,

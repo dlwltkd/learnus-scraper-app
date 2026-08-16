@@ -131,10 +131,6 @@ const CourseCard = ({ item, index, onPress, onSync, syncing }: CourseCardProps) 
                         <Text style={styles.courseName} numberOfLines={2}>
                             {item.name}
                         </Text>
-                        <View style={styles.courseMeta}>
-                            <Ionicons name="school-outline" size={12} color={colors.textTertiary} />
-                            <Text style={styles.courseId}>ID: {item.id}</Text>
-                        </View>
                     </View>
 
                     {/* Sync button */}

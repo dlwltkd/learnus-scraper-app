@@ -37,6 +37,7 @@ import { useTourRef } from './hooks/useTourRef';
 import { useTour } from './context/TourContext';
 import { TOUR_MOCK_OVERVIEW, FORCE_MOCK_MODE } from './constants/tourMockData';
 import { isDemoMode } from './services/demoMode';
+import { formatDeadline } from './utils/datetime';
 
 if (Platform.OS === 'android') {
     if (UIManager.setLayoutAnimationEnabledExperimental) {
@@ -806,14 +807,16 @@ const DashboardScreen = () => {
                         <StatItem
                             label="놓친 강의"
                             value={data?.stats?.missed_vods_count || 0}
-                            color={(data?.stats?.missed_vods_count || 0) > 0 ? colors.error : colors.success}
+                            // Nothing missed means nothing to act on, so the number
+                            // stays neutral. Green shouted as loudly as red did.
+                            color={(data?.stats?.missed_vods_count || 0) > 0 ? colors.error : colors.textPrimary}
                             icon="videocam-outline"
                         />
                         <View style={styles.statsDivider} />
                         <StatItem
                             label="놓친 과제"
                             value={data?.stats?.missed_assignments_count || 0}
-                            color={(data?.stats?.missed_assignments_count || 0) > 0 ? colors.error : colors.success}
+                            color={(data?.stats?.missed_assignments_count || 0) > 0 ? colors.error : colors.textPrimary}
                             icon="alert-circle-outline"
                         />
                     </View>
@@ -930,7 +933,7 @@ const DashboardScreen = () => {
                                         <ItemRow
                                             title={item.title}
                                             courseName={item.course_name}
-                                            meta={item.due_date ? `${item.due_date} 마감` : undefined}
+                                            meta={formatDeadline(item.due_date) || undefined}
                                             state="missed"
                                             type="assignment"
                                         />
@@ -999,7 +1002,7 @@ const DashboardScreen = () => {
                                     <ItemRow
                                         title={item.title}
                                         courseName={item.course_name}
-                                        meta={item.due_date ? `${item.due_date} 마감` : undefined}
+                                        meta={formatDeadline(item.due_date) || undefined}
                                         state={item.is_completed ? 'completed' : 'pending'}
                                         type="assignment"
                                     />
