@@ -367,6 +367,62 @@ def set_course_brain(
     return _brain_payload(course)
 
 
+@app.get("/brain/courses")
+def list_brain_courses(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Every active course with its brain state, for the settings screen.
+
+    One request for the whole list rather than a status call per course: the screen shows
+    all of them at once and polls while any build runs.
+    """
+    _require_brain_enabled(user)
+    import course_brain
+
+    courses = db.query(Course).filter(
+        Course.owner_id == user.id, Course.is_active == True  # noqa: E712
+    ).order_by(Course.id).all()
+
+    out = []
+    for course in courses:
+        outstanding = course_brain.pending_work(db, course)
+        payload = _brain_payload(course)
+        payload.update({
+            "id": course.id,
+            "name": course.name,
+            "pending": outstanding,
+            "learned": course_brain.corpus_size(db, course),
+        })
+        out.append(payload)
+    return {"courses": out}
+
+
+@app.post("/courses/{course_id}/brain/rebuild")
+def rebuild_course_brain(
+    course_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Learn whatever is still missing for this course.
+
+    Not a re-do: every stage skips what is already stored, so this costs only the items
+    that failed or arrived since the last build. Re-transcribing what already worked
+    would spend real money to produce the same text.
+    """
+    _require_brain_enabled(user)
+    course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
+    if not course:
+        raise HTTPException(404, "Course not found")
+    _require_course_brain(course)
+
+    import course_brain
+    queued = course_brain.enqueue_brain_build(db, course, full=False)
+    return {"queued": queued, **_brain_payload(course)}
+
+
 @app.post("/courses/{course_id}/brain/learn/{item_type}/{item_id}")
 def learn_library_item(
     course_id: int,

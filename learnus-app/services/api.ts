@@ -548,6 +548,36 @@ export const learnLibraryItem = async (
     return response.data;
 };
 
+/** One course's row on the brain settings screen. */
+export interface BrainCourse extends CourseBrainState {
+    id: number;
+    name: string;
+    pending: { files: number; vods: number; assignments: number; total: number };
+    learned: {
+        chars: number;
+        files: number; total_files: number;
+        vods: number; total_vods: number;
+        assignments: number; total_assignments: number;
+        captioned_pages: number;
+    };
+}
+
+/** Every active course with its brain state — one request for the whole settings list. */
+export const getBrainCourses = async (): Promise<{ courses: BrainCourse[] }> => {
+    const response = await api.get('/brain/courses');
+    return response.data;
+};
+
+/**
+ * Learn whatever is still missing for a course.
+ *
+ * Not a re-do: finished work is skipped, so this costs only what failed or is new.
+ */
+export const rebuildCourseBrain = async (courseId: number): Promise<CourseBrainState> => {
+    const response = await api.post(`/courses/${courseId}/brain/rebuild`);
+    return response.data;
+};
+
 /** Polled while a build runs. `pending` is what the brain has not learned yet. */
 export const getCourseBrainStatus = async (
     courseId: number,

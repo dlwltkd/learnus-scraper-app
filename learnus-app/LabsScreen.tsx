@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
@@ -10,6 +11,7 @@ import { useToast } from './context/ToastContext';
 
 export default function LabsScreen() {
     const { colors, typography, layout, isDark } = useTheme();
+    const navigation = useNavigation();
     const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const { autoWatchEnabled, setAutoWatchEnabled, brainEnabled, setBrainEnabled, isLoading } = useLabs();
     const { showError } = useToast();
@@ -103,6 +105,24 @@ export default function LabsScreen() {
                         thumbColor="#fff"
                     />
                 </View>
+
+                {/* The switch above is consent to use the feature at all; which courses
+                    get learned, and what each has cost, lives on its own screen. */}
+                {brainEnabled && (
+                    <TouchableOpacity
+                        style={styles.card}
+                        activeOpacity={0.6}
+                        onPress={() => (navigation as any).navigate('BrainSettings')}
+                    >
+                        <View style={styles.toggleText}>
+                            <Text style={styles.toggleTitle}>강의 브레인 설정</Text>
+                            <Text style={styles.toggleDescription}>
+                                학습할 강의를 고르고, 무엇을 얼마나 학습했는지 확인해요.
+                            </Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                )}
 
                 <View style={styles.warningCard}>
                     <View style={styles.warningHeader}>

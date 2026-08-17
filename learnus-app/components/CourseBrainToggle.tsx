@@ -18,6 +18,7 @@ import type { ColorScheme, TypographyType, LayoutType } from '../constants/theme
 import { useTheme } from '../context/ThemeContext';
 import { getCourseBrainStatus, setCourseBrain } from '../services/api';
 import type { CourseBrainState } from '../services/api';
+import { LEARNED_CONTENT } from '../constants/brainContent';
 
 const POLL_MS = 4000;
 
@@ -178,7 +179,7 @@ export default function CourseBrainToggle({ courseId, onStateChange }: Props) {
                             </Text>
 
                             <Text style={styles.sheetSection}>지금 학습할 자료</Text>
-                            {WHAT_IS_LEARNED.map(row => {
+                            {LEARNED_CONTENT.map(row => {
                                 const count = pending ? (pending as any)[row.key] as number : 0;
                                 return (
                                     <View key={row.key} style={styles.sheetRow}>
@@ -223,20 +224,6 @@ export default function CourseBrainToggle({ courseId, onStateChange }: Props) {
     );
 }
 
-/**
- * What a sweep covers, in the order it runs. Announcements are already stored by the
- * regular sync, so they are listed as included rather than as work to be done.
- */
-const WHAT_IS_LEARNED: {
-    key: 'vods' | 'files' | 'assignments';
-    icon: keyof typeof Ionicons.glyphMap;
-    title: string;
-    detail: string;
-}[] = [
-    { key: 'vods', icon: 'play-circle-outline', title: '동영상 강의', detail: '음성을 글로 옮겨 시간과 함께 저장해요' },
-    { key: 'files', icon: 'document-text-outline', title: '강의 자료', detail: 'PDF·문서의 글과 슬라이드 그림까지 읽어요' },
-    { key: 'assignments', icon: 'create-outline', title: '과제 안내', detail: '제출 방법과 조건을 함께 정리해요' },
-];
 
 const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) =>
     StyleSheet.create({

@@ -234,6 +234,40 @@ def queued_items(db, course) -> set:
     }
 
 
+def corpus_size(db, course) -> dict:
+    """
+    How much this course has actually learned, for the settings screen.
+
+    Characters rather than bytes: it is what the corpus cap is measured in, so the two
+    numbers a curious student might compare are in the same unit.
+    """
+    from database import Assignment, FileResource, VOD, VodTranscript
+
+    files = db.query(FileResource).filter_by(course_id=course.id).all()
+    file_chars = sum(f.content_chars or len(f.content or '') for f in files)
+    learned_files = sum(1 for f in files if f.content)
+    captioned = sum(f.captioned_pages or 0 for f in files)
+
+    vods = db.query(VOD).filter_by(course_id=course.id).all()
+    vod_chars, learned_vods = 0, 0
+    for vod in vods:
+        row = db.query(VodTranscript).filter_by(moodle_id=vod.moodle_id).first()
+        if row and row.transcript:
+            vod_chars += len(row.transcript)
+            learned_vods += 1
+
+    assignments = db.query(Assignment).filter_by(course_id=course.id).all()
+    learned_assignments = sum(1 for a in assignments if a.description)
+
+    return {
+        'chars': file_chars + vod_chars,
+        'files': learned_files, 'total_files': len(files),
+        'vods': learned_vods, 'total_vods': len(vods),
+        'assignments': learned_assignments, 'total_assignments': len(assignments),
+        'captioned_pages': captioned,
+    }
+
+
 def build_library(db, course) -> dict:
     """
     The course as a navigable structure, grouped by the week each item sits under.
