@@ -386,16 +386,24 @@ def _run_brain_build(payload: dict):
 
         # Weighted so the bar tracks wall-clock rather than item count: transcription
         # dominates a full build, and a bar that sits at 90% for half an hour is a lie.
-        weights = {'assignments': 5, 'vods': 65, 'files': 30}
+        # Stages the course's scope excludes get no share, so a files-only build still
+        # spans the whole bar instead of stopping at 30%.
+        scope = course_brain.scope_of(course)
+        base = {'assignments': 5, 'vods': 65, 'files': 30}
+        active = {k: v for k, v in base.items() if scope.get(k, True)}
+        total_weight = sum(active.values()) or 1
+        weights = {k: v * 100 / total_weight for k, v in active.items()}
+
         offsets, running = {}, 0
         for name in ('assignments', 'vods', 'files'):
             offsets[name] = running
-            running += weights[name]
+            running += weights.get(name, 0)
 
         labels = {'assignments': '과제 안내 정리 중', 'vods': '강의 변환 중', 'files': '자료 정리 중'}
 
         def on_stage(name, done, total):
-            pct = offsets[name] + (weights[name] * done / total if total else weights[name])
+            share = weights.get(name, 0)
+            pct = offsets[name] + (share * done / total if total else share)
             course.brain_status = 'building'
             course.brain_progress = min(99, int(pct))
             course.brain_stage = (f"{labels[name]} {done}/{total}" if total > 1 else labels[name])

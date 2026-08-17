@@ -669,6 +669,22 @@ def build_course_files(session, db, course, ai_service=None, caption: bool = Tru
 # "incremental" are the same code path with different amounts of work to do.
 
 
+# What a course can learn. Boards are absent on purpose: their posts arrive with the
+# regular sync and are in the corpus whether or not a build ever runs.
+SCOPE_KEYS = ('vods', 'files', 'assignments')
+
+
+def scope_of(course) -> dict:
+    """
+    Which material this course learns, defaulting to everything.
+
+    Defaults matter here: a course enabled before this setting existed has no stored
+    scope, and the safe reading is the behaviour it already had — learn all of it.
+    """
+    stored = getattr(course, 'brain_scope', None) or {}
+    return {key: bool(stored.get(key, True)) for key in SCOPE_KEYS}
+
+
 def pending_work(db, course) -> dict:
     """
     What the brain has not learned yet for this course.
@@ -678,27 +694,33 @@ def pending_work(db, course) -> dict:
     """
     from database import Assignment, FileResource, VOD, VodTranscript
 
+    scope = scope_of(course)
+
     files = db.query(FileResource).filter(
         FileResource.course_id == course.id,
         FileResource.extract_status.is_(None),
-    ).count()
+    ).count() if scope['files'] else 0
 
     assignments = db.query(Assignment).filter(
         Assignment.course_id == course.id,
         Assignment.description.is_(None),
         Assignment.url.isnot(None),
-    ).count()
+    ).count() if scope['assignments'] else 0
 
     # A VOD needs work when it has no transcript row, or one that never completed.
-    vod_rows = db.query(VOD).filter_by(course_id=course.id).all()
     vods = 0
-    for vod in vod_rows:
-        row = db.query(VodTranscript).filter_by(moodle_id=vod.moodle_id).first()
-        if not row or not row.transcript or row.status != 'done':
-            vods += 1
+    if scope['vods']:
+        for vod in db.query(VOD).filter_by(course_id=course.id).all():
+            row = db.query(VodTranscript).filter_by(moodle_id=vod.moodle_id).first()
+            if not row or not row.transcript or row.status != 'done':
+                vods += 1
 
     return {'files': files, 'vods': vods, 'assignments': assignments,
             'total': files + vods + assignments}
+
+
+class _Skipped(Exception):
+    """A stage the course's scope excludes. Not an error, so it is caught separately."""
 
 
 def build_course_brain(client, db, course, ai_service, *, transcribe: bool = True,
@@ -716,8 +738,9 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
     """
     from database import VOD, VodTranscript
 
+    scope = scope_of(course)
     summary = {'assignments': {}, 'vods': {'total': 0, 'ok': 0, 'skipped': 0, 'failed': 0},
-               'files': {}, 'errors': []}
+               'files': {}, 'errors': [], 'scope': scope}
 
     def stage(name, done, total):
         if on_stage:
@@ -726,7 +749,11 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
     # 1. Assignment instructions. Cheap, and the answers lean on them heavily.
     stage('assignments', 0, 1)
     try:
+        if not scope['assignments']:
+            raise _Skipped()
         summary['assignments'] = fetch_assignment_descriptions(client, db, course, force=force)
+    except _Skipped:
+        summary['assignments'] = {'skipped_by_scope': True}
     except Exception as e:
         logger.exception("brain build: assignment descriptions failed")
         summary['errors'].append(f"assignments: {type(e).__name__}: {e}")
@@ -734,7 +761,7 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
 
     # 2. Lecture transcripts. The expensive stage, and the one most worth resuming:
     #    each finished lecture is committed before the next begins.
-    if transcribe:
+    if transcribe and scope['vods']:
         vods = db.query(VOD).filter_by(course_id=course.id).all()
         summary['vods']['total'] = len(vods)
         for index, vod in enumerate(vods, start=1):
@@ -778,10 +805,14 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
         stage('files', index, total)
 
     try:
+        if not scope['files']:
+            raise _Skipped()
         summary['files'] = build_course_files(
             client.session, db, course, ai_service=ai_service,
             caption=True, force=force, on_progress=file_progress,
         )
+    except _Skipped:
+        summary['files'] = {'skipped_by_scope': True}
     except Exception as e:
         logger.exception("brain build: file build failed")
         summary['errors'].append(f"files: {type(e).__name__}: {e}")

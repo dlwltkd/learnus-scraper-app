@@ -98,6 +98,11 @@ class Course(Base):
     # whatever is new. Kept per-course because a sweep costs real money and time, so
     # it is the student's choice which courses are worth it.
     brain_enabled = Column(Boolean, default=False)
+    # Which kinds of material this course learns, e.g. {"vods": true, "files": true,
+    # "assignments": false}. Per-course because the cost is lopsided: transcribing
+    # lectures dominates a build, and a course may be worth reading without being worth
+    # listening to. Missing keys default to on — see course_brain.scope_of.
+    brain_scope = Column(JSON, nullable=True)
     brain_status = Column(String, nullable=True)     # queued | building | ready | error
     brain_progress = Column(Integer, default=0)      # 0-100, for the progress bar
     brain_stage = Column(String, nullable=True)      # human label, e.g. "강의 4/12 변환 중"
@@ -444,6 +449,7 @@ def init_db(db_url=None):
     if 'courses' in refreshed_tables:
         for _col, _ddl in (
             ('brain_enabled',  "ALTER TABLE courses ADD COLUMN brain_enabled BOOLEAN DEFAULT FALSE"),
+            ('brain_scope',    "ALTER TABLE courses ADD COLUMN brain_scope JSON"),
             ('brain_status',   "ALTER TABLE courses ADD COLUMN brain_status VARCHAR"),
             ('brain_progress', "ALTER TABLE courses ADD COLUMN brain_progress INTEGER DEFAULT 0"),
             ('brain_stage',    "ALTER TABLE courses ADD COLUMN brain_stage VARCHAR"),

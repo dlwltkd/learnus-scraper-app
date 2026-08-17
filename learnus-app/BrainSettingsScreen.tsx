@@ -96,7 +96,17 @@ export default function BrainSettingsScreen() {
     const toggle = async (course: BrainCourse, enabled: boolean) => {
         mark(course.id, true);
         try {
-            await setCourseBrain(course.id, enabled);
+            await setCourseBrain(course.id, { enabled });
+            await load();
+        } finally {
+            mark(course.id, false);
+        }
+    };
+
+    const setScope = async (course: BrainCourse, key: 'vods' | 'files' | 'assignments', value: boolean) => {
+        mark(course.id, true);
+        try {
+            await setCourseBrain(course.id, { scope: { [key]: value } });
             await load();
         } finally {
             mark(course.id, false);
@@ -190,29 +200,43 @@ export default function BrainSettingsScreen() {
                                     </View>
                                 )}
 
-                                {/* The breakdown only means something once there is something
-                                    learned, and it is the answer to "what did that cost me". */}
-                                {course.enabled && !building && course.learned.chars > 0 && (
-                                    <View style={styles.breakdown}>
-                                        <Text style={styles.breakdownItem}>
-                                            강의 {course.learned.vods}/{course.learned.total_vods}
-                                        </Text>
-                                        <Text style={styles.breakdownItem}>
-                                            자료 {course.learned.files}/{course.learned.total_files}
-                                        </Text>
-                                        <Text style={styles.breakdownItem}>
-                                            과제 {course.learned.assignments}/{course.learned.total_assignments}
-                                        </Text>
-                                        {course.learned.captioned_pages > 0 && (
-                                            <Text style={styles.breakdownItem}>
-                                                그림 {course.learned.captioned_pages}쪽
-                                            </Text>
-                                        )}
-                                    </View>
+                                {/* Counts now sit on the scope rows below, where each one
+                                    is next to the switch that governs it. */}
+                                {course.enabled && !building && course.learned.captioned_pages > 0 && (
+                                    <Text style={styles.breakdownItem}>
+                                        슬라이드 그림 {course.learned.captioned_pages}쪽 포함
+                                    </Text>
                                 )}
 
                                 {course.status === 'error' && course.error && (
                                     <Text style={styles.errorDetail} numberOfLines={3}>{course.error}</Text>
+                                )}
+
+                                {/* What this course learns. Per-course because the cost is
+                                    lopsided — transcription dominates a build, so a course
+                                    can be worth reading without being worth listening to. */}
+                                {course.enabled && (
+                                    <View style={styles.scopeBox}>
+                                        {LEARNED_CONTENT.map(row => (
+                                            <View key={row.key} style={styles.scopeRow}>
+                                                <Ionicons name={row.icon} size={16} color={colors.textTertiary} />
+                                                <Text style={styles.scopeLabel}>{row.title}</Text>
+                                                <Text style={styles.scopeCount}>
+                                                    {row.key === 'vods' && `${course.learned.vods}/${course.learned.total_vods}`}
+                                                    {row.key === 'files' && `${course.learned.files}/${course.learned.total_files}`}
+                                                    {row.key === 'assignments' && `${course.learned.assignments}/${course.learned.total_assignments}`}
+                                                </Text>
+                                                <Switch
+                                                    value={course.scope[row.key]}
+                                                    onValueChange={v => setScope(course, row.key, v)}
+                                                    disabled={Boolean(busy[course.id])}
+                                                    trackColor={{ false: colors.border, true: colors.primary }}
+                                                    thumbColor={colors.surface}
+                                                    style={styles.scopeSwitch}
+                                                />
+                                            </View>
+                                        ))}
+                                    </View>
                                 )}
 
                                 {course.enabled && !building && (
@@ -347,6 +371,33 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
             ...typography.caption,
             color: colors.error,
             marginTop: Spacing.s,
+        },
+
+        scopeBox: {
+            marginTop: Spacing.m,
+            borderTopWidth: 1,
+            borderTopColor: colors.divider,
+            paddingTop: Spacing.xs,
+        },
+        scopeRow: {
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: Spacing.xs,
+        },
+        scopeLabel: {
+            ...typography.caption,
+            color: colors.textSecondary,
+            marginLeft: Spacing.s,
+            flex: 1,
+        },
+        scopeCount: {
+            ...typography.caption,
+            color: colors.textTertiary,
+            marginRight: Spacing.s,
+        },
+        scopeSwitch: {
+            // Smaller than the course switch: this governs a part, not the whole.
+            transform: [{ scaleX: 0.75 }, { scaleY: 0.75 }],
         },
 
         actions: { flexDirection: 'row', marginTop: Spacing.m },

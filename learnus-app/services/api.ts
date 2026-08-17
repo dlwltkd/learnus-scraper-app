@@ -497,8 +497,12 @@ export interface LibrarySection {
 }
 
 /** Per-course brain state: whether it is on, and how far a build has got. */
+export type BrainScope = { vods: boolean; files: boolean; assignments: boolean };
+
 export interface CourseBrainState {
     enabled: boolean;
+    /** Which kinds of material this course learns. */
+    scope: BrainScope;
     status: 'queued' | 'building' | 'ready' | 'error' | null;
     progress: number;
     stage: string | null;
@@ -528,8 +532,11 @@ export const getCourseLibrary = async (courseId: number): Promise<CourseLibrary>
  * is a deliberate per-course choice, not a global switch. Disabling keeps what was
  * already learned, so turning it back on is instant.
  */
-export const setCourseBrain = async (courseId: number, enabled: boolean): Promise<CourseBrainState> => {
-    const response = await api.put(`/courses/${courseId}/brain`, { enabled });
+export const setCourseBrain = async (
+    courseId: number,
+    changes: { enabled?: boolean; scope?: Partial<BrainScope> },
+): Promise<CourseBrainState> => {
+    const response = await api.put(`/courses/${courseId}/brain`, changes);
     return response.data;
 };
 

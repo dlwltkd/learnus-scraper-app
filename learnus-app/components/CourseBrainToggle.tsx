@@ -17,7 +17,7 @@ import { Spacing } from '../constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from '../constants/theme';
 import { useTheme } from '../context/ThemeContext';
 import { getCourseBrainStatus, setCourseBrain } from '../services/api';
-import type { CourseBrainState } from '../services/api';
+import type { BrainScope, CourseBrainState } from '../services/api';
 import { LEARNED_CONTENT } from '../constants/brainContent';
 
 const POLL_MS = 4000;
@@ -47,6 +47,9 @@ export default function CourseBrainToggle({ courseId, onStateChange }: Props) {
     const [pending, setPending] = useState<{ files: number; vods: number; assignments: number; total: number } | null>(null);
     const [busy, setBusy] = useState(false);
     const [explaining, setExplaining] = useState(false);
+    // Chosen in the sheet before committing, so the expensive stage can be declined up
+    // front rather than started and then turned off.
+    const [draftScope, setDraftScope] = useState<BrainScope>({ vods: true, files: true, assignments: true });
     const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const barAnim = useRef(new Animated.Value(0)).current;
 
@@ -94,7 +97,9 @@ export default function CourseBrainToggle({ courseId, onStateChange }: Props) {
     const commit = async (value: boolean) => {
         setBusy(true);
         try {
-            apply(await setCourseBrain(courseId, value));
+            apply(await setCourseBrain(courseId, value
+                ? { enabled: true, scope: draftScope }
+                : { enabled: false }));
             // The build is queued server-side; pick its progress up on the next poll.
             if (value) setTimeout(refresh, 800);
         } catch {
@@ -106,7 +111,11 @@ export default function CourseBrainToggle({ courseId, onStateChange }: Props) {
 
     // Turning it on is the expensive direction, so it goes through the explainer first.
     // Turning it off is cheap and reversible, so it just happens.
-    const toggle = (value: boolean) => (value ? setExplaining(true) : commit(false));
+    const toggle = (value: boolean) => {
+        if (!value) return commit(false);
+        setDraftScope(state?.scope ?? { vods: true, files: true, assignments: true });
+        setExplaining(true);
+    };
 
     if (!state) return null;
 
@@ -189,6 +198,13 @@ export default function CourseBrainToggle({ courseId, onStateChange }: Props) {
                                             <Text style={styles.sheetRowSub}>{row.detail}</Text>
                                         </View>
                                         <Text style={styles.sheetCount}>{count > 0 ? `${count}개` : '없음'}</Text>
+                                        <Switch
+                                            value={draftScope[row.key]}
+                                            onValueChange={v => setDraftScope(prev => ({ ...prev, [row.key]: v }))}
+                                            trackColor={{ false: colors.border, true: colors.primary }}
+                                            thumbColor={colors.surface}
+                                            style={styles.sheetSwitch}
+                                        />
                                     </View>
                                 );
                             })}
@@ -198,8 +214,10 @@ export default function CourseBrainToggle({ courseId, onStateChange }: Props) {
                                 • 강의 영상은 음성을 글로 옮겨서 학습해요. 강의 수에 따라 30분에서
                                 한 시간쯤 걸리고, 그동안 앱을 닫아도 계속 진행돼요.{'\n'}
                                 • 학습이 끝난 뒤 새 자료가 올라오면 자동으로 따라 학습해요.{'\n'}
-                                • 시험지처럼 학습에서 빼고 싶은 자료가 있다면, 학습을 끄고
-                                자료 둘러보기에서 필요한 것만 하나씩 학습시킬 수 있어요.
+                                • 위 스위치로 학습할 종류를 고를 수 있어요. 나중에 설정에서
+                                바꿔도 돼요.{'\n'}
+                                • 필요한 자료만 하나씩 학습시키려면, 자료 둘러보기에서 골라
+                                학습시킬 수 있어요.
                             </Text>
                         </ScrollView>
 
@@ -333,6 +351,10 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
             ...typography.subtitle1,
             fontSize: 15,
             color: colors.textSecondary,
+        },
+        sheetSwitch: {
+            marginLeft: Spacing.s,
+            transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
         },
         sheetNote: {
             ...typography.caption,

@@ -168,8 +168,10 @@ def _require_brain_enabled(user: User):
 
 def _brain_payload(course: Course) -> dict:
     """Build state for one course, shaped for the toggle row and its progress bar."""
+    import course_brain
     return {
         "enabled": bool(getattr(course, "brain_enabled", False)),
+        "scope": course_brain.scope_of(course),
         "status": course.brain_status,
         "progress": course.brain_progress or 0,
         "stage": course.brain_stage,
@@ -350,14 +352,26 @@ def set_course_brain(
     import course_brain
 
     was_enabled = bool(getattr(course, "brain_enabled", False))
-    course.brain_enabled = req.enabled
+
+    # Scope changes merge, so a screen can send one switch without restating the rest.
+    if req.scope is not None:
+        merged = course_brain.scope_of(course)
+        merged.update({k: bool(v) for k, v in req.scope.items() if k in course_brain.SCOPE_KEYS})
+        course.brain_scope = merged
+
+    if req.enabled is not None:
+        course.brain_enabled = req.enabled
     db.commit()
 
-    if req.enabled and not was_enabled:
+    # Build when switched on, and also when widening the scope of a course already on —
+    # newly included material has never been learned and would otherwise sit there until
+    # the next sync happened to notice it.
+    now_enabled = bool(course.brain_enabled)
+    if now_enabled:
         outstanding = course_brain.pending_work(db, course)
         if outstanding['total']:
-            course_brain.enqueue_brain_build(db, course, full=True)
-        else:
+            course_brain.enqueue_brain_build(db, course, full=not was_enabled)
+        elif not was_enabled:
             # Previously built, then switched off and on again: nothing to redo.
             course.brain_status = 'ready'
             course.brain_progress = 100

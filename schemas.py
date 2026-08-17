@@ -116,7 +116,10 @@ class LabsSettingsUpdateRequest(BaseModel):
 
 
 class CourseBrainUpdateRequest(BaseModel):
-    enabled: bool
+    enabled: bool | None = None
+    # Which kinds of material to learn, e.g. {"vods": false}. Partial updates merge onto
+    # what is stored, so the screen can send one switch without restating the others.
+    scope: dict[str, bool] | None = None
 
 
 class FlashcardDeckResponse(BaseModel):
