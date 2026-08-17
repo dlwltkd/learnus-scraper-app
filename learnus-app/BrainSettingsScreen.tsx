@@ -35,9 +35,18 @@ function statusLine(course: BrainCourse): string {
     }
     if (course.status === 'error') return '학습에 실패했어요';
     if (!course.enabled) {
-        return course.learned.chars
-            ? `학습 꺼짐 · 이전 학습 ${formatChars(course.learned.chars)} 보관 중`
-            : '학습하지 않음';
+        if (course.learned.chars) {
+            return `학습 꺼짐 · 이전 학습 ${formatChars(course.learned.chars)} 보관 중`;
+        }
+        // What is there to learn, rather than just "off". It is the number that decides
+        // whether a course is worth turning on, and it tells apart two courses that
+        // share a name — the same subject taken in different semesters.
+        const parts = [
+            course.learned.total_vods && `강의 ${course.learned.total_vods}`,
+            course.learned.total_files && `자료 ${course.learned.total_files}`,
+            course.learned.total_assignments && `과제 ${course.learned.total_assignments}`,
+        ].filter(Boolean);
+        return parts.length ? `학습 안 함 · ${parts.join(' · ')}` : '학습할 자료가 없어요';
     }
     if (course.pending.total) return `새 자료 ${course.pending.total}개 대기 중`;
     return `학습 완료 · ${formatChars(course.learned.chars)}`;
