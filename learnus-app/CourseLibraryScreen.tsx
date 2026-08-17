@@ -18,7 +18,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { Spacing } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
 import { useTheme } from './context/ThemeContext';
-import { getCourseLibrary } from './services/api';
+import { getCourseLibrary, learnLibraryItem } from './services/api';
 import type { CourseLibrary, LibraryItem, LibraryItemType } from './services/api';
 import { shortenWeek } from './utils/week';
 
@@ -36,6 +36,10 @@ const TYPE_ICON: Record<LibraryItemType, keyof typeof Ionicons.glyphMap> = {
     assignment: 'create-outline',
     board: 'chatbubbles-outline',
 };
+
+// Boards are already in the corpus through their posts, and labels carry their text
+// inline from the course page, so neither has anything to learn on demand.
+const LEARNABLE: LibraryItemType[] = ['file', 'vod', 'assignment'];
 
 const FILTERS: { key: 'all' | LibraryItemType; label: string }[] = [
     { key: 'all', label: '전체' },
@@ -77,6 +81,25 @@ export default function CourseLibraryScreen() {
     const [refreshing, setRefreshing] = useState(false);
     const [filter, setFilter] = useState<'all' | LibraryItemType>('all');
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+    // Items this screen just queued. The server is the source of truth via item.learning,
+    // but that only updates on the next fetch, and the row has to react to the tap now.
+    const [justQueued, setJustQueued] = useState<Record<string, boolean>>({});
+
+    const itemKey = (item: LibraryItem) => `${item.type}-${item.id}`;
+    const isLearning = (item: LibraryItem) => Boolean(item.learning || justQueued[itemKey(item)]);
+
+    const learnItem = useCallback(async (item: LibraryItem) => {
+        setJustQueued(prev => ({ ...prev, [itemKey(item)]: true }));
+        try {
+            await learnLibraryItem(courseId, item.type as 'file' | 'vod' | 'assignment', item.id);
+        } catch {
+            setJustQueued(prev => {
+                const next = { ...prev };
+                delete next[itemKey(item)];
+                return next;
+            });
+        }
+    }, [courseId]);
 
     const load = useCallback(async () => {
         try {
@@ -93,6 +116,35 @@ export default function CourseLibraryScreen() {
         navigation.setOptions({ title: courseName || '강의 자료' });
         load();
     }, [navigation, courseName, load]);
+
+    // While anything is being learned, refresh so rows flip to learned on their own.
+    // Stops as soon as nothing is outstanding, so a settled library makes no requests.
+    const anyLearning = useMemo(
+        () => Boolean(library?.sections.some(sec => sec.items.some(i => i.learning)))
+            || Object.keys(justQueued).length > 0,
+        [library, justQueued],
+    );
+
+    useEffect(() => {
+        if (!anyLearning) return;
+        const timer = setInterval(async () => {
+            const fresh = await getCourseLibrary(courseId).catch(() => null);
+            if (!fresh) return;
+            setLibrary(fresh);
+            // Drop optimistic marks the server now reports on, so the two cannot disagree.
+            setJustQueued(prev => {
+                const next: Record<string, boolean> = {};
+                for (const sec of fresh.sections) {
+                    for (const item of sec.items) {
+                        const key = `${item.type}-${item.id}`;
+                        if (prev[key] && !item.in_corpus && !item.learning) next[key] = true;
+                    }
+                }
+                return next;
+            });
+        }, 5000);
+        return () => clearInterval(timer);
+    }, [anyLearning, courseId]);
 
     const toggleSection = (key: string) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -210,14 +262,34 @@ export default function CourseLibraryScreen() {
                                                     library that hides them teaches you not to trust it. */}
                                                 {!item.in_corpus && (
                                                     <Text style={styles.rowPending}>
-                                                        {item.type === 'vod' ? '아직 텍스트 변환 안 됨' : '아직 학습 안 됨'}
+                                                        {isLearning(item)
+                                                            ? '학습 중'
+                                                            : item.type === 'vod' ? '아직 텍스트 변환 안 됨' : '아직 학습 안 됨'}
                                                     </Text>
                                                 )}
                                             </View>
                                             {item.completed && (
                                                 <Ionicons name="checkmark-circle" size={16} color={colors.success} />
                                             )}
-                                            <Text style={styles.rowMeta}>{itemMeta(item)}</Text>
+                                            {/* Teach the brain this one item. Only offered where there is
+                                                something to learn — boards are already in the corpus via
+                                                their posts, and a learned item needs nothing. */}
+                                            {!item.in_corpus && LEARNABLE.includes(item.type) ? (
+                                                isLearning(item) ? (
+                                                    <ActivityIndicator size="small" color={colors.primary} style={styles.learnBusy} />
+                                                ) : (
+                                                    <TouchableOpacity
+                                                        style={styles.learnButton}
+                                                        activeOpacity={0.7}
+                                                        onPress={() => learnItem(item)}
+                                                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                                    >
+                                                        <Text style={styles.learnButtonText}>학습</Text>
+                                                    </TouchableOpacity>
+                                                )
+                                            ) : (
+                                                <Text style={styles.rowMeta}>{itemMeta(item)}</Text>
+                                            )}
                                         </TouchableOpacity>
                                     ))}
                                 </View>
@@ -279,6 +351,22 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         rowBorderTop: { borderTopWidth: 1, borderTopColor: colors.divider },
         rowText: { flex: 1, gap: 2 },
         rowTitle: { ...typography.body1, fontSize: 15 },
+        learnButton: {
+            paddingHorizontal: Spacing.m,
+            paddingVertical: 6,
+            borderRadius: layout.borderRadius.full,
+            borderWidth: 1,
+            borderColor: colors.primary,
+        },
+        learnButtonText: {
+            ...typography.caption,
+            color: colors.primary,
+            fontWeight: '600',
+        },
+        learnBusy: {
+            // Same footprint as the button so rows do not shift when one starts.
+            width: 56,
+        },
         rowPending: { ...typography.caption, color: colors.textTertiary },
         rowMeta: { ...typography.caption, color: colors.textTertiary },
 

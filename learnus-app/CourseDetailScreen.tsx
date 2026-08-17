@@ -20,6 +20,8 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { InlineEmpty } from './components/EmptyState';
 import { useToast } from './context/ToastContext';
 import ItemRow from './components/ItemRow';
+import CourseBrainToggle from './components/CourseBrainToggle';
+import type { CourseBrainState } from './services/api';
 import VodActionSheet from './components/VodActionSheet';
 import VodWebViewer from './components/VodWebViewer';
 import { useLabs } from './context/LabsContext';
@@ -80,6 +82,7 @@ export default function CourseDetailScreen() {
     const { course } = route.params as { course: any };
     const { showSuccess, showError } = useToast();
     const { autoWatchEnabled, brainEnabled } = useLabs();
+    const [courseBrain, setCourseBrain] = useState<CourseBrainState | null>(null);
     const { colors, typography, layout, isDark } = useTheme();
     const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
 
@@ -245,6 +248,10 @@ export default function CourseDetailScreen() {
                 {/* Course brain. Hidden entirely unless the lab toggle is on, like the
                     auto-watch controls — an experiment should not advertise itself. */}
                 {brainEnabled && (
+                    <CourseBrainToggle courseId={course.id} onStateChange={setCourseBrain} />
+                )}
+
+                {brainEnabled && (
                     <TouchableOpacity
                         style={styles.brainRow}
                         activeOpacity={0.6}
@@ -261,7 +268,8 @@ export default function CourseDetailScreen() {
                     </TouchableOpacity>
                 )}
 
-                {brainEnabled && (
+                {/* Asking only makes sense once there is a corpus to answer from. */}
+                {brainEnabled && courseBrain?.enabled && courseBrain.status === 'ready' && (
                     <TouchableOpacity
                         style={styles.brainRow}
                         activeOpacity={0.6}

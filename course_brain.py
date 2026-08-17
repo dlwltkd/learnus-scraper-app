@@ -214,6 +214,26 @@ def build_file(session, file_row, course_moodle_id: int, ai_service=None,
     return report
 
 
+def queued_items(db, course) -> set:
+    """
+    (item_type, item_id) pairs with a manual learn queued or running for this course.
+
+    Read straight off the job queue rather than tracked on the item, so it cannot drift
+    out of sync with reality: if the job is gone, the row is no longer "learning".
+    """
+    from database import Job
+
+    jobs = db.query(Job).filter(
+        Job.type == 'brain_learn_item',
+        Job.status.in_(('pending', 'processing')),
+    ).all()
+    return {
+        (p.get('item_type'), p.get('item_id'))
+        for p in (j.payload or {} for j in jobs)
+        if p.get('course_id') == course.id
+    }
+
+
 def build_library(db, course) -> dict:
     """
     The course as a navigable structure, grouped by the week each item sits under.
@@ -244,6 +264,11 @@ def build_library(db, course) -> dict:
         post_counts[board.id] = len(rows)
         post_chars[board.id] = sum(len(p.content or '') for p in rows)
 
+    # Items with a manual learn already queued, so the row can say so instead of
+    # inviting a second tap that would queue the same work twice. One query for the
+    # whole tree rather than a lookup per row.
+    learning = queued_items(db, course)
+
     buckets = {}
 
     def add(section, week, item):
@@ -261,6 +286,7 @@ def build_library(db, course) -> dict:
             'chars': f.content_chars or 0,
             'captioned_pages': f.captioned_pages or 0,
             'in_corpus': bool(f.content),
+            'learning': ('file', f.id) in learning,
             'status': f.extract_status,
             'url': f.url,
         })
@@ -272,6 +298,7 @@ def build_library(db, course) -> dict:
             'id': v.id, 'moodle_id': v.moodle_id, 'title': v.title,
             'duration': v.duration, 'completed': bool(v.is_completed),
             'in_corpus': bool(t and t.transcript),
+            'learning': ('vod', v.id) in learning,
             'status': (t.status if t else None) or 'not_transcribed',
             'chars': len(t.transcript) if (t and t.transcript) else 0,
             'url': v.url,
@@ -283,6 +310,7 @@ def build_library(db, course) -> dict:
             'id': a.id, 'moodle_id': a.moodle_id, 'title': a.title,
             'due_date': a.due_date, 'completed': bool(a.is_completed),
             'in_corpus': bool(a.description),
+            'learning': ('assignment', a.id) in learning,
             'chars': len(a.description or ''),
             'url': a.url,
         })
@@ -597,3 +625,233 @@ def build_course_files(session, db, course, ai_service=None, caption: bool = Tru
             on_progress(index, len(files), report)
 
     return summary
+
+
+# ─── Whole-course build ───────────────────────────────────────────────────────
+#
+# Enabling the brain on a course runs one full sweep; every later sync tops it up.
+# Both directions go through build_course_brain — the only difference is how much is
+# already done, and every step below is individually idempotent, so "full" and
+# "incremental" are the same code path with different amounts of work to do.
+
+
+def pending_work(db, course) -> dict:
+    """
+    What the brain has not learned yet for this course.
+
+    Cheap enough to call on every sync: three counts, no network. Used to decide whether
+    a top-up job is worth enqueueing at all, so an unchanged course costs nothing.
+    """
+    from database import Assignment, FileResource, VOD, VodTranscript
+
+    files = db.query(FileResource).filter(
+        FileResource.course_id == course.id,
+        FileResource.extract_status.is_(None),
+    ).count()
+
+    assignments = db.query(Assignment).filter(
+        Assignment.course_id == course.id,
+        Assignment.description.is_(None),
+        Assignment.url.isnot(None),
+    ).count()
+
+    # A VOD needs work when it has no transcript row, or one that never completed.
+    vod_rows = db.query(VOD).filter_by(course_id=course.id).all()
+    vods = 0
+    for vod in vod_rows:
+        row = db.query(VodTranscript).filter_by(moodle_id=vod.moodle_id).first()
+        if not row or not row.transcript or row.status != 'done':
+            vods += 1
+
+    return {'files': files, 'vods': vods, 'assignments': assignments,
+            'total': files + vods + assignments}
+
+
+def build_course_brain(client, db, course, ai_service, *, transcribe: bool = True,
+                       force: bool = False, on_stage=None) -> dict:
+    """
+    Bring a course's corpus up to date: assignment instructions, lecture transcripts,
+    then file text and captions.
+
+    `on_stage(stage, done, total)` reports coarse progress for the UI. Every stage
+    commits as it goes, so a deploy that restarts the container mid-build loses only the
+    item in flight — the next run resumes from there rather than starting over.
+
+    Failure is per-item throughout. A lecture whose stream URL has expired records the
+    error and the build moves on; one bad item must not cost the whole sweep.
+    """
+    from database import VOD, VodTranscript
+
+    summary = {'assignments': {}, 'vods': {'total': 0, 'ok': 0, 'skipped': 0, 'failed': 0},
+               'files': {}, 'errors': []}
+
+    def stage(name, done, total):
+        if on_stage:
+            on_stage(name, done, total)
+
+    # 1. Assignment instructions. Cheap, and the answers lean on them heavily.
+    stage('assignments', 0, 1)
+    try:
+        summary['assignments'] = fetch_assignment_descriptions(client, db, course, force=force)
+    except Exception as e:
+        logger.exception("brain build: assignment descriptions failed")
+        summary['errors'].append(f"assignments: {type(e).__name__}: {e}")
+    stage('assignments', 1, 1)
+
+    # 2. Lecture transcripts. The expensive stage, and the one most worth resuming:
+    #    each finished lecture is committed before the next begins.
+    if transcribe:
+        vods = db.query(VOD).filter_by(course_id=course.id).all()
+        summary['vods']['total'] = len(vods)
+        for index, vod in enumerate(vods, start=1):
+            stage('vods', index - 1, len(vods))
+            row = db.query(VodTranscript).filter_by(moodle_id=vod.moodle_id).first()
+            done_already = row and row.transcript and row.status == 'done'
+            # Transcripts predating chunk timestamps have no leading marker, so they are
+            # redone once to make the chat's [[vod:...]] seek links land correctly.
+            timestamped = done_already and row.transcript.lstrip().startswith('[')
+            if done_already and timestamped and not force:
+                summary['vods']['skipped'] += 1
+                continue
+            try:
+                stream = client.get_vod_stream_url(vod.moodle_id, vod.url)
+                m3u8 = stream if isinstance(stream, str) else (stream or {}).get('m3u8_url')
+                if not m3u8:
+                    summary['vods']['failed'] += 1
+                    summary['errors'].append(f"vod {vod.moodle_id}: no stream url")
+                    continue
+                transcript, _usage = ai_service.transcribe_vod(m3u8)
+                if not row:
+                    row = VodTranscript(moodle_id=vod.moodle_id)
+                    db.add(row)
+                row.transcript = transcript
+                row.status = 'done'
+                row.stage = 'completed'
+                row.is_processing = False
+                row.progress_pct = 100
+                row.completed_at = datetime.now()
+                db.commit()
+                summary['vods']['ok'] += 1
+            except Exception as e:
+                db.rollback()
+                summary['vods']['failed'] += 1
+                summary['errors'].append(f"vod {vod.moodle_id}: {type(e).__name__}: {e}")
+                logger.exception(f"brain build: vod {vod.moodle_id} failed")
+        stage('vods', len(vods), len(vods))
+
+    # 3. File text and slide captions.
+    def file_progress(index, total, _report):
+        stage('files', index, total)
+
+    try:
+        summary['files'] = build_course_files(
+            client.session, db, course, ai_service=ai_service,
+            caption=True, force=force, on_progress=file_progress,
+        )
+    except Exception as e:
+        logger.exception("brain build: file build failed")
+        summary['errors'].append(f"files: {type(e).__name__}: {e}")
+
+    return summary
+
+
+def enqueue_brain_build(db, course, *, full: bool = False) -> bool:
+    """
+    Queue a build for this course unless one is already waiting or running.
+
+    Returns True if a job was created. The duplicate check matters because syncs are
+    frequent: without it, an hourly sync of a course whose build is still running would
+    pile up jobs that each redo the same work.
+    """
+    from database import Job
+
+    existing = db.query(Job).filter(
+        Job.type == 'brain_build',
+        Job.status.in_(('pending', 'processing')),
+    ).all()
+    if any((j.payload or {}).get('course_id') == course.id for j in existing):
+        return False
+
+    db.add(Job(type='brain_build', payload={
+        'course_id': course.id,
+        'user_id': course.owner_id,
+        'full': full,
+    }))
+    course.brain_status = 'queued'
+    course.brain_stage = '대기 중'
+    if full:
+        course.brain_progress = 0
+    db.commit()
+    logger.info(f"brain build queued course={course.moodle_id} full={full}")
+    return True
+
+
+def build_single_item(client, db, course, ai_service, item_type: str, item_id: int) -> dict:
+    """
+    Learn one item on demand.
+
+    The counterpart to the sweep: when a course is not worth building in full, or a
+    single file was skipped, this teaches exactly one thing. Same primitives as the
+    sweep, so an item learned here is indistinguishable from one learned by a build.
+    """
+    from database import Assignment, FileResource, VOD, VodTranscript
+
+    if item_type == 'file':
+        row = db.query(FileResource).filter_by(id=item_id, course_id=course.id).first()
+        if not row:
+            raise ValueError(f"File {item_id} not in course {course.id}")
+        report = build_file(client.session, row, course.moodle_id,
+                            ai_service=ai_service, caption=True, force=False)
+        db.commit()
+        return report
+
+    if item_type == 'vod':
+        vod = db.query(VOD).filter_by(id=item_id, course_id=course.id).first()
+        if not vod:
+            raise ValueError(f"VOD {item_id} not in course {course.id}")
+        stream = client.get_vod_stream_url(vod.moodle_id, vod.url)
+        m3u8 = stream if isinstance(stream, str) else (stream or {}).get('m3u8_url')
+        if not m3u8:
+            raise ValueError("No stream URL for this lecture")
+        transcript, _usage = ai_service.transcribe_vod(m3u8)
+        row = db.query(VodTranscript).filter_by(moodle_id=vod.moodle_id).first()
+        if not row:
+            row = VodTranscript(moodle_id=vod.moodle_id)
+            db.add(row)
+        row.transcript = transcript
+        row.status = 'done'
+        row.stage = 'completed'
+        row.is_processing = False
+        row.progress_pct = 100
+        row.completed_at = datetime.now()
+        db.commit()
+        return {'status': 'ok', 'chars': len(transcript), 'captioned': 0}
+
+    if item_type == 'assignment':
+        row = db.query(Assignment).filter_by(id=item_id, course_id=course.id).first()
+        if not row or not row.url:
+            raise ValueError(f"Assignment {item_id} not in course {course.id}")
+        detail = client.get_assignment_detail(row.url)
+        row.description = detail.get('description')
+        row.description_fetched_at = datetime.now()
+        db.commit()
+        return {'status': 'ok', 'chars': len(row.description or ''), 'captioned': 0}
+
+    raise ValueError(f"Cannot learn item type {item_type!r}")
+
+
+def enqueue_item_learn(db, course, item_type: str, item_id: int) -> bool:
+    """Queue one item unless the same item is already waiting or running."""
+    from database import Job
+
+    if (item_type, item_id) in queued_items(db, course):
+        return False
+    db.add(Job(type='brain_learn_item', payload={
+        'course_id': course.id,
+        'user_id': course.owner_id,
+        'item_type': item_type,
+        'item_id': item_id,
+    }))
+    db.commit()
+    logger.info(f"brain learn queued course={course.moodle_id} {item_type}:{item_id}")
+    return True

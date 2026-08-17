@@ -115,6 +115,10 @@ class LabsSettingsUpdateRequest(BaseModel):
     brain_enabled: bool | None = None
 
 
+class CourseBrainUpdateRequest(BaseModel):
+    enabled: bool
+
+
 class FlashcardDeckResponse(BaseModel):
     id: int
     name: str

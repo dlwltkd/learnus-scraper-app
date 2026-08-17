@@ -475,6 +475,8 @@ export interface LibraryItem {
     title: string;
     /** True when this item's text is part of the corpus the brain can answer from. */
     in_corpus: boolean;
+    /** True while a manual learn for this item is queued or running. */
+    learning?: boolean;
     chars: number;
     url?: string | null;
     kind?: string | null;        // file: pdf | ipynb | label | ...
@@ -494,6 +496,16 @@ export interface LibrarySection {
     items: LibraryItem[];
 }
 
+/** Per-course brain state: whether it is on, and how far a build has got. */
+export interface CourseBrainState {
+    enabled: boolean;
+    status: 'queued' | 'building' | 'ready' | 'error' | null;
+    progress: number;
+    stage: string | null;
+    error: string | null;
+    built_at: string | null;
+}
+
 export interface CourseLibrary {
     course: { id: number; moodle_id: number; name: string };
     stats: {
@@ -501,10 +513,46 @@ export interface CourseLibrary {
         corpus_chars: number; in_corpus: number; total_items: number;
     };
     sections: LibrarySection[];
+    brain: CourseBrainState;
 }
 
 export const getCourseLibrary = async (courseId: number): Promise<CourseLibrary> => {
     const response = await api.get(`/courses/${courseId}/library`);
+    return response.data;
+};
+
+/**
+ * Opt a course in or out of the brain.
+ *
+ * Enabling queues a full sweep — every lecture transcribed, every file read — so this
+ * is a deliberate per-course choice, not a global switch. Disabling keeps what was
+ * already learned, so turning it back on is instant.
+ */
+export const setCourseBrain = async (courseId: number, enabled: boolean): Promise<CourseBrainState> => {
+    const response = await api.put(`/courses/${courseId}/brain`, { enabled });
+    return response.data;
+};
+
+/**
+ * Teach the brain one item from the library.
+ *
+ * Independent of the course-wide toggle, so a few useful files can be learned without
+ * paying for a full sweep. Returns queued:false when the same item is already waiting.
+ */
+export const learnLibraryItem = async (
+    courseId: number,
+    itemType: 'file' | 'vod' | 'assignment',
+    itemId: number,
+): Promise<{ queued: boolean }> => {
+    const response = await api.post(`/courses/${courseId}/brain/learn/${itemType}/${itemId}`);
+    return response.data;
+};
+
+/** Polled while a build runs. `pending` is what the brain has not learned yet. */
+export const getCourseBrainStatus = async (
+    courseId: number,
+): Promise<CourseBrainState & { pending: { files: number; vods: number; assignments: number; total: number } }> => {
+    const response = await api.get(`/courses/${courseId}/brain/status`);
     return response.data;
 };
 

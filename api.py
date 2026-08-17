@@ -28,6 +28,7 @@ from schemas import (
     GenerateFlashcardsRequest,
     BrainChatRequest,
     LabsSettingsUpdateRequest,
+    CourseBrainUpdateRequest,
     LoginDebugReportRequest,
     LoginRequest,
     ManualTranscribeRequest,
@@ -164,6 +165,29 @@ def _require_brain_enabled(user: User):
     if not getattr(user, "brain_enabled", False):
         raise HTTPException(status_code=403, detail="Course brain is disabled")
 
+
+def _brain_payload(course: Course) -> dict:
+    """Build state for one course, shaped for the toggle row and its progress bar."""
+    return {
+        "enabled": bool(getattr(course, "brain_enabled", False)),
+        "status": course.brain_status,
+        "progress": course.brain_progress or 0,
+        "stage": course.brain_stage,
+        "error": course.brain_error,
+        "built_at": course.brain_built_at.isoformat() if course.brain_built_at else None,
+    }
+
+
+def _require_course_brain(course: Course):
+    """
+    The brain answers only for courses that were opted in.
+
+    Separate from the account-level switch: that one grants consent to spend on
+    transcription at all, this one says which courses were worth spending it on.
+    """
+    if not getattr(course, "brain_enabled", False):
+        raise HTTPException(status_code=403, detail="Course brain is not enabled for this course")
+
 def _require_auto_watch_enabled(user: User):
     if not user.auto_watch_enabled:
         raise HTTPException(status_code=403, detail="Auto watch is disabled")
@@ -295,7 +319,97 @@ def get_course_library(
         raise HTTPException(404, "Course not found")
 
     import course_brain
-    return course_brain.build_library(db, course)
+    payload = course_brain.build_library(db, course)
+    payload["brain"] = _brain_payload(course)
+    return payload
+
+
+@app.put("/courses/{course_id}/brain")
+def set_course_brain(
+    course_id: int,
+    req: CourseBrainUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Opt a course in or out of the brain.
+
+    Turning it on queues one full sweep — every lecture transcribed, every file
+    extracted and captioned. That is the expensive moment, so it happens on an explicit
+    per-course choice rather than implicitly for all 8 courses at once.
+
+    Turning it off keeps the corpus. A sweep costs real money and around forty minutes,
+    and deleting it would make an accidental tap expensive to undo; re-enabling is then
+    instant. Nothing is topped up while a course is off.
+    """
+    _require_brain_enabled(user)
+    course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
+    if not course:
+        raise HTTPException(404, "Course not found")
+
+    import course_brain
+
+    was_enabled = bool(getattr(course, "brain_enabled", False))
+    course.brain_enabled = req.enabled
+    db.commit()
+
+    if req.enabled and not was_enabled:
+        outstanding = course_brain.pending_work(db, course)
+        if outstanding['total']:
+            course_brain.enqueue_brain_build(db, course, full=True)
+        else:
+            # Previously built, then switched off and on again: nothing to redo.
+            course.brain_status = 'ready'
+            course.brain_progress = 100
+            course.brain_stage = None
+            db.commit()
+
+    return _brain_payload(course)
+
+
+@app.post("/courses/{course_id}/brain/learn/{item_type}/{item_id}")
+def learn_library_item(
+    course_id: int,
+    item_type: str,
+    item_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Learn one item from the library on demand.
+
+    Works whether or not the course as a whole is enabled, which is the point: a student
+    can teach the brain three lecture decks without paying for a full sweep, and can pick
+    up anything a build skipped. Boards need nothing — their posts are stored by the
+    regular sync and are already in the corpus.
+    """
+    _require_brain_enabled(user)
+    course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
+    if not course:
+        raise HTTPException(404, "Course not found")
+    if item_type not in ("file", "vod", "assignment"):
+        raise HTTPException(400, f"Cannot learn item type '{item_type}'")
+
+    import course_brain
+    queued = course_brain.enqueue_item_learn(db, course, item_type, item_id)
+    return {"queued": queued, "item_type": item_type, "item_id": item_id}
+
+
+@app.get("/courses/{course_id}/brain/status")
+def get_course_brain_status(
+    course_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Polled by the app while a build runs, so it stays a plain row read."""
+    course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
+    if not course:
+        raise HTTPException(404, "Course not found")
+
+    import course_brain
+    payload = _brain_payload(course)
+    payload["pending"] = course_brain.pending_work(db, course)
+    return payload
 
 
 @app.post("/courses/{course_id}/brain/chat")
@@ -317,6 +431,7 @@ def brain_chat(
     course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
     if not course:
         raise HTTPException(404, "Course not found")
+    _require_course_brain(course)
 
     import course_brain
     corpus, sources = course_brain.assemble_corpus(db, course)

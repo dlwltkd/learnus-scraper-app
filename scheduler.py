@@ -454,6 +454,36 @@ def check_session_health_job(SessionLocal):
     finally:
         db.close()
 
+def _top_up_brain(db, course):
+    """
+    Keep an opted-in course's brain current after a sync.
+
+    A sync is where new material first appears — a deck uploaded for next week, a lecture
+    posted after class. Anything new arrives with no extracted text, so pending_work sees
+    it and queues a top-up; the build itself skips everything already done, so a course
+    with nothing new costs three counts and no job.
+
+    Courses that were never opted in are ignored entirely: this must not start spending
+    on all 8 courses because one of them was enabled.
+    """
+    if not getattr(course, 'brain_enabled', False):
+        return
+    try:
+        import course_brain
+        outstanding = course_brain.pending_work(db, course)
+        if not outstanding['total']:
+            return
+        if course_brain.enqueue_brain_build(db, course, full=False):
+            logger.info(
+                f"brain top-up queued for {course.name}: "
+                f"{outstanding['files']} files, {outstanding['vods']} vods, "
+                f"{outstanding['assignments']} assignments"
+            )
+    except Exception as e:
+        # Never let brain bookkeeping break the sync that found the content.
+        logger.error(f"brain top-up check failed for {course.name}: {e}")
+
+
 def sync_dashboard_job(SessionLocal):
     """
     Runs every 60 minutes.
@@ -474,6 +504,7 @@ def sync_dashboard_job(SessionLocal):
                     try:
                         client.sync_course_to_db(course.moodle_id, db, user.id)
                         logger.info(f"Synced course {course.name} for user {user.username}")
+                        _top_up_brain(db, course)
                     except Exception as e:
                         logger.error(f"Failed to sync course {course.name}: {e}")
             except Exception as e:

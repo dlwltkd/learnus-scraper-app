@@ -354,6 +354,122 @@ def _run_watch_one(payload: dict):
         db.close()
 
 
+def _run_brain_build(payload: dict):
+    """
+    Build (or top up) a course's brain corpus.
+
+    Progress is written to the course row rather than the job row, because that is what
+    the app polls and what survives the job being cleaned up. A build that dies with the
+    container leaves status='building'; the next sync re-enqueues and resumes, since
+    every stage skips what is already done.
+    """
+    import course_brain
+    from scheduler import get_client
+
+    course_id = payload['course_id']
+    full = payload.get('full', False)
+
+    db = SessionLocal()
+    try:
+        course = db.query(Course).filter(Course.id == course_id).first()
+        if not course:
+            raise ValueError(f"Course {course_id} not found")
+        # Opting out mid-queue should not spend money on a build nobody asked for.
+        if not course.brain_enabled:
+            logger.info(f"brain build skipped, course {course_id} no longer enabled")
+            return
+
+        user = db.query(User).filter(User.id == course.owner_id).first()
+        client = get_client(user) if user else None
+        if not client:
+            raise ValueError(f"No valid Moodle session for user {course.owner_id}")
+
+        # Weighted so the bar tracks wall-clock rather than item count: transcription
+        # dominates a full build, and a bar that sits at 90% for half an hour is a lie.
+        weights = {'assignments': 5, 'vods': 65, 'files': 30}
+        offsets, running = {}, 0
+        for name in ('assignments', 'vods', 'files'):
+            offsets[name] = running
+            running += weights[name]
+
+        labels = {'assignments': '과제 안내 정리 중', 'vods': '강의 변환 중', 'files': '자료 정리 중'}
+
+        def on_stage(name, done, total):
+            pct = offsets[name] + (weights[name] * done / total if total else weights[name])
+            course.brain_status = 'building'
+            course.brain_progress = min(99, int(pct))
+            course.brain_stage = (f"{labels[name]} {done}/{total}" if total > 1 else labels[name])
+            db.commit()
+
+        course.brain_status = 'building'
+        course.brain_progress = 0
+        course.brain_stage = '시작하는 중'
+        course.brain_error = None
+        db.commit()
+
+        ai = AIService()
+        summary = course_brain.build_course_brain(
+            client, db, course, ai, transcribe=True, force=False, on_stage=on_stage,
+        )
+
+        # Per-item failures do not fail the build: a course with one dead lecture is
+        # still worth asking questions about. They are recorded, not hidden.
+        course.brain_status = 'ready'
+        course.brain_progress = 100
+        course.brain_stage = None
+        course.brain_error = '; '.join(summary['errors'])[:2000] if summary['errors'] else None
+        course.brain_built_at = datetime.now()
+        db.commit()
+        logger.info(
+            f"brain build done course={course.moodle_id} full={full} "
+            f"vods={summary['vods']} files={summary.get('files')} errors={len(summary['errors'])}"
+        )
+    except Exception as e:
+        db.rollback()
+        course = db.query(Course).filter(Course.id == course_id).first()
+        if course:
+            course.brain_status = 'error'
+            course.brain_stage = None
+            course.brain_error = str(e)[:2000]
+            db.commit()
+        raise
+    finally:
+        db.close()
+
+
+def _run_brain_learn_item(payload: dict):
+    """
+    Learn one item the student picked out of the library.
+
+    Deliberately independent of the course toggle: this is how a course gets a few
+    useful files without paying for a whole sweep, and how a file skipped by a build
+    gets picked up afterwards.
+    """
+    import course_brain
+    from scheduler import get_client
+
+    db = SessionLocal()
+    try:
+        course = db.query(Course).filter(Course.id == payload['course_id']).first()
+        if not course:
+            raise ValueError(f"Course {payload['course_id']} not found")
+        user = db.query(User).filter(User.id == course.owner_id).first()
+        client = get_client(user) if user else None
+        if not client:
+            raise ValueError(f"No valid Moodle session for user {course.owner_id}")
+
+        report = course_brain.build_single_item(
+            client, db, course, AIService(), payload['item_type'], payload['item_id'],
+        )
+        logger.info(
+            f"brain learn done course={course.moodle_id} "
+            f"{payload['item_type']}:{payload['item_id']} {report.get('status')} "
+            f"chars={report.get('chars')}"
+        )
+    finally:
+        db.close()
+
+
 def _dispatch(job, db, *, queue_wait_s: float | None = None):
     t = job.type
     if t == 'transcribe':
@@ -362,6 +478,10 @@ def _dispatch(job, db, *, queue_wait_s: float | None = None):
         _run_watch_all(job.payload)
     elif t == 'watch_one':
         _run_watch_one(job.payload)
+    elif t == 'brain_build':
+        _run_brain_build(job.payload)
+    elif t == 'brain_learn_item':
+        _run_brain_learn_item(job.payload)
     else:
         raise ValueError(f"Unknown job type: {t}")
 

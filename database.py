@@ -93,6 +93,17 @@ class Course(Base):
     is_active = Column(Boolean, default=True)
     is_initialized = Column(Boolean, default=False)  # True = first sync done, notifications enabled for this course
 
+    # Course brain. Opting a course in triggers one full sweep (transcribe every
+    # lecture, extract and caption every file); afterwards each sync tops it up with
+    # whatever is new. Kept per-course because a sweep costs real money and time, so
+    # it is the student's choice which courses are worth it.
+    brain_enabled = Column(Boolean, default=False)
+    brain_status = Column(String, nullable=True)     # queued | building | ready | error
+    brain_progress = Column(Integer, default=0)      # 0-100, for the progress bar
+    brain_stage = Column(String, nullable=True)      # human label, e.g. "강의 4/12 변환 중"
+    brain_error = Column(Text, nullable=True)
+    brain_built_at = Column(DateTime, nullable=True)
+
     owner = relationship("User", back_populates="courses")
     
     assignments = relationship("Assignment", back_populates="course", cascade="all, delete-orphan")
@@ -428,6 +439,18 @@ def init_db(db_url=None):
     if 'users' in refreshed_tables:
         _add_column_if_missing('users', 'brain_enabled',
                                "ALTER TABLE users ADD COLUMN brain_enabled BOOLEAN DEFAULT FALSE")
+
+    # Migration: per-course brain opt-in and build state.
+    if 'courses' in refreshed_tables:
+        for _col, _ddl in (
+            ('brain_enabled',  "ALTER TABLE courses ADD COLUMN brain_enabled BOOLEAN DEFAULT FALSE"),
+            ('brain_status',   "ALTER TABLE courses ADD COLUMN brain_status VARCHAR"),
+            ('brain_progress', "ALTER TABLE courses ADD COLUMN brain_progress INTEGER DEFAULT 0"),
+            ('brain_stage',    "ALTER TABLE courses ADD COLUMN brain_stage VARCHAR"),
+            ('brain_error',    "ALTER TABLE courses ADD COLUMN brain_error TEXT"),
+            ('brain_built_at', "ALTER TABLE courses ADD COLUMN brain_built_at TIMESTAMP"),
+        ):
+            _add_column_if_missing('courses', _col, _ddl)
 
     # Migration: assignment instructions, fetched from the activity page.
     if 'assignments' in refreshed_tables:
