@@ -452,6 +452,23 @@ def init_db(db_url=None):
         ):
             _add_column_if_missing('courses', _col, _ddl)
 
+        # Backfill: a course built before the per-course toggle existed already has a
+        # corpus, and defaulting it to disabled would silently 403 a chat that worked
+        # yesterday. Anything with extracted file text counts as already built.
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    UPDATE courses SET brain_enabled = TRUE,
+                                       brain_status = 'ready',
+                                       brain_progress = 100
+                    WHERE COALESCE(brain_enabled, FALSE) = FALSE
+                      AND brain_status IS NULL
+                      AND id IN (SELECT DISTINCT course_id FROM files
+                                 WHERE content IS NOT NULL AND content <> '')
+                """))
+        except Exception as e:
+            logger.warning(f"brain backfill skipped: {e}")
+
     # Migration: assignment instructions, fetched from the activity page.
     if 'assignments' in refreshed_tables:
         _add_column_if_missing('assignments', 'description',
