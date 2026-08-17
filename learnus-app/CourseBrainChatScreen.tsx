@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Markdown from 'react-native-markdown-display';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 
 import { Spacing } from './constants/theme';
 import type { ColorScheme, TypographyType, LayoutType } from './constants/theme';
@@ -111,6 +112,9 @@ export default function CourseBrainChatScreen() {
 
     const navigation = useNavigation<any>();
     const route = useRoute();
+    // The stack header sits outside this screen, so KeyboardAvoidingView has to be told
+    // how much of the window is already spoken for or it lifts the input too far.
+    const headerHeight = useHeaderHeight();
     const { courseId, courseName } = route.params as { courseId: number; courseName?: string };
 
     const [turns, setTurns] = useState<Turn[]>([]);
@@ -306,6 +310,23 @@ export default function CourseBrainChatScreen() {
 
     return (
         <SafeAreaView style={styles.container} edges={['bottom', 'left', 'right']}>
+            {/* Wraps the whole column, not just the input bar, and uses an explicit
+                behavior on both platforms.
+
+                Android used to get `undefined` here, which relied on the window being
+                resized by adjustResize. Since SDK 54 the app is edge-to-edge, so the
+                window no longer resizes and that made the view inert — the keyboard
+                covered the field you were typing into.
+
+                `padding` rather than the `height` used by AIChatModal and MyInfoScreen:
+                those are full-window surfaces, while this is a stack screen whose header
+                sits outside it, so it needs the offset below and padding composes with
+                that cleanly. Verified on device — the bar sits flush on the keyboard. */}
+            <KeyboardAvoidingView
+                style={styles.flex}
+                behavior="padding"
+                keyboardVerticalOffset={headerHeight}
+            >
             {stats && (
                 <View style={styles.provenanceBar}>
                     <View style={styles.dot} />
@@ -409,8 +430,7 @@ export default function CourseBrainChatScreen() {
                 })}
             </ScrollView>
 
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-                <View style={styles.inputBar}>
+            <View style={styles.inputBar}>
                     <TextInput
                         style={styles.input}
                         value={input}
@@ -432,7 +452,7 @@ export default function CourseBrainChatScreen() {
                             color={colors.textInverse}
                         />
                     </TouchableOpacity>
-                </View>
+            </View>
             </KeyboardAvoidingView>
 
             {player && (
@@ -450,6 +470,7 @@ export default function CourseBrainChatScreen() {
 
 const createStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) =>
     StyleSheet.create({
+        flex: { flex: 1 },
         container: { flex: 1, backgroundColor: colors.background },
 
         provenanceBar: {
