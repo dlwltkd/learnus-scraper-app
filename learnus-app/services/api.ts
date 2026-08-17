@@ -60,6 +60,21 @@ export const hasAuthToken = () => Boolean(authToken);
 /** The raw token, for requests that bypass axios — e.g. <Image> loading a page render. */
 export const getAuthToken = () => authToken;
 
+/**
+ * Revoke this token server-side.
+ *
+ * Signing out was local-only: the app forgot the token while the server kept honouring
+ * it, so anything that had copied it stayed authenticated. Best-effort — a failure here
+ * must never block the local sign-out.
+ */
+export const logoutServerSide = async (): Promise<void> => {
+    try {
+        await api.post('/auth/logout');
+    } catch {
+        // Offline, or the token is already invalid. Either way, clear it locally.
+    }
+};
+
 export const clearAuthToken = async () => {
     authToken = null;
     try {

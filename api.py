@@ -127,6 +127,20 @@ def get_current_user(token: str = Depends(api_key_header), db: Session = Depends
     user = db.query(User).filter(User.api_token == token).first()
     if not user:
         raise HTTPException(status_code=401, detail="Invalid Authentication Token")
+
+    # Tokens age out. Without this a token never stopped working once issued, so a copy
+    # taken from a device stayed valid forever. The client already treats 401 as a
+    # session expiry and re-runs the SSO flow, so this surfaces as a normal re-login.
+    import spend_limits
+    if spend_limits.API_TOKEN_TTL_DAYS > 0:
+        issued = user.token_issued_at
+        if issued is None:
+            # Pre-expiry token: stamp it now rather than reject a user who did nothing
+            # wrong. It expires normally from here.
+            user.token_issued_at = datetime.now()
+            db.commit()
+        elif (datetime.now() - issued).days >= spend_limits.API_TOKEN_TTL_DAYS:
+            raise HTTPException(status_code=401, detail="Authentication token expired")
     return user
 
 def get_moodle_client(user: User):
@@ -217,10 +231,14 @@ def login(request: Request, creds: LoginRequest, db: Session = Depends(get_db)):
     
     user = db.query(User).filter(User.username == creds.username).first()
     if not user:
-        user = User(username=creds.username, moodle_username=creds.username, api_token=str(uuid.uuid4()))
+        user = User(username=creds.username, moodle_username=creds.username,
+                    api_token=str(uuid.uuid4()), token_issued_at=datetime.now())
         db.add(user)
     else:
         if not user.api_token: user.api_token = str(uuid.uuid4())
+        # Re-authenticating renews the clock. The token value is kept so other devices
+        # signed in to the same account are not silently kicked out.
+        user.token_issued_at = datetime.now()
             
     # Authentication only needs the resulting Moodle session cookies. Clear any
     # legacy plaintext password the next time the user signs in.
@@ -288,6 +306,17 @@ def get_labs_settings(user: User = Depends(get_current_user)):
 @app.post("/settings/labs/unlock")
 @limiter.limit("10/minute")
 def unlock_labs(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Grant lab access, if this account is allowed to have it.
+
+    The client gate is a five-tap gesture on the logo, which is obscurity rather than
+    access control — the gesture is described in a public repository and the endpoint can
+    be called directly. Lab features spend money, so the real check is server-side.
+    """
+    import spend_limits
+    if not spend_limits.is_labs_allowed(user):
+        logger.warning(f"Labs unlock refused for {user.username}")
+        raise HTTPException(status_code=403, detail="Labs are not available for this account")
     user.labs_unlocked = True
     db.commit()
     db.refresh(user)
@@ -722,6 +751,27 @@ def clear_notifications(user: User = Depends(get_current_user), db: Session = De
     db.commit()
     return {"status": "success"}
 
+@app.post("/auth/logout")
+@limiter.limit("20/minute")
+def logout(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Revoke this account's API token.
+
+    Signing out used to be purely local — the app forgot the token while the server kept
+    honouring it forever. Anything that had copied it stayed authenticated. Clearing the
+    token server-side is what makes signing out mean something, and it is the lever for
+    revoking a token believed to be leaked.
+
+    The stored Moodle session is cleared with it: it is a credential this account no
+    longer needs held on its behalf.
+    """
+    user.api_token = None
+    user.token_issued_at = None
+    user.moodle_cookies = None
+    db.commit()
+    return {"status": "success"}
+
+
 @app.post("/auth/sync-session")
 @limiter.limit("10/minute", key_func=get_remote_address)
 def sync_session(request: Request, req: SessionSyncRequest, db: Session = Depends(get_db)):
@@ -769,10 +819,14 @@ def sync_session(request: Request, req: SessionSyncRequest, db: Session = Depend
     
     user = db.query(User).filter(User.username == username).first()
     if not user:
-        user = User(username=username, moodle_username=str(uid), api_token=str(uuid.uuid4()))
+        user = User(username=username, moodle_username=str(uid),
+                    api_token=str(uuid.uuid4()), token_issued_at=datetime.now())
         db.add(user)
     else:
         if not user.api_token: user.api_token = str(uuid.uuid4())
+        # Re-authenticating renews the clock. The token value is kept so other devices
+        # signed in to the same account are not silently kicked out.
+        user.token_issued_at = datetime.now()
     
     # Store raw cookie string to preserve all cookies including keyless tokens (e.g. device UUID)
     user.moodle_cookies = req.cookies

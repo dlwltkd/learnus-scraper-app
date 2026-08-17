@@ -58,3 +58,30 @@ def claim_transcription(db, user) -> bool:
     user.transcribe_count_today = (user.transcribe_count_today or 0) + 1
     db.commit()
     return True
+
+
+# ─── API token lifetime ───────────────────────────────────────────────────────
+
+API_TOKEN_TTL_DAYS = int(os.getenv('API_TOKEN_TTL_DAYS', '30'))
+
+
+def is_labs_allowed(user) -> bool:
+    """
+    Whether this account may unlock the lab features.
+
+    Lab access gates transcription and brain builds, which spend real money, so it is an
+    operator decision held in env rather than something a request can grant itself. The
+    unlock used to be a five-tap gesture in the app with no server check at all — and the
+    gesture is in a public repo.
+
+    Empty allowlist means nobody new can unlock. Accounts already unlocked keep working;
+    this only governs granting it.
+    """
+    allowed = {u.strip() for u in os.getenv("LABS_ALLOWED_USERS", "").split(",") if u.strip()}
+    if not allowed:
+        return False
+    keys = {
+        getattr(user, 'username', '') or "",
+        getattr(user, 'moodle_username', '') or "",
+    }
+    return any(k in allowed for k in keys if k)

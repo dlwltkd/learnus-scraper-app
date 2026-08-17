@@ -12,7 +12,7 @@ def test_labs_settings_default_disabled(client, auth_headers, test_user):
     }
 
 
-def test_unlock_labs_enables_settings_menu_flag(client, auth_headers, test_user):
+def test_unlock_labs_enables_settings_menu_flag(client, auth_headers, labs_allowed):
     resp = client.post("/settings/labs/unlock", headers=auth_headers)
 
     assert resp.status_code == 200
@@ -33,7 +33,7 @@ def test_auto_watch_toggle_requires_labs_unlock(client, auth_headers, test_user)
     assert resp.status_code == 403
 
 
-def test_auto_watch_toggle_after_unlock(client, auth_headers, test_user):
+def test_auto_watch_toggle_after_unlock(client, auth_headers, labs_allowed):
     client.post("/settings/labs/unlock", headers=auth_headers)
 
     resp = client.put(
@@ -61,3 +61,15 @@ def test_watch_single_requires_auto_watch_enabled(client, auth_headers, db, test
     resp = client.post("/vods/200/watch", headers=auth_headers)
 
     assert resp.status_code == 403
+
+
+def test_unlock_refused_when_not_on_allowlist(client, auth_headers, test_user):
+    """
+    The five-tap gesture in the app is obscurity, not access control — it is described
+    in a public repo and the endpoint can be called directly. Lab access spends money,
+    so an account that is not allowlisted must be refused server-side.
+    """
+    resp = client.post("/settings/labs/unlock", headers=auth_headers)
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Labs are not available for this account"

@@ -106,3 +106,51 @@ def test_brain_cannot_reach_another_users_course(client, db, auth_headers, test_
             continue  # scoped to the caller by construction, no id to confuse
         resp = _call(client, method, url, headers=auth_headers)
         assert resp.status_code == 404, f"{method.upper()} {url} leaked another user's course"
+
+
+# ─── API token lifetime ───────────────────────────────────────────────────────
+
+def test_expired_token_is_rejected(client, db, auth_headers, test_user):
+    """A token that never stopped working meant a copied one was valid forever."""
+    import spend_limits
+    from datetime import datetime, timedelta
+
+    test_user.token_issued_at = datetime.now() - timedelta(
+        days=spend_limits.API_TOKEN_TTL_DAYS + 1
+    )
+    db.commit()
+
+    resp = client.get("/settings/labs", headers=auth_headers)
+
+    assert resp.status_code == 401
+    assert "expired" in resp.json()["detail"].lower()
+
+
+def test_fresh_token_is_accepted(client, db, auth_headers, test_user):
+    from datetime import datetime
+
+    test_user.token_issued_at = datetime.now()
+    db.commit()
+
+    assert client.get("/settings/labs", headers=auth_headers).status_code == 200
+
+
+def test_token_without_issue_date_is_stamped_not_rejected(client, db, auth_headers, test_user):
+    """Tokens predating expiry belong to users who did nothing wrong."""
+    test_user.token_issued_at = None
+    db.commit()
+
+    assert client.get("/settings/labs", headers=auth_headers).status_code == 200
+    db.refresh(test_user)
+    assert test_user.token_issued_at is not None
+
+
+def test_logout_revokes_the_token(client, db, auth_headers, test_user):
+    """Signing out was local-only; the server kept honouring the token forever."""
+    assert client.post("/auth/logout", headers=auth_headers).status_code == 200
+
+    db.refresh(test_user)
+    assert test_user.api_token is None
+    assert test_user.moodle_cookies is None
+
+    assert client.get("/settings/labs", headers=auth_headers).status_code == 401

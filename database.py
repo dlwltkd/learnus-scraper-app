@@ -24,6 +24,9 @@ class User(Base):
     moodle_username = Column(String, nullable=True)
     moodle_password = Column(String, nullable=True)
     moodle_cookies = Column(Text, nullable=True) # JSON
+    # When the current api_token was last established. Tokens age out from here, so a
+    # copied token stops working even if the thief never triggers a logout.
+    token_issued_at = Column(DateTime, nullable=True)
     
     # Push Notifications
     push_token = Column(String, nullable=True)
@@ -341,13 +344,15 @@ def init_db(db_url=None):
     # Refresh inspector after create_all
     inspector = sa_inspect(engine)
 
-    def _add_column_if_missing(table_name: str, column_name: str, ddl_sql: str):
+    def _add_column_if_missing(table_name: str, column_name: str, ddl_sql: str) -> bool:
+        """Returns True when the column was actually added, so callers can backfill it."""
         cols = [col['name'] for col in sa_inspect(engine).get_columns(table_name)]
         if column_name in cols:
-            return
+            return False
         with engine.connect() as conn:
             conn.execute(text(ddl_sql))
             conn.commit()
+        return True
 
     # Migration: add notifications_initialized column if it doesn't exist yet.
     # Existing users are marked True (already past first sync); new users default False.
@@ -444,6 +449,20 @@ def init_db(db_url=None):
     if 'users' in refreshed_tables:
         _add_column_if_missing('users', 'brain_enabled',
                                "ALTER TABLE users ADD COLUMN brain_enabled BOOLEAN DEFAULT FALSE")
+
+    # Migration: API token expiry. Existing tokens are stamped now rather than left
+    # null, so adding expiry does not sign every current user out on deploy.
+    if 'users' in refreshed_tables:
+        if _add_column_if_missing('users', 'token_issued_at',
+                                  "ALTER TABLE users ADD COLUMN token_issued_at TIMESTAMP"):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(text(
+                        "UPDATE users SET token_issued_at = CURRENT_TIMESTAMP "
+                        "WHERE token_issued_at IS NULL AND api_token IS NOT NULL"
+                    ))
+            except Exception as e:
+                logger.warning(f"token_issued_at backfill skipped: {e}")
 
     # Migration: per-course brain opt-in and build state.
     if 'courses' in refreshed_tables:

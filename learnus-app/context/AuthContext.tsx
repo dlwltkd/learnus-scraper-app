@@ -1,7 +1,7 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
 import { secureStorage } from '../services/secureStorage';
-import { login as apiLogin, setupAxiosInterceptors, clearAuthToken, validateSession } from '../services/api';
+import { login as apiLogin, setupAxiosInterceptors, clearAuthToken, logoutServerSide, validateSession } from '../services/api';
 import { DEMO_TOKEN, isDemoMode, setDemoMode } from '../services/demoMode';
 import { useToast } from './ToastContext';
 
@@ -131,6 +131,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         console.log("AuthContext: Logout requested");
         setDemoMode(false);
         try {
+            // Revoke before forgetting: once the token is cleared locally there is no
+            // way left to tell the server it is finished with.
+            await logoutServerSide();
             await secureStorage.removeItem('userToken');
             await clearAuthToken();
         } catch (e) {

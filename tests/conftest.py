@@ -61,6 +61,13 @@ def test_user(db):
     return user
 
 
+@pytest.fixture
+def labs_allowed(monkeypatch, test_user):
+    """Put the test user on the labs allowlist, as the operator env var would."""
+    monkeypatch.setenv("LABS_ALLOWED_USERS", test_user.username)
+    return test_user
+
+
 @pytest.fixture()
 def client(db):
     """FastAPI TestClient with DB dependency overridden to use in-memory SQLite."""
