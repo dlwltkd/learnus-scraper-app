@@ -39,8 +39,15 @@ jobs:
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
+            # Without this, a failed `git pull` is followed by a successful rebuild of
+            # the code already on disk, and the job reports success while having shipped
+            # nothing. That happened: a stray local edit blocked the pull for two days
+            # and every deploy in between was a silent no-op.
+            set -euo pipefail
             cd ${{ secrets.DEPLOY_PATH }}
             git pull origin main
+            # Prove the checkout is actually the commit that triggered this run.
+            test "$(git rev-parse HEAD)" = "${{ github.sha }}"
             docker compose up -d --no-deps --build api
             docker compose up -d caddy
 
@@ -73,7 +80,9 @@ jobs:
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
+            set -euo pipefail
             cd ${{ secrets.DEPLOY_PATH }}
+            # The pull happened in deploy-api, which this job depends on.
             docker compose rm -sf worker || true
             docker rm -f learnus_worker || true
             docker compose up -d --no-deps --build --force-recreate worker
