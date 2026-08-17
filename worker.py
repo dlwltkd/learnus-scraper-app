@@ -415,16 +415,27 @@ def _run_brain_build(payload: dict):
         course.brain_error = None
         db.commit()
 
+        # Every lecture claims a unit of the user's daily transcription budget, the same
+        # ceiling the manual transcribe endpoint enforces. Without this a build was an
+        # uncapped way to spend: one tap could transcribe an entire semester.
+        import spend_limits
+
+        def can_transcribe():
+            return spend_limits.claim_transcription(db, user)
+
         ai = AIService()
         summary = course_brain.build_course_brain(
             client, db, course, ai, transcribe=True, force=False, on_stage=on_stage,
+            can_transcribe=can_transcribe,
         )
 
         # Per-item failures do not fail the build: a course with one dead lecture is
         # still worth asking questions about. They are recorded, not hidden.
+        deferred = summary['vods'].get('deferred', 0)
         course.brain_status = 'ready'
         course.brain_progress = 100
-        course.brain_stage = None
+        # Say so when the daily cap cut a build short, rather than reporting it complete.
+        course.brain_stage = f"강의 {deferred}개는 내일 이어서 학습해요" if deferred else None
         course.brain_error = '; '.join(summary['errors'])[:2000] if summary['errors'] else None
         course.brain_built_at = datetime.now()
         db.commit()
@@ -465,6 +476,16 @@ def _run_brain_learn_item(payload: dict):
         client = get_client(user) if user else None
         if not client:
             raise ValueError(f"No valid Moodle session for user {course.owner_id}")
+
+        # A single-item learn of a lecture is a transcription like any other.
+        if payload['item_type'] == 'vod':
+            import spend_limits
+            if not spend_limits.claim_transcription(db, user):
+                logger.info(
+                    f"brain learn deferred: daily transcription budget spent "
+                    f"user={user.id} vod={payload['item_id']}"
+                )
+                return
 
         report = course_brain.build_single_item(
             client, db, course, AIService(), payload['item_type'], payload['item_id'],

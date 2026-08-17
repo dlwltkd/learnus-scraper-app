@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport, Job, PushToken, NotificationHistory, AIUsageLog, FlashcardDeck, Flashcard, FileResource
 from moodle_client import MoodleClient
 from slowapi import Limiter
+from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 import logging
@@ -59,7 +60,10 @@ def _get_user_key(request: Request) -> str:
         return f"user:{token}"
     return get_remote_address(request)
 
-limiter = Limiter(key_func=_get_user_key)
+# A global ceiling applies to every route, so a new endpoint is limited the day it is
+# written rather than whenever someone remembers to decorate it. Explicit @limiter.limit
+# decorators still apply on top for the expensive paths.
+limiter = Limiter(key_func=_get_user_key, default_limits=["120/minute"])
 
 # ============================================================
 # APP VERSION — Reads from learnus-app/app.json automatically.
@@ -84,6 +88,8 @@ def _read_app_version() -> str:
 
 app = FastAPI(title="LearnUs Connect API (Beta)")
 app.state.limiter = limiter
+# Required for default_limits to apply to undecorated routes.
+app.add_middleware(SlowAPIMiddleware)
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
@@ -141,15 +147,9 @@ def get_moodle_client(user: User):
 
 
 def _is_transcribe_limit_bypassed(user: User) -> bool:
-    """Allow test-only transcription limit bypass for selected users/tokens via env vars."""
-    bypass_users = {
-        u.strip() for u in os.getenv("TRANSCRIBE_BYPASS_USERS", "").split(",") if u.strip()
-    }
-    bypass_tokens = {
-        t.strip() for t in os.getenv("TRANSCRIBE_BYPASS_TOKENS", "").split(",") if t.strip()
-    }
-    user_keys = {user.username or "", user.moodle_username or "", user.api_token or ""}
-    return any(k in bypass_users for k in user_keys if k) or any(k in bypass_tokens for k in user_keys if k)
+    """Thin wrapper — the rule itself lives in spend_limits.py so the worker shares it."""
+    import spend_limits
+    return spend_limits.is_transcribe_limit_bypassed(user)
 
 def _labs_payload(user: User) -> dict:
     return {
@@ -162,6 +162,15 @@ def _labs_payload(user: User) -> dict:
 
 
 def _require_brain_enabled(user: User):
+    """
+    The account-level gate for every brain surface.
+
+    Checks both flags. brain_enabled can only be set while labs are unlocked, but the
+    two are stored independently, so a re-locked account would otherwise keep working
+    off a stale flag. Requiring both means the lab switch actually revokes access.
+    """
+    if not user.labs_unlocked:
+        raise HTTPException(status_code=403, detail="Labs not unlocked")
     if not getattr(user, "brain_enabled", False):
         raise HTTPException(status_code=403, detail="Course brain is disabled")
 
@@ -277,7 +286,8 @@ def get_labs_settings(user: User = Depends(get_current_user)):
     return _labs_payload(user)
 
 @app.post("/settings/labs/unlock")
-def unlock_labs(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def unlock_labs(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     user.labs_unlocked = True
     db.commit()
     db.refresh(user)
@@ -305,7 +315,9 @@ def update_labs_settings(
 # ============================================================
 
 @app.get("/courses/{course_id}/library")
+@limiter.limit("30/minute")
 def get_course_library(
+    request: Request,
     course_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -316,6 +328,7 @@ def get_course_library(
     Derived entirely from already-synced rows, so it is cheap and needs no model call.
     Items absent from the corpus are included and flagged rather than hidden.
     """
+    _require_brain_enabled(user)
     course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
     if not course:
         raise HTTPException(404, "Course not found")
@@ -327,7 +340,9 @@ def get_course_library(
 
 
 @app.put("/courses/{course_id}/brain")
+@limiter.limit("20/minute")
 def set_course_brain(
+    request: Request,
     course_id: int,
     req: CourseBrainUpdateRequest,
     user: User = Depends(get_current_user),
@@ -382,7 +397,9 @@ def set_course_brain(
 
 
 @app.get("/brain/courses")
+@limiter.limit("30/minute")
 def list_brain_courses(
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -414,7 +431,9 @@ def list_brain_courses(
 
 
 @app.post("/courses/{course_id}/brain/rebuild")
+@limiter.limit("10/minute")
 def rebuild_course_brain(
+    request: Request,
     course_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -438,7 +457,9 @@ def rebuild_course_brain(
 
 
 @app.post("/courses/{course_id}/brain/learn/{item_type}/{item_id}")
+@limiter.limit("30/minute")
 def learn_library_item(
+    request: Request,
     course_id: int,
     item_type: str,
     item_id: int,
@@ -466,12 +487,15 @@ def learn_library_item(
 
 
 @app.get("/courses/{course_id}/brain/status")
+@limiter.limit("60/minute")
 def get_course_brain_status(
+    request: Request,
     course_id: int,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Polled by the app while a build runs, so it stays a plain row read."""
+    _require_brain_enabled(user)
     course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
     if not course:
         raise HTTPException(404, "Course not found")
@@ -483,7 +507,9 @@ def get_course_brain_status(
 
 
 @app.post("/courses/{course_id}/brain/chat")
+@limiter.limit("10/minute")
 def brain_chat(
+    request: Request,
     course_id: int,
     req: BrainChatRequest,
     user: User = Depends(get_current_user),
@@ -561,7 +587,9 @@ def brain_chat(
 
 
 @app.get("/courses/{course_id}/library/{item_type}/{item_id}")
+@limiter.limit("60/minute")
 def get_course_library_item(
+    request: Request,
     course_id: int,
     item_type: str,
     item_id: int,
@@ -569,6 +597,7 @@ def get_course_library_item(
     db: Session = Depends(get_db),
 ):
     """The content behind one library row — post bodies, instructions, transcript, text."""
+    _require_brain_enabled(user)
     course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
     if not course:
         raise HTTPException(404, "Course not found")
@@ -581,7 +610,9 @@ def get_course_library_item(
 
 
 @app.get("/files/{file_id}/page/{page_no}")
+@limiter.limit("120/minute")
 def get_file_page(
+    request: Request,
     file_id: int,
     page_no: int,
     background_tasks: BackgroundTasks,
@@ -597,6 +628,7 @@ def get_file_page(
     """
     from fastapi.responses import FileResponse
 
+    _require_brain_enabled(user)
     file_row = (
         db.query(FileResource)
         .join(Course, FileResource.course_id == Course.id)
@@ -691,44 +723,46 @@ def clear_notifications(user: User = Depends(get_current_user), db: Session = De
     return {"status": "success"}
 
 @app.post("/auth/sync-session")
-def sync_session(req: SessionSyncRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute", key_func=get_remote_address)
+def sync_session(request: Request, req: SessionSyncRequest, db: Session = Depends(get_db)):
     cookies = {}
     if not req.cookies:
         logger.error("No cookies provided in request")
         raise HTTPException(status_code=400, detail="No cookies provided")
 
-    logger.info(f"Raw cookies received (full): {req.cookies}")
-
+    # Cookie values are live Moodle sessions. Logging them puts a working credential in
+    # the log file, so only the key names are recorded.
     for item in req.cookies.split(';'):
         if '=' in item:
             k, v = item.strip().split('=', 1)
             cookies[k.strip()] = v.strip()
-
-    logger.info(f"Parsed cookie keys: {list(cookies.keys())}")
-    moodle_session = cookies.get('MoodleSession', '')
-    logger.info(f"MoodleSession value (first 20 chars): {moodle_session[:20]!r}")
-    logger.info(f"Session sync request user_id={req.user_id!r}")
+    logger.info(f"Session sync: cookie keys={list(cookies.keys())}")
 
     client = MoodleClient("https://ys.learnus.org", cookies=cookies)
 
-    if req.user_id:
-        # User ID provided by the WebView — trust it and skip server-side session validation
-        uid = req.user_id
-        logger.info(f"Using client-provided user_id: {uid}")
-    else:
-        # Fall back to server-side session validation
-        try:
-            res = client.session.get("https://ys.learnus.org/my/", timeout=15)
-            logger.info(f"Auth check status: {res.status_code}, URL: {res.url}")
-            if "login" in res.url:
-                logger.warning("Redirected to login page - Cookies invalid!")
-        except Exception as e:
-            logger.error(f"Network error during auth check: {e}")
+    # The account is derived from the session, never from the request body.
+    #
+    # This previously trusted `req.user_id` and skipped validation entirely when it was
+    # present, which meant POSTing {"cookies": "x=y", "user_id": "<victim>"} returned a
+    # working API token for that account — an unauthenticated takeover of any user whose
+    # Moodle ID could be guessed. A claimed id is now only ever compared, never trusted.
+    try:
+        res = client.session.get("https://ys.learnus.org/my/", timeout=15)
+        if "login" in res.url:
+            logger.warning("Session sync: cookies rejected by LearnUs")
+    except Exception as e:
+        logger.error(f"Network error during auth check: {e}")
 
-        uid = client.get_user_id()
-        if not uid:
-            logger.error("get_user_id returned None")
-            raise HTTPException(status_code=401, detail="Invalid Session or Could not verify user")
+    uid = client.get_user_id()
+    if not uid:
+        logger.error("Session sync rejected: could not derive a user from the session")
+        raise HTTPException(status_code=401, detail="Invalid Session or Could not verify user")
+
+    if req.user_id and str(req.user_id) != str(uid):
+        # Either a stale client or someone claiming an account the session does not own.
+        logger.warning(
+            f"Session sync: claimed user_id={req.user_id!r} does not match session user {uid!r} — using session"
+        )
     
     # Use moodle_uid as username: "moodle_12345"
     username = f"moodle_{uid}"
@@ -812,7 +846,8 @@ def update_course_active(course_id: int, update: CourseActiveUpdate, user: User 
     return {"status": "success"}
 
 @app.post("/sync/courses")
-def sync_courses_list(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def sync_courses_list(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     client = get_moodle_client(user)
     try:
         courses_data = client.get_courses()
@@ -830,11 +865,14 @@ def sync_courses_list(user: User = Depends(get_current_user), db: Session = Depe
         db.commit()
         return {"status": "success", "message": f"Synced {len(courses_data)} courses."}
     except Exception as e:
-        logger.error(f"Sync failed: {e}")
-        raise HTTPException(500, str(e))
+        # The detail stays server-side: SQLAlchemy errors embed the connection string,
+        # so echoing str(e) hands the database URL to whoever triggered the failure.
+        logger.exception("Sync failed")
+        raise HTTPException(500, "동기화에 실패했어요. 잠시 후 다시 시도해주세요.")
 
 @app.post("/sync/all-active")
-def sync_all_active_courses(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def sync_all_active_courses(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     client = get_moodle_client(user)
     active_courses = db.query(Course).filter(Course.is_active == True, Course.owner_id == user.id).all()
     results, errors = [], []
@@ -848,7 +886,8 @@ def sync_all_active_courses(user: User = Depends(get_current_user), db: Session 
     return {"status": "success", "details": results + errors}
 
 @app.post("/sync/{course_id}")
-def sync_course(course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("20/minute")
+def sync_course(request: Request, course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     course = db.query(Course).filter(Course.id == course_id, Course.owner_id == user.id).first()
     if not course: raise HTTPException(404, "Course not found")
     client = get_moodle_client(user)
@@ -856,8 +895,10 @@ def sync_course(course_id: int, user: User = Depends(get_current_user), db: Sess
         summary = client.sync_course_to_db(course.moodle_id, db, user.id)
         return {"status": "success", "message": summary}
     except Exception as e:
-        logger.error(f"Sync failed: {e}")
-        raise HTTPException(500, str(e))
+        # The detail stays server-side: SQLAlchemy errors embed the connection string,
+        # so echoing str(e) hands the database URL to whoever triggered the failure.
+        logger.exception("Sync failed")
+        raise HTTPException(500, "동기화에 실패했어요. 잠시 후 다시 시도해주세요.")
 
 @app.get("/courses/{course_id}/assignments", response_model=List[AssignmentResponse])
 def get_assignments(course_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -1633,7 +1674,8 @@ def watch_single_vod(vod_moodle_id: int, user: User = Depends(get_current_user),
     return {"status": "started"}
 
 @app.post("/vods/watch-all")
-def trigger_watch_all(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def trigger_watch_all(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Manually trigger background VOD watching for the current user only."""
     _require_auto_watch_enabled(user)
     # Validate Moodle session before queuing — prevents silent failure

@@ -724,7 +724,7 @@ class _Skipped(Exception):
 
 
 def build_course_brain(client, db, course, ai_service, *, transcribe: bool = True,
-                       force: bool = False, on_stage=None) -> dict:
+                       force: bool = False, on_stage=None, can_transcribe=None) -> dict:
     """
     Bring a course's corpus up to date: assignment instructions, lecture transcripts,
     then file text and captions.
@@ -733,13 +733,17 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
     commits as it goes, so a deploy that restarts the container mid-build loses only the
     item in flight — the next run resumes from there rather than starting over.
 
+    `can_transcribe()` is asked before each lecture and gates spend. Returning False
+    stops the transcription stage cleanly rather than failing the build: what is already
+    done is kept, and the next run picks up where the budget ran out.
+
     Failure is per-item throughout. A lecture whose stream URL has expired records the
     error and the build moves on; one bad item must not cost the whole sweep.
     """
     from database import VOD, VodTranscript
 
     scope = scope_of(course)
-    summary = {'assignments': {}, 'vods': {'total': 0, 'ok': 0, 'skipped': 0, 'failed': 0},
+    summary = {'assignments': {}, 'vods': {'total': 0, 'ok': 0, 'skipped': 0, 'failed': 0, 'deferred': 0},
                'files': {}, 'errors': [], 'scope': scope}
 
     def stage(name, done, total):
@@ -774,6 +778,15 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
             if done_already and timestamped and not force:
                 summary['vods']['skipped'] += 1
                 continue
+            if can_transcribe is not None and not can_transcribe():
+                # Budget spent. Everything transcribed so far is committed, and the
+                # remaining lectures are simply still pending for the next run.
+                summary['vods']['deferred'] = len(vods) - index + 1
+                logger.info(
+                    f"brain build course={course.moodle_id}: transcription budget spent, "
+                    f"deferring {summary['vods']['deferred']} lectures"
+                )
+                break
             try:
                 stream = client.get_vod_stream_url(vod.moodle_id, vod.url)
                 m3u8 = stream if isinstance(stream, str) else (stream or {}).get('m3u8_url')
