@@ -236,17 +236,59 @@ class MoodleClient:
     # 편집권한이 없는 교수, which some courses use instead, so both are tried.
     PROFESSOR_ROLE_IDS = (3, 4)
 
+    # "CAS3106.01-00 / 김규영" — the dashboard prints the registrar code and the name in
+    # one span, separated by a slash.
+    _PROF_SPAN = re.compile(
+        r'course/view\.php\?id=(\d+)"[^>]*class="course-link"'
+        r'(?:(?!course/view\.php).)*?<span class="prof">([^<]*)</span>',
+        re.S,
+    )
+
+    def get_course_professor_map(self):
+        """
+        Every current course's professor, from the dashboard, in one request.
+
+        The landing page renders each enrolled course with a `.prof` span, so the whole
+        semester resolves in a single fetch instead of one participants-page hit per
+        course. Cached on the client for its lifetime — a sync touches many courses and
+        this must not be re-fetched for each of them.
+
+        Only covers courses on the dashboard, i.e. the current semester.
+        """
+        if getattr(self, '_professor_map', None) is not None:
+            return self._professor_map
+
+        self._professor_map = {}
+        try:
+            response = self.session.get(f"{self.base_url}/index.php?lang=ko", timeout=20)
+            response.raise_for_status()
+            for match in self._PROF_SPAN.finditer(response.text):
+                course_id = int(match.group(1))
+                # Drop the leading course code; keep the name after the slash.
+                name = html_lib.unescape(match.group(2)).split('/')[-1].strip()
+                if name:
+                    self._professor_map[course_id] = name
+            self.logger.info(f"professor map: {len(self._professor_map)} courses from dashboard")
+        except Exception as e:
+            self.logger.warning(f"professor map failed: {e}")
+
+        return self._professor_map
+
     def get_course_professor(self, moodle_course_id):
         """
-        Who teaches this course, from the participants list filtered to the professor role.
+        Who teaches this course.
 
-        Neither the course page nor the enrolment list carries the instructor, so this is
-        the only place it appears. One request per course, and the caller is expected to
-        cache the result rather than ask on every sync.
+        Prefers the dashboard map (one request for everything). Falls back to the
+        participants list for courses the dashboard does not list — past semesters —
+        which is the only other place the name appears, since this Moodle has web
+        services disabled and neither the course page nor the enrolment list carries it.
 
-        Returns a name, or None when the course lists no professor (common for 채플 and
-        other administrative enrolments).
+        Returns a name, or None when no professor is listed.
         """
+        mapped = self.get_course_professor_map().get(int(moodle_course_id))
+        if mapped:
+            return mapped
+
         for role_id in self.PROFESSOR_ROLE_IDS:
             url = f"{self.base_url}/user/index.php?id={moodle_course_id}&roleid={role_id}"
             try:
@@ -267,7 +309,6 @@ class MoodleClient:
                 if 'Professor' in roles or '교수' in roles:
                     name = html_lib.unescape(name).strip()
                     if name:
-                        self.logger.info(f"course {moodle_course_id} professor: {name}")
                         return name
 
         return None
