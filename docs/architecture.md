@@ -34,6 +34,9 @@ The API and worker are separate processes. Both initialize their own SQLAlchemy 
 ├── parsing.py                Shared boundary parsers
 ├── moodle_client.py          LearnUs session handling and HTML parsing
 ├── ai_service.py             Provider calls, usage logging, AI operations
+├── course_brain.py           Course corpus build, library tree, corpus assembly
+├── content_extract.py        File bytes to text; PDF extraction and page rendering
+├── spend_limits.py           Daily caps, bypass and labs allowlists, token TTL
 ├── scheduler.py              Periodic sync, notifications, VOD orchestration
 ├── worker.py                 Persistent job claiming and dispatch
 ├── learnus-app/
@@ -60,6 +63,8 @@ The API and worker are separate processes. Both initialize their own SQLAlchemy 
 | Database change | model and `init_db()` in `database.py` | migration-path tests and all callers |
 | LearnUs parsing | `moodle_client.py` | stable fixture tests in `tests/` |
 | Transcription | VOD route in `api.py` | `jobs` row -> `worker.py` -> `ai_service.py` |
+| Course brain | brain route in `api.py` | `course_brain.py` -> `jobs` row -> `worker.py` -> `content_extract.py`/`ai_service.py` |
+| Spend or access limit | `spend_limits.py` | the API gate and the worker claim that share it |
 | Notifications | `scheduler.py` | history row -> all user push tokens -> Expo push service |
 | Deployment | `.github/workflows/deploy.yml` | `Dockerfile`, Compose, Caddy, environment configuration |
 
@@ -94,6 +99,15 @@ Manual assignment completion overrides must survive scraper refreshes.
 
 `vod_transcripts.moodle_id` is globally unique and has no user foreign key, so it is never sufficient for authorization by itself.
 
+### Course brain
+
+1. A student opts one course in. Enabling queues a `brain_build` job; the sweep is the expensive moment, so it follows an explicit per-course choice rather than running for every course at once.
+2. The worker fetches assignment instructions, transcribes each lecture, then extracts and captions each file, writing progress to `courses.brain_*`. Every stage skips finished work and commits per item, so a deploy or an exhausted transcription budget resumes instead of restarting.
+3. Each later sync calls `_top_up_brain`, which enqueues another build only when `pending_work` finds outstanding items.
+4. Chat assembles the whole corpus deterministically for prompt-cache hits, and citations are resolved server-side: the answer is scanned for `[S<n>]` markers and only markers matching a real assembled source are returned.
+
+`Course.brain_scope` gates which material is learned, and the progress weights renormalise around whatever is in scope. Access requires both the account-level flags and the per-course opt-in — see [AGENTS.md](../AGENTS.md#security-invariants).
+
 ## Persistence constraints
 
 `database.py` is the schema source of truth. There is no Alembic migration history: `Base.metadata.create_all()` creates missing tables, then `init_db()` performs guarded additive migrations for existing databases.
@@ -106,7 +120,8 @@ The complete entity graph, ownership rules, and state values live in [AGENTS.md]
 
 | Configuration | Location |
 |---|---|
-| Backend and worker environment | `.env` loaded by Docker Compose; safe keys are listed in `.env.example` |
+| Backend and worker environment | `.env` loaded by Docker Compose; safe keys are listed in `.env.example`. Compose passes variables **explicitly** per service, so a new key must be added to `docker-compose.yml` for the API, the worker, or both — otherwise it silently reads as unset inside the container. |
+| Downloaded course material | `COURSE_FILES_ROOT`, backed by the `course_files` Docker volume; without the volume a rebuild destroys the corpus |
 | Mobile API base URL | `EXPO_PUBLIC_API_URL`; localhost fallback in `learnus-app/services/api.ts` |
 | Expo build profiles | `learnus-app/eas.json` |
 | Native Expo metadata | `learnus-app/app.json` and `learnus-app/app.config.js` |

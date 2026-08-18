@@ -12,6 +12,8 @@ Use this page to find the smallest document that covers the task.
 | Deploy the API, worker, or mobile app | [Deployment](deployment.md) |
 | Rebuild a lost or replaced server | [Droplet recovery](runbooks/droplet-recovery.md) |
 | Diagnose a client that contacts the wrong API | [Stale API URL incident](incidents/2026-08-15-stale-api-url.md) |
+| Diagnose a deploy that reports success but changes nothing | [Silent deploy no-op incident](incidents/2026-08-17-silent-deploy-no-op.md) |
+| Understand the course brain, its schema, or its access rules | [Architecture](architecture.md#course-brain) and [AGENTS.md](../AGENTS.md#security-invariants) |
 | Build or debug the native app | [Mobile builds](mobile-builds.md) |
 | Navigate the Expo source | [Mobile app README](../learnus-app/README.md) |
 | Review repository automation constraints | [Repository operating contract](../AGENTS.md) |

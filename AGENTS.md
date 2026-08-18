@@ -56,6 +56,9 @@ Caddy (`Caddyfile`) -> API in deployment
 | `scheduler.py` | Periodic sync, session health, notification persistence/delivery, VOD watch orchestration | Functions receive `SessionLocal` or `Session`; preserve first-sync silence. |
 | `worker.py` | Persistent job claiming/dispatch, transcription progress, scheduler host | Must remain safe with multiple worker threads/processes. |
 | `ai_service.py` | Provider calls, usage extraction, summaries/chat/transcription | Log usage through `ai_usage_logs`; never log secrets or full credentials. |
+| `course_brain.py` | Course corpus: per-file build, library tree, corpus assembly, item detail, build/learn queueing | Every stage is idempotent and commits per item so an interrupted build resumes. Respects `Course.brain_scope`. |
+| `content_extract.py` | File bytes to text: PDF page extraction, sparse-page detection, page rendering, notebook/HTML handling | Pure extraction; no database or network. Page renders are a cache over the stored original. |
+| `spend_limits.py` | Daily chat/transcription caps, bypass allowlist, labs allowlist, API token TTL | Imported by both `api.py` and `worker.py`; must not import either. Never name this module `limits` — that shadows the PyPI package slowapi imports. |
 | `tests/` | Backend pytest suite and fixtures | New backend behavior requires a regression test. |
 | `learnus-app/` | Expo/React Native TypeScript application | Strict TypeScript; shared UI lives in `components/`, state in `context/`, I/O in `services/`. |
 | Docker/Caddy/workflow files | Deployment topology | Keep API and worker environment variables aligned where shared. |
@@ -96,16 +99,16 @@ login_debug_reports standalone diagnostic records
 
 | Table/model | Identity and constraints | Important state |
 |---|---|---|
-| `users` / `User` | unique `username`, unique nullable `api_token` | Moodle identity/session cookie text, notification flags/preferences, daily chat/transcribe counters, labs flags. `moodle_password` and `hashed_password` are legacy columns; application code must not persist plaintext passwords. |
+| `users` / `User` | unique `username`, unique nullable `api_token` | Moodle identity/session cookie text, notification flags/preferences, daily chat/transcribe counters, labs flags. `token_issued_at` dates the current token; `get_current_user` rejects tokens older than `API_TOKEN_TTL_DAYS` and stamps a null value rather than rejecting it. `moodle_password` and `hashed_password` are legacy columns; application code must not persist plaintext passwords. |
 | `push_tokens` / `PushToken` | unique token; required `user_id` | One row per device. Legacy `users.push_token` may be migrated into this table. |
 | `notification_history` / `NotificationHistory` | required `user_id` | title/body/type/data/read/created timestamp. |
-| `courses` / `Course` | unique (`moodle_id`, `owner_id`) | `is_active` controls sync; `is_initialized` prevents notifications during first sync. |
-| `assignments` / `Assignment` | DB PK plus Moodle ID, course FK | Date is stored as text. `completion_overridden` protects a manual completion choice from scraper refresh. |
-| `vods` / `VOD` | DB PK plus Moodle ID, course FK | Start/end dates are text; duration seconds optional; `has_tracking` distinguishes trackable content. |
-| `files` / `FileResource` | DB PK plus Moodle ID, course FK | completion and optional local path. |
-| `boards` / `Board`; `posts` / `Post` | nested course -> board -> post | Post content may be populated after listing. |
+| `courses` / `Course` | unique (`moodle_id`, `owner_id`) | `is_active` controls sync; `is_initialized` prevents notifications during first sync. `professor`/`professor_fetched_at` cache the instructor; the timestamp is stamped even when none is found so a course is not re-queried forever. Brain state: `brain_enabled` (per-course opt-in), `brain_scope` (JSON `{vods,files,assignments}`, missing keys default true), `brain_status` queued/building/ready/error, `brain_progress` 0..100, `brain_stage`, `brain_error`, `brain_built_at`. |
+| `assignments` / `Assignment` | DB PK plus Moodle ID, course FK | Date is stored as text. `completion_overridden` protects a manual completion choice from scraper refresh. `section`/`week` come from the course-page scrape; `description`/`description_fetched_at` are filled by a brain build, not by normal sync. |
+| `vods` / `VOD` | DB PK plus Moodle ID, course FK | Start/end dates are text; duration seconds optional; `has_tracking` distinguishes trackable content. `section`/`week` locate it in the course tree. |
+| `files` / `FileResource` | DB PK plus Moodle ID, course FK | completion and optional `local_path` to the stored original. Brain fields: `content`/`content_chars` extracted text, `page_count`, `captioned_pages`, `file_kind`, `file_bytes`, `extract_status` (null = never built; ok/skipped/empty/error/too_large), `extract_error`, `extracted_at`, plus `section`/`week`. A null `extract_status` is what marks a file as outstanding work. |
+| `boards` / `Board`; `posts` / `Post` | nested course -> board -> post | Post content may be populated after listing. `section`/`week` locate the board in the course tree. Posts are stored by normal sync, so announcements are in the corpus without a brain build. |
 | `vod_transcripts` / `VodTranscript` | globally unique `moodle_id` | `status`: queued/running/done/failed; `stage`: queued/extracting_audio/transcribing/finalizing/completed/failed; progress 0..100; transcript, summary, errors, timing. Keep `is_processing` compatible with legacy rows. |
-| `jobs` / `Job` | standalone PK | type: transcribe/watch_all/watch_one; status: pending/processing/done/failed; JSON payload, timestamps, error. Claiming must remain atomic. |
+| `jobs` / `Job` | standalone PK | type: transcribe/watch_all/watch_one/brain_build/brain_learn_item; status: pending/processing/done/failed; JSON payload, timestamps, error. Claiming must remain atomic. Brain jobs are de-duplicated by scanning pending/processing payloads before enqueueing, so a frequent sync cannot pile up duplicate builds. |
 | `ai_usage_logs` / `AIUsageLog` | optional user FK | endpoint/model and prompt/completion/total token counts. |
 | `flashcard_decks` / `FlashcardDeck` | required user FK | Moodle VOD ID is not an FK; cached card count. |
 | `flashcards` / `Flashcard` | required deck FK | stable `position`; relationship orders by position. |
@@ -122,6 +125,20 @@ Every user-scoped query must prove ownership through `owner_id`/`user_id` or a p
 - Course sync: Moodle scrape -> upsert course children; preserve manual assignment overrides and first-sync notification rules.
 - Transcription: authorized VOD -> `vod_transcripts` state + `jobs` row -> worker claim -> media/audio/transcription stages -> persisted transcript -> optional summary/chat/flashcards.
 - Notifications: scheduler detects changes -> writes `notification_history` -> broadcasts to all `push_tokens`; history persistence and push delivery are separate failure surfaces.
+- Course brain: per-course opt-in -> `brain_build` job -> assignment instructions, lecture transcripts, then file text/slide captions -> `courses.brain_*` progress. Every later sync calls `scheduler._top_up_brain`, which enqueues another build only when `course_brain.pending_work` reports outstanding items, so an unchanged course costs three counts and no job. `brain_learn_item` teaches one library row on demand and is deliberately independent of the course toggle.
+
+## Security invariants
+
+These were each a real defect. Re-breaking any of them is a security regression, not a style change.
+
+- **The account comes from the session, never the request body.** `/auth/sync-session` derives the Moodle user with `get_user_id()`; a client-supplied `user_id` is only ever compared and logged on mismatch. Trusting it previously minted a valid API token for any account whose Moodle ID could be guessed.
+- **Never log credential values.** Cookie strings are live Moodle sessions; log key names only.
+- **Brain surfaces require both flags.** `_require_brain_enabled` checks `labs_unlocked` *and* `brain_enabled`, so revoking lab access actually revokes it. Chat additionally requires `_require_course_brain` (the per-course opt-in). This covers the library, item detail, page renders, status, and every mutation.
+- **Lab access is operator-granted.** `/settings/labs/unlock` checks `LABS_ALLOWED_USERS`; the in-app gesture is obscurity, not access control. An empty allowlist grants nobody.
+- **Tokens expire and can be revoked.** `API_TOKEN_TTL_DAYS` bounds lifetime; `POST /auth/logout` clears the token and stored cookies.
+- **Anything that can spend must claim budget.** The worker calls `spend_limits.claim_transcription` per lecture, the same cap the manual endpoint enforces; builds are resumable, so exhausting the budget defers rather than fails.
+- **Every route is rate limited.** The limiter carries a global `120/minute` default via `SlowAPIMiddleware`, so a new route is limited before anyone remembers to decorate it. Expensive or LearnUs-facing routes set tighter explicit limits.
+- **Never echo exception text to clients.** SQLAlchemy errors embed the database connection string.
 
 ## Implementation rules
 
