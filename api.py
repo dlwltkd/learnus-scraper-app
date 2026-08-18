@@ -889,7 +889,10 @@ def sync_session(request: Request, req: SessionSyncRequest, db: Session = Depend
 @app.get("/courses", response_model=List[CourseResponse])
 def get_courses(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     courses = db.query(Course).filter(Course.owner_id == user.id).all()
-    return [{"id": c.id, "name": c.name, "is_active": c.is_active} for c in courses]
+    return [
+        {"id": c.id, "name": c.name, "is_active": c.is_active, "professor": c.professor}
+        for c in courses
+    ]
 
 @app.put("/courses/{course_id}/active")
 def update_course_active(course_id: int, update: CourseActiveUpdate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):

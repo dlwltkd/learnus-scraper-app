@@ -96,6 +96,12 @@ class Course(Base):
     is_active = Column(Boolean, default=True)
     is_initialized = Column(Boolean, default=False)  # True = first sync done, notifications enabled for this course
 
+    # Who teaches it. Absent from both the course page and the enrolment list, so it
+    # costs one extra request against the participants list — fetched once and cached
+    # here rather than asked for on every sync.
+    professor = Column(String, nullable=True)
+    professor_fetched_at = Column(DateTime, nullable=True)
+
     # Course brain. Opting a course in triggers one full sweep (transcribe every
     # lecture, extract and caption every file); afterwards each sync tops it up with
     # whatever is new. Kept per-course because a sweep costs real money and time, so
@@ -463,6 +469,14 @@ def init_db(db_url=None):
                     ))
             except Exception as e:
                 logger.warning(f"token_issued_at backfill skipped: {e}")
+
+    # Migration: course teaching staff.
+    if 'courses' in refreshed_tables:
+        for _col, _ddl in (
+            ('professor',            "ALTER TABLE courses ADD COLUMN professor VARCHAR"),
+            ('professor_fetched_at', "ALTER TABLE courses ADD COLUMN professor_fetched_at TIMESTAMP"),
+        ):
+            _add_column_if_missing('courses', _col, _ddl)
 
     # Migration: per-course brain opt-in and build state.
     if 'courses' in refreshed_tables:

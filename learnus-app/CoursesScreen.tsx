@@ -127,6 +127,13 @@ const CourseCard = ({ item, index, onPress, onSync, syncing }: CourseCardProps) 
                         <Text style={styles.courseName} numberOfLines={2}>
                             {item.name}
                         </Text>
+                        {/* Secondary line, so the course name still leads. Absent for
+                            courses that list no professor rather than showing a blank. */}
+                        {item.professor ? (
+                            <Text style={styles.professor} numberOfLines={1}>
+                                {item.professor}
+                            </Text>
+                        ) : null}
                     </View>
 
                     {/* Sync button */}
@@ -356,6 +363,11 @@ const createStyles = (colors: ColorScheme, typography: TypographyType, layout: L
         fontSize: 15,
         marginBottom: 4,
         lineHeight: 20,
+    },
+    professor: {
+        ...typography.caption,
+        color: colors.textSecondary,
+        marginTop: -2,
     },
     courseMeta: {
         flexDirection: 'row',

@@ -232,6 +232,46 @@ class MoodleClient:
         else:
             raise Exception("No authentication method available.")
 
+    # LearnUs role ids, from the participants page filter. 3 is 교수자(Professor); 4 is
+    # 편집권한이 없는 교수, which some courses use instead, so both are tried.
+    PROFESSOR_ROLE_IDS = (3, 4)
+
+    def get_course_professor(self, moodle_course_id):
+        """
+        Who teaches this course, from the participants list filtered to the professor role.
+
+        Neither the course page nor the enrolment list carries the instructor, so this is
+        the only place it appears. One request per course, and the caller is expected to
+        cache the result rather than ask on every sync.
+
+        Returns a name, or None when the course lists no professor (common for 채플 and
+        other administrative enrolments).
+        """
+        for role_id in self.PROFESSOR_ROLE_IDS:
+            url = f"{self.base_url}/user/index.php?id={moodle_course_id}&roleid={role_id}"
+            try:
+                response = self.session.get(url, timeout=15)
+                response.raise_for_status()
+            except Exception as e:
+                self.logger.warning(f"professor lookup failed for course {moodle_course_id}: {e}")
+                return None
+
+            # Each row pairs a fullname cell with a roles cell. Matching them together
+            # avoids picking up a name from a page that ignored the filter.
+            rows = re.findall(
+                r'column-fullname[^>]*>\s*<a[^>]*>(?:<img[^>]*>)?\s*([^<]+?)\s*</a>\s*</td>\s*'
+                r'<td[^>]*column-roles[^>]*>([^<]*)</td>',
+                response.text,
+            )
+            for name, roles in rows:
+                if 'Professor' in roles or '교수' in roles:
+                    name = html_lib.unescape(name).strip()
+                    if name:
+                        self.logger.info(f"course {moodle_course_id} professor: {name}")
+                        return name
+
+        return None
+
     def scrape_active_courses(self):
         """
         Scrapes the ubion user page to find currently active (enrolled this semester) course IDs.
@@ -614,6 +654,21 @@ class MoodleClient:
             course = Course(moodle_id=moodle_course_id, owner_id=user_id, name=f"Course {moodle_course_id}")
             db_session.add(course)
             db_session.commit()
+
+        # One-time per course: the participants list is a separate request, and the
+        # teaching staff does not change mid-semester. professor_fetched_at is stamped
+        # even when nothing is found, so a course with no listed professor is not
+        # re-queried on every sync forever.
+        if course.professor_fetched_at is None:
+            try:
+                from datetime import datetime as _dt
+                course.professor = self.get_course_professor(moodle_course_id)
+                course.professor_fetched_at = _dt.now()
+                db_session.commit()
+            except Exception as e:
+                db_session.rollback()
+                self.logger.warning(f"professor lookup skipped for {moodle_course_id}: {e}")
+
         contents = self.get_course_contents(moodle_course_id)
         
         for item in contents['assignments']:
