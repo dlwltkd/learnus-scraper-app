@@ -109,6 +109,12 @@ const getStatusConfig = (colors: ColorScheme) => ({
     },
 });
 
+/**
+ * Colour marks only a deadline that is genuinely now. Shared by the card and the detail
+ * sheet so "red means act today" means the same thing in both places.
+ */
+const isDueNow = (due: string) => due === '오늘' || due === 'D-1';
+
 interface SummaryItem {
     title: string;
     due: string;
@@ -193,6 +199,7 @@ const AISummaryCard = ({ summary, onPress, index }: { summary: AISummary; onPres
 
     const STATUS_CONFIG = getStatusConfig(colors);
     const statusConfig = STATUS_CONFIG[summary.status] || STATUS_CONFIG.calm;
+    const topItem = summary.urgent?.items?.[0] || summary.upcoming?.items?.[0] || null;
 
     useEffect(() => {
         Animated.parallel([
@@ -257,45 +264,44 @@ const AISummaryCard = ({ summary, onPress, index }: { summary: AISummary; onPres
                         {summary.status_message}
                     </Text>
 
-                    {/* Top Priority Item Preview */}
-                    {summary.urgent?.items?.[0] ? (
+                    {/* Top priority item. The dot that used to sit here repeated what the
+                        due text beside it already said, in the same colour. Colour is kept
+                        for a deadline that is genuinely now — the same rule the detail
+                        sheet uses — so it means something when it appears. */}
+                    {topItem ? (
                         <View style={aiStyles.priorityPreview}>
-                            <View style={[aiStyles.priorityDot, { backgroundColor: statusConfig.color }]} />
                             <Text style={aiStyles.priorityText} numberOfLines={1}>
-                                {summary.urgent.items[0].title}
+                                {topItem.title}
                             </Text>
-                            <Text style={[aiStyles.priorityDue, { color: statusConfig.color }]}>
-                                {summary.urgent.items[0].due}
-                            </Text>
-                        </View>
-                    ) : summary.upcoming?.items?.[0] ? (
-                        <View style={aiStyles.priorityPreview}>
-                            <View style={[aiStyles.priorityDot, { backgroundColor: '#F59E0B' }]} />
-                            <Text style={aiStyles.priorityText} numberOfLines={1}>
-                                {summary.upcoming.items[0].title}
-                            </Text>
-                            <Text style={[aiStyles.priorityDue, { color: '#F59E0B' }]}>
-                                {summary.upcoming.items[0].due}
+                            <Text style={[
+                                aiStyles.priorityDue,
+                                { color: isDueNow(topItem.due) ? colors.error : colors.textSecondary },
+                            ]}>
+                                {topItem.due}
                             </Text>
                         </View>
                     ) : null}
 
                     {/* Quick chips + footer row */}
                     <View style={aiStyles.cardFooter}>
+                        {/* Counts are information; the hue was not. These carried the same
+                            red and amber as the status badge above, so the card said one
+                            thing in four colours. Neutral chips leave the badge as the
+                            single coloured signal. */}
                         <View style={aiStyles.chipsRow}>
                             {summary.urgent?.count > 0 && (
-                                <View style={[aiStyles.chip, { backgroundColor: 'rgba(239,68,68,0.08)' }]}>
-                                    <Text style={[aiStyles.chipText, { color: '#EF4444' }]}>긴급 {summary.urgent.count}</Text>
+                                <View style={aiStyles.chip}>
+                                    <Text style={aiStyles.chipText}>긴급 {summary.urgent.count}</Text>
                                 </View>
                             )}
                             {summary.upcoming?.count > 0 && (
-                                <View style={[aiStyles.chip, { backgroundColor: 'rgba(245,158,11,0.08)' }]}>
-                                    <Text style={[aiStyles.chipText, { color: '#F59E0B' }]}>예정 {summary.upcoming.count}</Text>
+                                <View style={aiStyles.chip}>
+                                    <Text style={aiStyles.chipText}>예정 {summary.upcoming.count}</Text>
                                 </View>
                             )}
                             {!summary.urgent?.count && !summary.upcoming?.count && (
-                                <View style={[aiStyles.chip, { backgroundColor: 'rgba(16,185,129,0.08)' }]}>
-                                    <Text style={[aiStyles.chipText, { color: '#10B981' }]}>여유</Text>
+                                <View style={aiStyles.chip}>
+                                    <Text style={aiStyles.chipText}>여유</Text>
                                 </View>
                             )}
                         </View>
@@ -354,52 +360,11 @@ const AISummaryModal = ({
     const STATUS_CONFIG = getStatusConfig(colors);
     const statusConfig = STATUS_CONFIG[summary.status] || STATUS_CONFIG.calm;
 
-    const renderSection = (
-        title: string,
-        icon: keyof typeof Ionicons.glyphMap,
-        iconColor: string,
-        items: SummaryItem[],
-        emptyText: string
-    ) => (
-        <View style={modalStyles.section}>
-            <View style={modalStyles.sectionHeader}>
-                <View style={[modalStyles.sectionIcon, { backgroundColor: `${iconColor}15` }]}>
-                    <Ionicons name={icon} size={16} color={iconColor} />
-                </View>
-                <Text style={modalStyles.sectionTitle}>{title}</Text>
-                {items.length > 0 && (
-                    <View style={[modalStyles.countBadge, { backgroundColor: `${iconColor}15` }]}>
-                        <Text style={[modalStyles.countText, { color: iconColor }]}>{items.length}</Text>
-                    </View>
-                )}
-            </View>
-            {items.length > 0 ? (
-                <View style={modalStyles.itemsList}>
-                    {items.map((item, idx) => (
-                        <View key={idx} style={[modalStyles.listItem, idx === items.length - 1 && { borderBottomWidth: 0 }]}>
-                            <View style={modalStyles.itemLeft}>
-                                <Ionicons
-                                    name={item.type === 'assignment' ? 'document-text-outline' : 'play-circle-outline'}
-                                    size={16}
-                                    color={colors.textSecondary}
-                                />
-                                <Text style={modalStyles.itemTitle} numberOfLines={1}>{item.title}</Text>
-                            </View>
-                            <View style={[modalStyles.dueBadge, {
-                                backgroundColor: item.due === '오늘' || item.due === 'D-1' ? '#FEE2E2' : '#FEF3C7'
-                            }]}>
-                                <Text style={[modalStyles.dueText, {
-                                    color: item.due === '오늘' || item.due === 'D-1' ? '#DC2626' : '#D97706'
-                                }]}>{item.due}</Text>
-                            </View>
-                        </View>
-                    ))}
-                </View>
-            ) : (
-                <Text style={modalStyles.emptyText}>{emptyText}</Text>
-            )}
-        </View>
-    );
+    // 긴급 and 예정 were two sections with two headers and two empty states. They are one
+    // queue: the API already returns them in the order the student will work them, and
+    // each row states its own deadline precisely.
+    const tasks = [...(summary.urgent?.items || []), ...(summary.upcoming?.items || [])];
+    const announcement = summary.announcement?.summary;
 
     return (
         <Modal animationType="none" transparent visible={visible} onRequestClose={onClose}>
@@ -408,73 +373,86 @@ const AISummaryModal = ({
             </Animated.View>
 
             <Animated.View style={[modalStyles.container, { transform: [{ translateY: slideAnim }], paddingBottom: insets.bottom }]}>
-                {/* Handle */}
                 <View style={modalStyles.handleContainer}>
                     <View style={modalStyles.handle} />
                 </View>
 
-                {/* Header */}
-                <View style={[modalStyles.header, { borderBottomColor: statusConfig.borderColor }]}>
+                {/* Name, then the model's one-line verdict. The status word is the only
+                    coloured thing in the sheet, so it reads at a glance without a filled
+                    tile competing beside it. */}
+                <View style={modalStyles.header}>
                     <View style={modalStyles.headerTop}>
-                        <View style={[modalStyles.statusIndicator, { backgroundColor: statusConfig.color }]}>
-                            <Ionicons name={statusConfig.icon} size={18} color="#FFF" />
-                        </View>
-                        <View style={modalStyles.headerInfo}>
-                            <Text style={modalStyles.courseTitle} numberOfLines={1}>
-                                {summary.course_name}
-                            </Text>
-                            <Text style={[modalStyles.statusText, { color: statusConfig.color }]}>
-                                {statusConfig.label} · {summary.status_message}
-                            </Text>
-                        </View>
-                        <TouchableOpacity style={modalStyles.closeButton} onPress={onClose}>
-                            <Ionicons name="close" size={22} color={colors.textSecondary} />
+                        <Text style={modalStyles.courseTitle} numberOfLines={1}>
+                            {summary.course_name}
+                        </Text>
+                        <TouchableOpacity
+                            onPress={onClose}
+                            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        >
+                            <Ionicons name="close" size={20} color={colors.textTertiary} />
                         </TouchableOpacity>
                     </View>
+                    <Text style={modalStyles.statusLine}>
+                        <Text style={{ color: statusConfig.color, fontWeight: '600' }}>
+                            {statusConfig.label}
+                        </Text>
+                        {'  '}{summary.status_message}
+                    </Text>
                 </View>
 
-                {/* Content */}
+                {/* Sections render only when they hold something, so a calm week produces a
+                    short sheet rather than three headers over three "없어요" lines. The
+                    length of the sheet is itself the signal. */}
                 <ScrollView
                     style={modalStyles.content}
                     showsVerticalScrollIndicator={false}
-                    contentContainerStyle={{ paddingBottom: 40 }}
+                    contentContainerStyle={modalStyles.contentInner}
                 >
-                    {/* Urgent Section */}
-                    {renderSection('긴급', 'alert-circle', '#EF4444', summary.urgent?.items || [], '긴급한 항목이 없어요 👍')}
-
-                    {/* Upcoming Section */}
-                    {renderSection('예정', 'time-outline', '#F59E0B', summary.upcoming?.items || [], '예정된 항목이 없어요')}
-
-                    {/* Announcement Section */}
-                    <View style={modalStyles.section}>
-                        <View style={modalStyles.sectionHeader}>
-                            <View style={[modalStyles.sectionIcon, { backgroundColor: 'rgba(99, 102, 241, 0.1)' }]}>
-                                <Ionicons name="megaphone-outline" size={16} color="#6366F1" />
+                    {tasks.length > 0 && (
+                        <View style={modalStyles.section}>
+                            <Text style={modalStyles.sectionTitle}>할 일</Text>
+                            <View style={modalStyles.group}>
+                                {tasks.map((item, idx) => (
+                                    <View
+                                        key={`${item.title}-${idx}`}
+                                        style={[modalStyles.row, idx > 0 && modalStyles.rowBorder]}
+                                    >
+                                        <Text style={modalStyles.rowTitle} numberOfLines={2}>
+                                            {item.title}
+                                        </Text>
+                                        <Text style={[
+                                            modalStyles.rowDue,
+                                            isDueNow(item.due) && { color: colors.error },
+                                        ]}>
+                                            {item.due}
+                                        </Text>
+                                    </View>
+                                ))}
                             </View>
-                            <Text style={modalStyles.sectionTitle}>공지사항</Text>
-                            {summary.announcement?.has_new && (
-                                <View style={modalStyles.newBadge}>
-                                    <Text style={modalStyles.newBadgeText}>NEW</Text>
-                                </View>
-                            )}
                         </View>
-                        {summary.announcement?.summary ? (
-                            <View style={modalStyles.announcementBox}>
-                                <Text style={modalStyles.announcementText}>{summary.announcement.summary}</Text>
-                            </View>
-                        ) : (
-                            <Text style={modalStyles.emptyText}>최근 공지사항이 없어요</Text>
-                        )}
-                    </View>
+                    )}
 
-                    {/* AI Insight */}
-                    <View style={modalStyles.insightBox}>
-                        <View style={modalStyles.insightHeader}>
-                            <Ionicons name="sparkles" size={16} color={colors.primary} />
-                            <Text style={modalStyles.insightLabel}>AI 코멘트</Text>
+                    {announcement ? (
+                        <View style={modalStyles.section}>
+                            <Text style={modalStyles.sectionTitle}>
+                                공지사항{summary.announcement?.has_new ? ' · 새 공지' : ''}
+                            </Text>
+                            <View style={modalStyles.group}>
+                                <Text style={modalStyles.bodyText}>{announcement}</Text>
+                            </View>
                         </View>
-                        <Text style={modalStyles.insightText}>{summary.insight}</Text>
-                    </View>
+                    ) : null}
+
+                    {/* Facts above, interpretation below. The label says this block is
+                        written rather than scraped; it does not need an icon to say so. */}
+                    {summary.insight ? (
+                        <View style={modalStyles.section}>
+                            <Text style={modalStyles.sectionTitle}>AI 코멘트</Text>
+                            <View style={modalStyles.group}>
+                                <Text style={modalStyles.bodyText}>{summary.insight}</Text>
+                            </View>
+                        </View>
+                    ) : null}
                 </ScrollView>
             </Animated.View>
         </Modal>
@@ -1176,11 +1154,6 @@ const createAiStyles = (colors: ColorScheme, typography: TypographyType, layout:
         marginBottom: 10,
         gap: 6,
     },
-    priorityDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-    },
     priorityText: {
         flex: 1,
         fontSize: 12,
@@ -1205,10 +1178,12 @@ const createAiStyles = (colors: ColorScheme, typography: TypographyType, layout:
         paddingHorizontal: 7,
         paddingVertical: 3,
         borderRadius: 6,
+        backgroundColor: colors.surfaceMuted,
     },
     chipText: {
         fontSize: 11,
         fontWeight: '600',
+        color: colors.textSecondary,
     },
     viewMoreRow: {
         flexDirection: 'row',
@@ -1227,189 +1202,113 @@ const createAiStyles = (colors: ColorScheme, typography: TypographyType, layout:
 const createModalStyles = (colors: ColorScheme, typography: TypographyType, layout: LayoutType, isDark: boolean) => StyleSheet.create({
     backdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.4)',
+        backgroundColor: colors.overlay,
     },
     container: {
         position: 'absolute',
-        bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: colors.background,
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
+        bottom: 0,
         maxHeight: '85%',
-        ...layout.shadow.lg,
+        backgroundColor: colors.background,
+        borderTopLeftRadius: layout.borderRadius.xl,
+        borderTopRightRadius: layout.borderRadius.xl,
+        // No shadow: the backdrop already separates this from the page, and the design
+        // system flattened every surface except `xl`.
     },
     handleContainer: {
         alignItems: 'center',
-        paddingVertical: 12,
+        paddingTop: Spacing.s,
+        paddingBottom: Spacing.xs,
     },
     handle: {
         width: 36,
         height: 4,
-        borderRadius: 2,
+        borderRadius: layout.borderRadius.full,
         backgroundColor: colors.border,
     },
+
     header: {
         paddingHorizontal: Spacing.l,
-        paddingBottom: Spacing.m,
-        borderBottomWidth: 1,
+        paddingTop: Spacing.s,
+        paddingBottom: Spacing.l,
     },
     headerTop: {
         flexDirection: 'row',
         alignItems: 'center',
     },
-    statusIndicator: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
+    courseTitle: {
+        ...typography.header3,
+        flex: 1,
         marginRight: Spacing.m,
     },
-    headerInfo: {
-        flex: 1,
+    // The status word and the verdict on one line. The word carries the only colour in
+    // the sheet, which is what lets everything below stay neutral.
+    statusLine: {
+        ...typography.body2,
+        color: colors.textSecondary,
+        lineHeight: 21,
+        marginTop: Spacing.xs,
     },
-    courseTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: colors.textPrimary,
-        marginBottom: 2,
-    },
-    statusText: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
-    closeButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: colors.surfaceAlt || colors.surface,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
+
     content: {
-        paddingHorizontal: Spacing.l,
-        paddingTop: Spacing.m,
+        flexGrow: 0,
     },
+    contentInner: {
+        paddingHorizontal: Spacing.l,
+        paddingBottom: Spacing.xl,
+    },
+
     section: {
         marginBottom: Spacing.l,
     },
-    sectionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: Spacing.m,
-    },
-    sectionIcon: {
-        width: 32,
-        height: 32,
-        borderRadius: 10,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: Spacing.s,
-    },
     sectionTitle: {
-        ...typography.header3,
-        flex: 1,
-    },
-    countBadge: {
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 10,
-    },
-    countText: {
-        fontSize: 12,
-        fontWeight: '700',
-    },
-    newBadge: {
-        backgroundColor: '#EF4444',
-        paddingHorizontal: 6,
-        paddingVertical: 2,
-        borderRadius: 4,
-    },
-    newBadgeText: {
-        fontSize: 9,
-        fontWeight: '800',
-        color: '#FFF',
-        letterSpacing: 0.5,
-    },
-    aiRefreshButton: {
-        padding: Spacing.xs,
-    },
-    itemsList: {
-        backgroundColor: colors.surface,
-        borderRadius: 12,
-        overflow: 'hidden',
-    },
-    listItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: Spacing.m,
-        paddingVertical: Spacing.sm,
-        borderBottomWidth: 1,
-        borderBottomColor: colors.border,
-    },
-    itemLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-        marginRight: Spacing.s,
-    },
-    itemTitle: {
-        fontSize: 14,
-        color: colors.textPrimary,
-        marginLeft: Spacing.s,
-        flex: 1,
-    },
-    dueBadge: {
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 6,
-    },
-    dueText: {
-        fontSize: 11,
-        fontWeight: '700',
-    },
-    emptyText: {
-        fontSize: 14,
+        ...typography.overline,
         color: colors.textTertiary,
-        paddingVertical: Spacing.s,
-    },
-    announcementBox: {
-        backgroundColor: colors.surface,
-        borderRadius: 12,
-        padding: Spacing.m,
-        borderLeftWidth: 3,
-        borderLeftColor: '#6366F1',
-    },
-    announcementText: {
-        fontSize: 14,
-        lineHeight: 21,
-        color: colors.textPrimary,
-    },
-    insightBox: {
-        backgroundColor: 'rgba(139, 92, 246, 0.06)',
-        borderRadius: 16,
-        padding: Spacing.m,
-        borderWidth: 1,
-        borderColor: 'rgba(139, 92, 246, 0.15)',
-    },
-    insightHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
         marginBottom: Spacing.s,
     },
-    insightLabel: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: colors.secondary,
-        marginLeft: 6,
+    group: {
+        backgroundColor: colors.surface,
+        borderRadius: layout.borderRadius.l,
+        borderWidth: 1,
+        borderColor: colors.border,
+        overflow: 'hidden',
     },
-    insightText: {
-        fontSize: 14,
-        lineHeight: 22,
+
+    row: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: Spacing.m,
+        paddingVertical: Spacing.m,
+    },
+    rowBorder: {
+        borderTopWidth: 1,
+        borderTopColor: colors.divider,
+    },
+    rowTitle: {
+        ...typography.subtitle1,
+        fontSize: 15,
+        flex: 1,
+        marginRight: Spacing.m,
+    },
+    // Plain text, not a pill. Only a deadline that is actually now takes the error colour.
+    rowDue: {
+        ...typography.caption,
+        color: colors.textSecondary,
+        fontWeight: '600',
+    },
+
+    bodyText: {
+        ...typography.body2,
         color: colors.textPrimary,
+        lineHeight: 21,
+        padding: Spacing.m,
+    },
+
+    // Belongs to the AI 브리핑 header on the dashboard, not to this sheet — it shares
+    // this stylesheet with the modal.
+    aiRefreshButton: {
+        padding: Spacing.xs,
     },
 });
 
