@@ -222,6 +222,10 @@ export default function CourseBrainChatScreen() {
     const playFrom = useCallback(async (citation: BrainCitation, seconds: number) => {
         const item = itemFor('vod', citation.id);
         const url = item?.url || `https://ys.learnus.org/mod/vod/viewer.php?id=${item?.moodle_id}`;
+        if (Platform.OS === 'web') {
+            await Linking.openURL(url);
+            return;
+        }
         const cookies = (await AsyncStorage.getItem('userToken')) || '';
         setPlayer({ url, title: citation.title, cookies, startAt: seconds });
     }, [itemFor]);

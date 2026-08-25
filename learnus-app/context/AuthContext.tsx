@@ -1,7 +1,18 @@
 import React, { createContext, useState, useContext, ReactNode, useEffect, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { secureStorage } from '../services/secureStorage';
-import { login as apiLogin, setupAxiosInterceptors, clearAuthToken, logoutServerSide, validateSession } from '../services/api';
+import {
+    BrowserAuthError,
+    clearAuthToken,
+    clearBrowserSession,
+    completeExtensionLogin,
+    login as apiLogin,
+    logoutServerSide,
+    restoreBrowserSession,
+    setupAxiosInterceptors,
+    takeExtensionLoginTicket,
+    validateSession,
+} from '../services/api';
 import { DEMO_TOKEN, isDemoMode, setDemoMode } from '../services/demoMode';
 import { useToast } from './ToastContext';
 
@@ -12,6 +23,7 @@ interface AuthContextType {
     autoLogout: boolean;
     resetAutoLogout: () => void;
     isLoading: boolean;
+    webLoginError: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -20,9 +32,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const { showAlert } = useToast();
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [autoLogout, setAutoLogout] = useState(false);
+    const [webLoginError, setWebLoginError] = useState<string | null>(null);
 
     const [isLoading, setIsLoading] = useState(true);
     const isLoggedInRef = useRef(false);
+
+    const clearClientSession = async () => {
+        setDemoMode(false);
+        setWebLoginError(null);
+        if (Platform.OS === 'web') {
+            clearBrowserSession();
+        } else {
+            await secureStorage.removeItem('userToken');
+            await clearAuthToken();
+        }
+        setAutoLogout(true);
+        setIsLoggedIn(false);
+    };
 
     // Keep ref in sync so AppState callback always sees latest value
     useEffect(() => {
@@ -34,7 +60,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         showAlert(
             "세션 만료",
             "로그인 세션이 만료됐어요. 다시 로그인해주세요.",
-            [{ text: "확인", onPress: () => logout() }],
+            [{ text: "확인", onPress: () => { void logout(); } }],
             'warning'
         );
     };
@@ -68,6 +94,33 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     const loadStorage = async () => {
+        if (Platform.OS === 'web') {
+            try {
+                const ticket = takeExtensionLoginTicket();
+                if (ticket) {
+                    setWebLoginError(null);
+                    await completeExtensionLogin(ticket);
+                }
+
+                const authenticated = await restoreBrowserSession();
+                setIsLoggedIn(authenticated);
+                if (ticket && !authenticated) {
+                    setWebLoginError('브라우저 세션을 확인하지 못했어요. 확장 프로그램에서 다시 연결해주세요.');
+                }
+            } catch (error) {
+                clearBrowserSession();
+                setIsLoggedIn(false);
+                if (error instanceof BrowserAuthError && error.reason === 'invalid-ticket') {
+                    setWebLoginError('연결 링크가 만료됐거나 이미 사용됐어요. 확장 프로그램에서 다시 연결해주세요.');
+                } else {
+                    setWebLoginError('서버에 연결하지 못했어요. 네트워크를 확인한 뒤 잠시 후 다시 시도해주세요.');
+                }
+            } finally {
+                setIsLoading(false);
+            }
+            return;
+        }
+
         const storedCookie = await secureStorage.getItem('userToken');
 
         // No stored token - skip loading, show login immediately
@@ -116,6 +169,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             setAutoLogout(false);
             return;
         }
+        if (Platform.OS === 'web') {
+            if (!await restoreBrowserSession()) {
+                throw new Error('Browser session was not established');
+            }
+            setWebLoginError(null);
+            setIsLoggedIn(true);
+            setAutoLogout(false);
+            return;
+        }
         try {
             await apiLogin(cookie);
             await secureStorage.setItem('userToken', cookie);
@@ -129,18 +191,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const logout = async () => {
         console.log("AuthContext: Logout requested");
-        setDemoMode(false);
-        try {
-            // Revoke before forgetting: once the token is cleared locally there is no
-            // way left to tell the server it is finished with.
-            await logoutServerSide();
-            await secureStorage.removeItem('userToken');
-            await clearAuthToken();
-        } catch (e) {
-            console.error("Failed to clear auth storage", e);
+        if (Platform.OS === 'web') {
+            try {
+                await logoutServerSide();
+            } catch (error) {
+                console.error("Failed to revoke browser session", error);
+                showAlert(
+                    '로그아웃 실패',
+                    '서버와 연결하지 못해 로그아웃을 완료하지 못했어요. 잠시 후 다시 시도해주세요.',
+                    [{ text: '확인' }],
+                    'error',
+                );
+                return;
+            }
+            await clearClientSession();
+            return;
         }
-        setAutoLogout(true);
-        setIsLoggedIn(false);
+
+        try {
+            await logoutServerSide();
+        } catch (e) {
+            console.error("Failed to revoke native session", e);
+        }
+        await clearClientSession();
     };
 
     const resetAutoLogout = () => {
@@ -148,7 +221,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     };
 
     return (
-        <AuthContext.Provider value={{ isLoggedIn, login, logout, autoLogout, resetAutoLogout, isLoading }}>
+        <AuthContext.Provider value={{ isLoggedIn, login, logout, autoLogout, resetAutoLogout, isLoading, webLoginError }}>
             {children}
         </AuthContext.Provider>
     );

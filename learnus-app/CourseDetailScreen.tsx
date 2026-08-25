@@ -8,6 +8,8 @@ import {
     ScrollView,
     StatusBar,
     RefreshControl,
+    Linking,
+    Platform,
 } from 'react-native';
 import { getAssignments, getBoards, getVods, watchSingleVod } from './services/api';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -135,14 +137,25 @@ export default function CourseDetailScreen() {
     };
 
     const openWebViewer = async (item: any) => {
-        const cookies = await AsyncStorage.getItem('userToken') || '';
         const viewerUrl = item.url || `https://ys.learnus.org/mod/vod/viewer.php?id=${item.id}`;
+        if (Platform.OS === 'web') {
+            try {
+                await Linking.openURL(viewerUrl);
+            } catch {
+                showError('오류', 'LearnUs 강의 페이지를 열 수 없어요.');
+            }
+            return;
+        }
+
+        const cookies = await AsyncStorage.getItem('userToken') || '';
         await ScreenOrientation.unlockAsync();
         setWebViewer({ url: viewerUrl, title: item.title, cookies });
     };
 
     const closeWebViewer = async () => {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        if (Platform.OS !== 'web') {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        }
         setWebViewer(null);
     };
 

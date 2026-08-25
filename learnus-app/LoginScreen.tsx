@@ -95,13 +95,13 @@ export default function LoginScreen({
     const loggedOutAwaitingLogin = useRef(false);
 
     // Debug logging
-    const debugLogsRef = useRef<Array<{timestamp: string; event: string; url?: string; cookies?: string; data?: any}>>([]);
+    const debugLogsRef = useRef<Array<{timestamp: string; event: string; url?: string; data?: any}>>([]);
     const [showDebugLink, setShowDebugLink] = useState(false);
     const [showDebugModal, setShowDebugModal] = useState(false);
     const [debugSending, setDebugSending] = useState(false);
     const [debugSent, setDebugSent] = useState(false);
 
-    const addDebugLog = (event: string, extra?: {url?: string; cookies?: string; data?: any}) => {
+    const addDebugLog = (event: string, extra?: {url?: string; data?: any}) => {
         debugLogsRef.current.push({
             timestamp: new Date().toISOString(),
             event,
@@ -315,7 +315,7 @@ export default function LoginScreen({
                     .join('; ');
                 const cookieKeys = Object.keys(allCookies).join(', ');
                 console.log('CookieManager captured cookies:', cookieKeys);
-                addDebugLog('cookieManager', { url, cookies: cookieString });
+                addDebugLog('cookieManager', { url, data: { cookieKeys } });
                 if (cookieString.includes('MoodleSession')) {
                     // Inject script to get userId, then send cookies via onMessage
                     // Store cookie string for use in onMessage handler
@@ -339,7 +339,7 @@ export default function LoginScreen({
         if (raw === 'COOKIES_CLEARED') return;
         if (raw.startsWith('DEBUG')) return;
 
-        addDebugLog('onMessage', { data: raw.substring(0, 500) });
+        addDebugLog('onMessage', { data: { messageLength: raw.length } });
 
         // Parse structured message
         let data: string = '';
@@ -363,7 +363,11 @@ export default function LoginScreen({
         }
 
         if (data && data.includes('MoodleSession') && !data.includes('MoodleSession=deleted')) {
-            addDebugLog('api_call', { url: '/auth/sync-session', cookies: data });
+            const cookieKeys = data
+                .split(';')
+                .map(item => item.trim().split('=', 1)[0])
+                .filter(Boolean);
+            addDebugLog('api_call', { url: '/auth/sync-session', data: { cookieKeys } });
             try {
                 const result = await loginWithCookies(data, userId);
                 addDebugLog('api_response', { data: { status: result.status, session_usable: result.session_usable, has_token: !!result.api_token } });
@@ -398,8 +402,9 @@ export default function LoginScreen({
                     // Success case: loading will be hidden when screen unmounts
                 }
             } catch (e: any) {
-                console.log('Session Sync Failed', e);
-                addDebugLog('api_error', { data: e?.message || String(e) });
+                const status = e?.response?.status;
+                console.log('Session sync failed', status ?? 'network_error');
+                addDebugLog('api_error', { data: { status: status ?? null } });
                 setIsAuthenticating(false);
                 wasOnLoginPage.current = true;
                 // A network failure here is indistinguishable from a rejected login unless

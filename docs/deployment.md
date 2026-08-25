@@ -8,21 +8,22 @@ The backend deploys from `main` through GitHub Actions. The mobile app is built 
 
 | Container | Role | Persistent state |
 |---|---|---|
-| `learnus_caddy` | TLS termination and reverse proxy | `caddy_data` volume |
+| `learnus_caddy` | TLS termination, API proxy, and Expo Web static hosting | `caddy_data` volume; `web-dist/` release artifact |
 | `learnus_api` | FastAPI service on port 8000 | PostgreSQL; bind-mounted `api_debug.log` |
 | `learnus_worker` | queued and scheduled work | PostgreSQL; bind-mounted `error_log/` |
 | `learnus_db` | PostgreSQL 15 | `postgres_data` volume |
 
-PostgreSQL is published only on `127.0.0.1:5432`. Do not change it to a public bind. Port 8000 remains public temporarily for older clients; Caddy serves the HTTPS endpoint on ports 80 and 443.
+PostgreSQL and the API's direct port are published only on loopback. Do not make either bind public. Caddy is the only public HTTP entry point on ports 80 and 443; it forwards the original client address to Uvicorn over the private Compose network.
 
 ## GitHub Actions deployment
 
 `.github/workflows/deploy.yml` runs on every push to `main`:
 
-1. Install Python 3.11 test dependencies.
-2. Run `pytest tests/ -v --tb=short` with `TESTING=1`.
-3. SSH to the server, pull `main`, rebuild the API, and start Caddy.
-4. Rebuild the worker when its Python sources, requirements, or Dockerfile changed.
+1. Install Python 3.11 test dependencies and run `pytest tests/ -v --tb=short` with `TESTING=1`.
+2. Install the repository Node version, type-check and export Expo Web, and test/package the browser helper.
+3. Upload the static web artifact, SSH to the server, pull `main`, atomically install the web release, rebuild the API, and recreate Caddy.
+4. Validate Caddy and the loopback API health endpoint.
+5. Rebuild the worker when its Python sources, requirements, or Dockerfile changed.
 
 The workflow requires these repository secrets:
 
@@ -42,6 +43,7 @@ cd "$DEPLOY_PATH"
 docker compose ps
 docker compose logs --tail=100 api worker caddy
 curl https://api.dlwltkd.com/version
+curl https://luconnect.dlwltkd.com/api/version
 ```
 
 For a replacement server or lost volume, use the [Droplet recovery runbook](runbooks/droplet-recovery.md).
@@ -57,6 +59,16 @@ OPENAI_API_KEY=<provider key>
 
 `.env` is ignored by Git and must be restored separately after a server rebuild. The API and worker share `DATABASE_URL` and `OPENAI_API_KEY`; keep shared values aligned in `docker-compose.yml`.
 
+Browser authentication also requires these API values:
+
+```dotenv
+WEB_ALLOWED_ORIGINS=https://luconnect.dlwltkd.com
+WEB_LOGIN_TICKET_TTL_SECONDS=90
+WEB_SESSION_TTL_DAYS=7
+WEB_SESSION_COOKIE_NAME=__Host-luconnect_session
+WEB_SESSION_COOKIE_SECURE=true
+```
+
 Before the first `docker compose up`, create the bind-mount targets with the correct types:
 
 ```bash
@@ -65,6 +77,74 @@ touch api_debug.log
 ```
 
 Docker otherwise creates a missing `api_debug.log` target as a directory, and the application cannot write the log file.
+
+## Web build and SSO helper
+
+The Caddy/Compose topology serves the Expo export and API from one browser origin:
+
+```text
+https://luconnect.dlwltkd.com/      -> Expo Web static files, with SPA fallback
+https://luconnect.dlwltkd.com/api/  -> FastAPI, with /api stripped upstream
+```
+
+Build the static client with the repository's Node version:
+
+```bash
+cd learnus-app
+nvm use
+npm ci
+npx tsc --noEmit
+EXPO_NO_TELEMETRY=1 npx expo export --platform web
+test -s dist/index.html
+```
+
+Production web builds are fixed to same-origin `/api`; inherited native or EAS values such as `https://api.dlwltkd.com` are deliberately ignored because they cannot receive the luconnect host-only cookie. CI publishes the export atomically to the ignored `web-dist/` directory, keeps `index.html` non-cacheable, and retains old content-addressed assets for open tabs. Verify both `/auth/extension` (SPA fallback) and `/api/version` through the public origin before publishing the helper. In browser developer tools, confirm the session check goes to `https://luconnect.dlwltkd.com/api/auth/web-session` and that no request targets localhost or `api.dlwltkd.com`.
+
+Build and validate the helper separately:
+
+```bash
+cd browser-extension
+npm test
+npm run build:production
+```
+
+The production manifest is fixed to `ys.learnus.org` and `luconnect.dlwltkd.com`; the development manifest is a separate build with localhost access. Never add localhost, wildcard hosts, content scripts, storage, or API-token handling to the production package. Before rollout, complete a real Chrome/Edge SSO test and confirm the exact LearnUs host permission can read every cookie the session needs.
+
+Confirm the public hostname before packaging the store build. The host permission and completion URL are compiled into the extension, so changing the hostname later requires a new reviewed package.
+
+The extension endpoints are intentionally rate-limited, so Uvicorn must see the real client address through Caddy. Compose binds port 8000 to loopback only and trusts forwarded headers received over the private container network. Do not restore a public port 8000 bind while `FORWARDED_ALLOW_IPS=*` is enabled. Verify the production topology with two distinct external clients before publishing the extension.
+
+For the local extension flow, start the web client on `http://localhost:8081`, set `EXPO_PUBLIC_WEB_API_URL=http://localhost:8000`, and start the API with:
+
+```dotenv
+WEB_ALLOWED_ORIGINS=http://localhost:8081
+WEB_SESSION_COOKIE_NAME=luconnect_session
+WEB_SESSION_COOKIE_SECURE=false
+```
+
+The API enables credentialed CORS only for `WEB_ALLOWED_ORIGINS`; production still uses same-origin `/api`.
+
+## Web-auth migration check
+
+The first API or worker start after this change creates the browser-auth tables and clears values from the compatibility-only `users.moodle_password` and `users.hashed_password` columns. Back up PostgreSQL before either process starts. The backup contains cookies, tokens, and any legacy credential fields, so store it outside the checkout with restrictive permissions and remove it after the rollback window.
+
+Count affected rows without selecting credential values:
+
+```bash
+umask 077
+mkdir -p ../learnus-backups
+LEARNUS_BACKUP_PATH="../learnus-backups/learnus-pre-web-auth-$(date +%Y%m%d%H%M%S).dump"
+docker compose exec -T db pg_dump -U user -d learnus -Fc > "$LEARNUS_BACKUP_PATH"
+docker compose exec -T db psql -U user -d learnus -Atc \
+  "SELECT count(*) FROM users WHERE moodle_password IS NOT NULL OR hashed_password IS NOT NULL;"
+```
+
+After the API has started successfully, run the same count again and require `0`:
+
+```bash
+test "$(docker compose exec -T db psql -U user -d learnus -Atc \
+  "SELECT count(*) FROM users WHERE moodle_password IS NOT NULL OR hashed_password IS NOT NULL;")" = "0"
+```
 
 ## Mobile releases
 

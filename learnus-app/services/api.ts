@@ -1,5 +1,6 @@
 import axios from 'axios';
 import EventSource from 'react-native-sse';
+import { Platform } from 'react-native';
 import { secureStorage } from './secureStorage';
 import { isDemoMode } from './demoMode';
 
@@ -19,14 +20,20 @@ const AUTH_TOKEN_KEY = 'auth_token';
 // Use localhost for local development (or configure via .env in a real setup)
 // Note: Android Emulator uses 10.0.2.2 to access host localhost.
 // To use env vars, you would typically use 'react-native-dotenv' or 'expo-constants'
-// For this public repo, we default to localhost.
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+// Production web auth is a host-only cookie, so a production export must always use
+// same-origin /api even when a native EAS value is present in a local .env file. Local
+// web development may opt into a separate API origin explicitly.
+const API_URL = Platform.OS === 'web'
+    ? (__DEV__ ? process.env.EXPO_PUBLIC_WEB_API_URL || '/api' : '/api')
+    : process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
 const api = axios.create({
     baseURL: API_URL,
+    withCredentials: Platform.OS === 'web',
 });
 
 let authToken: string | null = null;
+let browserSessionActive = false;
 let onSessionExpired: (() => void) | null = null;
 
 export const loadAuthToken = async () => {
@@ -55,28 +62,107 @@ export const setAuthToken = async (token: string | null) => {
 
 // True once a token is in memory. Pollers use this to avoid firing requests during the
 // gaps around login and logout, which would come back 401.
-export const hasAuthToken = () => Boolean(authToken);
+export const hasAuthToken = () => Boolean(authToken) || browserSessionActive;
 
 /** The raw token, for requests that bypass axios — e.g. <Image> loading a page render. */
 export const getAuthToken = () => authToken;
 
 /**
- * Revoke this token server-side.
+ * Revoke the current server session.
  *
- * Signing out was local-only: the app forgot the token while the server kept honouring
- * it, so anything that had copied it stayed authenticated. Best-effort — a failure here
- * must never block the local sign-out.
+ * Native clients can always forget their local bearer, so revocation remains best-effort
+ * there. Web clients cannot clear the HttpOnly cookie themselves and must surface a
+ * failed revoke instead of pretending the browser signed out.
  */
 export const logoutServerSide = async (): Promise<void> => {
     try {
         await api.post('/auth/logout');
-    } catch {
-        // Offline, or the token is already invalid. Either way, clear it locally.
+    } catch (error) {
+        if (Platform.OS === 'web') {
+            if (axios.isAxiosError(error) && error.response?.status === 401) {
+                return;
+            }
+            throw error;
+        }
     }
+};
+
+export type BrowserAuthFailureReason = 'invalid-ticket' | 'unavailable';
+
+export class BrowserAuthError extends Error {
+    readonly reason: BrowserAuthFailureReason;
+
+    constructor(reason: BrowserAuthFailureReason) {
+        super(reason === 'invalid-ticket' ? 'Invalid browser login ticket' : 'Browser auth unavailable');
+        this.name = 'BrowserAuthError';
+        this.reason = reason;
+    }
+}
+
+export const restoreBrowserSession = async (): Promise<boolean> => {
+    if (Platform.OS !== 'web') return false;
+    try {
+        await api.get('/auth/web-session');
+        browserSessionActive = true;
+        return true;
+    } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 401) {
+            browserSessionActive = false;
+            return false;
+        }
+        throw new BrowserAuthError('unavailable');
+    }
+};
+
+const EXTENSION_TICKET_PATTERN = /^[A-Za-z0-9_-]{32,512}$/;
+
+export const takeExtensionLoginTicket = (): string | null => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return null;
+
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const ticket = fragment.get('ticket');
+    if (!ticket) return null;
+
+    // Remove the bearer before any async work, so it cannot linger in history or the
+    // address bar if completion fails or an existing browser session is restored.
+    window.history.replaceState(
+        null,
+        document.title,
+        `${window.location.pathname}${window.location.search}`,
+    );
+
+    const entries = [...fragment.entries()];
+    if (
+        entries.length !== 1
+        || entries[0][0] !== 'ticket'
+        || !EXTENSION_TICKET_PATTERN.test(ticket)
+    ) {
+        throw new BrowserAuthError('invalid-ticket');
+    }
+    return ticket;
+};
+
+export const completeExtensionLogin = async (ticket: string) => {
+    try {
+        const response = await api.post('/auth/extension/complete', { ticket });
+        browserSessionActive = true;
+        return response.data as { status: string; username: string };
+    } catch (error) {
+        const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+        const reason = status && [401, 409, 410, 422].includes(status)
+            ? 'invalid-ticket'
+            : 'unavailable';
+        throw new BrowserAuthError(reason);
+    }
+};
+
+export const clearBrowserSession = () => {
+    browserSessionActive = false;
 };
 
 export const clearAuthToken = async () => {
     authToken = null;
+    browserSessionActive = false;
     try {
         await secureStorage.removeItem(AUTH_TOKEN_KEY);
     } catch (error) {
@@ -119,8 +205,12 @@ api.interceptors.response.use(
             // Only a request that actually carried a token can represent an expired
             // session. Without this check, any poll that fires while the token is absent
             // (during login, or right after logout) reports "세션 만료" and forces a logout.
-            const sentToken = Boolean(error.config?.headers?.['X-API-Token']);
-            if (sentToken) {
+            const sentCredential = Boolean(error.config?.headers?.['X-API-Token']) || browserSessionActive;
+            const requestPath = error.config?.url;
+            const handlesOwnUnauthorized = requestPath === '/auth/logout'
+                || requestPath === '/auth/web-session'
+                || requestPath === '/auth/validate-session';
+            if (sentCredential && !handlesOwnUnauthorized) {
                 console.log('Session expired (401), triggering logout...');
                 if (onSessionExpired) {
                     onSessionExpired();
@@ -291,6 +381,7 @@ export const chatWithVodStream = (
 
     const es = new EventSource<'message' | 'done' | 'error'>(url, {
         method: 'POST',
+        withCredentials: Platform.OS === 'web',
         headers: {
             'Content-Type': 'application/json',
             ...(authToken ? { 'X-API-Token': authToken } : {}),
@@ -678,6 +769,7 @@ export const chatWithCourseBrain = (
         `${API_URL}/courses/${courseId}/brain/chat`,
         {
             method: 'POST',
+            withCredentials: Platform.OS === 'web',
             headers: {
                 'Content-Type': 'application/json',
                 ...(authToken ? { 'X-API-Token': authToken } : {}),

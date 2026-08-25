@@ -3,6 +3,9 @@ import sys
 
 # Must set TESTING before importing api so init_db() is skipped
 os.environ["TESTING"] = "1"
+os.environ["WEB_ALLOWED_ORIGINS"] = "http://testserver"
+os.environ["WEB_SESSION_COOKIE_NAME"] = "luconnect_session"
+os.environ["WEB_SESSION_COOKIE_SECURE"] = "false"
 
 # Ensure project root is on the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))

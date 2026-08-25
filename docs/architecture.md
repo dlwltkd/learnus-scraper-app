@@ -1,13 +1,15 @@
 # Architecture
 
-LearnUs Connect is a monorepo containing an Expo mobile app, a FastAPI service, a persistent worker, and deployment configuration.
+LearnUs Connect is a monorepo containing an Expo mobile/web app, a FastAPI service, a persistent worker, a browser SSO helper, and deployment configuration.
 
 ## Runtime overview
 
 ```text
 Expo app (learnus-app/)
-  -> Axios and SSE (learnus-app/services/api.ts, X-API-Token)
+  -> native: Axios and SSE with X-API-Token
+  -> web: same-origin /api with an HttpOnly browser-session cookie
   -> FastAPI (api.py)
+       -> auth_service.py (verified SSO cookies, one-time tickets, browser sessions)
        -> SQLAlchemy (database.py)
        -> LearnUs HTTP session and scraping (moodle_client.py)
        -> AI and transcription provider (ai_service.py)
@@ -20,6 +22,11 @@ Worker (worker.py)
 
 Caddy -> FastAPI
 PostgreSQL in Docker; SQLite for local backend development and in-memory tests
+
+Chrome/Edge MV3 helper (browser-extension/)
+  -> reads cookies applicable only to https://ys.learnus.org/my/ after a click
+  -> sends them to the fixed luconnect exchange endpoint
+  -> opens the fixed web completion page with a short-lived one-use ticket
 ```
 
 The API and worker are separate processes. Both initialize their own SQLAlchemy session factory. Work that must survive an API restart is stored in the `jobs` table and claimed by the worker.
@@ -29,6 +36,7 @@ The API and worker are separate processes. Both initialize their own SQLAlchemy 
 ```text
 .
 ├── api.py                    HTTP app, dependencies, authentication, routes
+├── auth_service.py           Moodle-session proof, web tickets and sessions
 ├── schemas.py                Pydantic request and response contracts
 ├── database.py               ORM models, engine setup, additive migrations
 ├── parsing.py                Shared boundary parsers
@@ -46,6 +54,7 @@ The API and worker are separate processes. Both initialize their own SQLAlchemy 
 │   ├── hooks/                Shared hooks
 │   ├── constants/            Theme and application constants
 │   └── services/             API, notifications, demo mode, secure storage
+├── browser-extension/        Explicit MV3 bridge for LearnUs SSO on the web
 ├── tests/                    Backend pytest suite
 ├── scripts/                  Operational and maintenance scripts
 ├── docs/                     Architecture, deployment, and runbooks
@@ -59,6 +68,7 @@ The API and worker are separate processes. Both initialize their own SQLAlchemy 
 | Area | Start here | Follow to |
 |---|---|---|
 | Mobile feature | relevant `learnus-app/*Screen.tsx` | context/component -> `services/api.ts` -> backend route |
+| Web authentication | `browser-extension/src/bridge.js` and `LoginScreen.web.tsx` | `auth_service.py` -> `WebLoginTicket` -> `WebSession` |
 | HTTP endpoint | route in `api.py` | schema -> ownership query -> service, scraper, or job |
 | Database change | model and `init_db()` in `database.py` | migration-path tests and all callers |
 | LearnUs parsing | `moodle_client.py` | stable fixture tests in `tests/` |
@@ -74,12 +84,26 @@ Request schemas do not belong in `api.py`, ORM models do not belong in route mod
 
 ### Login and session sync
 
+Native:
+
 1. The app completes LearnUs authentication in a WebView.
 2. The app sends the resulting cookie string to the API.
-3. The API normalizes the cookies, resolves the LearnUs identity, and stores the session.
+3. The API validates the cookies against LearnUs, resolves the LearnUs identity, and stores the session.
 4. The API returns a service token used as `X-API-Token` on later requests.
 
+Web:
+
+1. The user completes Yonsei SSO in a normal LearnUs tab.
+2. After an explicit click, the MV3 helper reads the HttpOnly cookies applicable to the exact LearnUs origin and sends them to the fixed exchange endpoint.
+3. The API validates the same Moodle identity boundary without minting a native API token, stores only the hash of a 90-second one-use ticket, and returns the raw ticket once.
+4. The helper opens the fixed luconnect completion page with the ticket in the URL fragment. The page removes the fragment immediately and exchanges it same-origin.
+5. The API atomically consumes the ticket and sets a host-only `Secure; HttpOnly; SameSite=Strict` browser-session cookie. Only a SHA-256 digest is stored in `web_sessions`.
+
+Cookie-authenticated mutations and ticket completion require an exact allowed `Origin`. A browser logout revokes only that `WebSession`; it does not invalidate the native bearer or another browser.
+
 Passwords are transient and must never be persisted or logged.
+
+`users.moodle_cookies` remains one canonical upstream LearnUs session per account. A web capture can therefore replace the Moodle session used by native/background work; making upstream credentials device-scoped is a later schema change.
 
 ### Course synchronization
 
@@ -122,7 +146,9 @@ The complete entity graph, ownership rules, and state values live in [AGENTS.md]
 |---|---|
 | Backend and worker environment | `.env` loaded by Docker Compose; safe keys are listed in `.env.example`. Compose passes variables **explicitly** per service, so a new key must be added to `docker-compose.yml` for the API, the worker, or both — otherwise it silently reads as unset inside the container. |
 | Downloaded course material | `COURSE_FILES_ROOT`, backed by the `course_files` Docker volume; without the volume a rebuild destroys the corpus |
-| Mobile API base URL | `EXPO_PUBLIC_API_URL`; localhost fallback in `learnus-app/services/api.ts` |
+| Native API base URL | `EXPO_PUBLIC_API_URL`; localhost fallback in `learnus-app/services/api.ts` |
+| Web API base URL | Production is fixed to same-origin `/api`; local web may use `EXPO_PUBLIC_WEB_API_URL` |
+| Browser authentication | `WEB_ALLOWED_ORIGINS`, `WEB_LOGIN_TICKET_TTL_SECONDS`, `WEB_SESSION_TTL_DAYS`, `WEB_SESSION_COOKIE_NAME`, and `WEB_SESSION_COOKIE_SECURE` |
 | Expo build profiles | `learnus-app/eas.json` |
 | Native Expo metadata | `learnus-app/app.json` and `learnus-app/app.config.js` |
 | Deployment secrets | GitHub Actions secrets documented in [deployment.md](deployment.md) |

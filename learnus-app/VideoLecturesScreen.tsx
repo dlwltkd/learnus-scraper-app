@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     View, Text, StyleSheet, ScrollView, RefreshControl,
     TouchableOpacity, ActivityIndicator, StatusBar,
-    LayoutAnimation, Platform, UIManager,
+    LayoutAnimation, Linking, Platform, UIManager,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -104,14 +104,25 @@ const VideoLecturesScreen = () => {
     }, [tourActive]);
 
     const openWebViewer = async (item: any) => {
-        const cookies = await AsyncStorage.getItem('userToken') || '';
         const viewerUrl = item.url || `https://ys.learnus.org/mod/vod/viewer.php?id=${item.id}`;
+        if (Platform.OS === 'web') {
+            try {
+                await Linking.openURL(viewerUrl);
+            } catch {
+                showError('오류', 'LearnUs 강의 페이지를 열 수 없어요.');
+            }
+            return;
+        }
+
+        const cookies = await AsyncStorage.getItem('userToken') || '';
         await ScreenOrientation.unlockAsync();
         setWebViewer({ url: viewerUrl, title: item.title, cookies });
     };
 
     const closeWebViewer = async () => {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        if (Platform.OS !== 'web') {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        }
         setWebViewer(null);
     };
 

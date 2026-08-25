@@ -1,0 +1,11 @@
+{
+  "name": "learnus-connect-browser-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:development": "node package-extension.mjs development",
+    "build:production": "node package-extension.mjs production",
+    "test": "node --test tests/*.test.mjs"
+  }
+}

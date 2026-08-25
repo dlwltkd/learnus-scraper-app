@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LearnUs Connect</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">LearnUs Connect</p>
+        <h1>Sign in through Yonsei SSO</h1>
+        <p class="intro">Finish SSO in LearnUs, then return here to connect this browser.</p>
+      </header>
+
+      <ol>
+        <li>
+          <button id="open-login" type="button">Open LearnUs SSO</button>
+        </li>
+        <li>
+          <button id="connect-browser" class="primary" type="button">Connect this browser</button>
+        </li>
+      </ol>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+      <p class="privacy">
+        When you press Connect, cookies applicable to <strong>ys.learnus.org</strong> are
+        sent to and retained by the LearnUs Connect server for synchronization. The
+        extension does not keep a copy.
+        <a
+          href="https://github.com/dlwltkd/learnus-scraper-app/blob/main/docs/legal/privacy-policy.md"
+          target="_blank"
+          rel="noopener noreferrer"
+        >Privacy Policy</a>
+      </p>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

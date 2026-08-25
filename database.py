@@ -53,6 +53,38 @@ class User(Base):
     push_tokens = relationship("PushToken", back_populates="owner", cascade="all, delete-orphan")
     notification_history = relationship("NotificationHistory", back_populates="owner", cascade="all, delete-orphan")
     flashcard_decks = relationship("FlashcardDeck", back_populates="owner", cascade="all, delete-orphan")
+    web_login_tickets = relationship("WebLoginTicket", back_populates="owner", cascade="all, delete-orphan")
+    web_sessions = relationship("WebSession", back_populates="owner", cascade="all, delete-orphan")
+
+
+class WebLoginTicket(Base):
+    """Short-lived, one-use bridge from the SSO extension to the web app."""
+
+    __tablename__ = 'web_login_tickets'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    consumed_at = Column(DateTime, nullable=True)
+
+    owner = relationship("User", back_populates="web_login_tickets")
+
+
+class WebSession(Base):
+    """Independently revocable browser authentication session."""
+
+    __tablename__ = 'web_sessions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    expires_at = Column(DateTime, nullable=False, index=True)
+    revoked_at = Column(DateTime, nullable=True)
+
+    owner = relationship("User", back_populates="web_sessions")
 
 class PushToken(Base):
     """One user can have multiple devices, each with its own Expo push token."""
@@ -331,6 +363,8 @@ def init_db(db_url=None):
     # Migration: migrate existing push_token data BEFORE create_all creates the new table
     needs_push_token_migration = 'push_tokens' not in existing_tables and 'users' in existing_tables
     needs_notif_history_table = 'notification_history' not in existing_tables
+    needs_web_login_ticket_table = 'web_login_tickets' not in existing_tables
+    needs_web_session_table = 'web_sessions' not in existing_tables
 
     Base.metadata.create_all(engine)
 
@@ -346,9 +380,30 @@ def init_db(db_url=None):
 
     if needs_notif_history_table:
         logger.info("Created notification_history table")
+    if needs_web_login_ticket_table:
+        logger.info("Created web_login_tickets table")
+    if needs_web_session_table:
+        logger.info("Created web_sessions table")
 
     # Refresh inspector after create_all
     inspector = sa_inspect(engine)
+
+    # Password-based Moodle login is no longer an authentication path. Remove any
+    # values left by legacy releases so the current SSO-only service does not retain
+    # credentials it neither needs nor uses. Keep the columns for schema compatibility
+    # until a versioned migration system can remove them safely.
+    user_columns = {column['name'] for column in inspector.get_columns('users')}
+    legacy_password_columns = [
+        column for column in ('moodle_password', 'hashed_password')
+        if column in user_columns
+    ]
+    if legacy_password_columns:
+        assignments = ', '.join(f"{column} = NULL" for column in legacy_password_columns)
+        predicate = ' OR '.join(f"{column} IS NOT NULL" for column in legacy_password_columns)
+        with engine.begin() as conn:
+            result = conn.execute(text(f"UPDATE users SET {assignments} WHERE {predicate}"))
+        if result.rowcount and result.rowcount > 0:
+            logger.info("Cleared legacy password fields from %s user rows", result.rowcount)
 
     def _add_column_if_missing(table_name: str, column_name: str, ddl_sql: str) -> bool:
         """Returns True when the column was actually added, so callers can backfill it."""

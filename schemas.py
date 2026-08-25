@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CourseResponse(BaseModel):
@@ -60,6 +60,18 @@ class LoginRequest(BaseModel):
 class SessionSyncRequest(BaseModel):
     cookies: str
     user_id: Optional[int] = None
+
+
+class ExtensionCookieExchangeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    cookies: str = Field(min_length=1, max_length=32_768)
+
+
+class ExtensionTicketCompleteRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    ticket: str = Field(min_length=32, max_length=512)
 
 
 class PushTokenRequest(BaseModel):

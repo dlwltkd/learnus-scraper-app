@@ -125,6 +125,11 @@ function buildHtml(content: string, isDark: boolean): string {
 
 export function SelectableMarkdown({ content, isDark }: { content: string; isDark: boolean }) {
     const [height, setHeight] = useState(40);
+    const { colors } = useTheme();
+    const webMarkdownStyles = useMemo(
+        () => createMarkdownStyles(colors, isDark),
+        [colors, isDark],
+    );
 
     const onMessage = (e: any) => {
         try {
@@ -134,6 +139,10 @@ export function SelectableMarkdown({ content, isDark }: { content: string; isDar
             }
         } catch {}
     };
+
+    if (Platform.OS === 'web') {
+        return <Markdown style={webMarkdownStyles}>{content}</Markdown>;
+    }
 
     return (
         <WebView

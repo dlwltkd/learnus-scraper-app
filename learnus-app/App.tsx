@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, ActivityIndicator, StatusBar, Alert, AppState, Text, Linking, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, ActivityIndicator, StatusBar, Alert, AppState, Text, Linking, TouchableOpacity, Platform } from 'react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -166,7 +166,7 @@ function AppContent() {
   }, [startTourAfterOnboarding]);
 
   React.useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn || Platform.OS === 'web') return;
 
     const init = async () => {
       const tourCompleted = await hasTourCompleted();
@@ -211,6 +211,8 @@ function AppContent() {
   const [forceUpdate, setForceUpdate] = React.useState<string | null>(null);
 
   React.useEffect(() => {
+    if (Platform.OS === 'web') return;
+
     checkAppVersion().then(({ version: latestVersion, forceUpdateMin }) => {
       if (!latestVersion || latestVersion === APP_VERSION) return;
 
@@ -444,6 +446,8 @@ function AppContent() {
 // ============================================
 export default function App() {
   React.useEffect(() => {
+    if (Platform.OS === 'web') return;
+
     // Note: push notification registration is handled in AppContent
     // after the onboarding prompt, so we don't request permission here.
     registerBackgroundFetchAsync();

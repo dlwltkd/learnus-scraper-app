@@ -39,7 +39,7 @@ Run the deployed topology locally:
 docker compose up --build
 ```
 
-Mobile app:
+Expo app:
 
 ```powershell
 cd learnus-app
@@ -48,7 +48,7 @@ npx tsc --noEmit
 npm run start
 ```
 
-Use `npm run android`, `npm run ios`, or `npm run web` for the target platform. Configure `EXPO_PUBLIC_API_URL` outside source control when the API is not at `http://localhost:8000`.
+Use `npm run android`, `npm run ios`, or `npm run web` for the target platform. Native development falls back to `http://localhost:8000` and can use `EXPO_PUBLIC_API_URL`. Production web is fixed to same-origin `/api`; local web development alone may use `EXPO_PUBLIC_WEB_API_URL` for a separate API origin.
 
 Safe backend and worker environment keys are listed in `.env.example`. Never copy real values into documentation or source control.
 
@@ -57,8 +57,8 @@ Safe backend and worker environment keys are listed in `.env.example`. Never cop
 ### Backend and API
 
 - Keep HTTP contracts in `schemas.py` and synchronize wire-shape changes with `learnus-app/services/api.ts`.
-- Authenticate with `X-API-Token`. Every resource lookup must enforce the current user's ownership through a direct owner column or parent join.
-- Never persist or log passwords, API tokens, cookies, authorization headers, full personal records, or private transcript content.
+- Native clients authenticate with `X-API-Token`; web clients use the host-only HttpOnly session established by the SSO helper. Never place the native bearer in browser storage. Every resource lookup must enforce the current user's ownership through a direct owner column or parent join.
+- Never persist passwords or log passwords, API tokens, cookies, authorization headers, full personal records, or private transcript content. Persist tokens or Moodle cookies only where the existing authentication or worker contract requires them; do not add credential copies to unrelated records.
 - Add a pytest regression for new behavior. Reuse the in-memory database and dependency overrides in `tests/conftest.py`.
 
 ### Database
@@ -68,7 +68,7 @@ Safe backend and worker environment keys are listed in `.env.example`. Never cop
 - Migrations must be idempotent and safe for existing PostgreSQL data. Do not rename/drop/backfill destructively without an explicit rollout and recovery plan.
 - Make transaction boundaries explicit; never keep a transaction open across remote requests or long media processing.
 
-### Mobile app
+### Expo app
 
 - Preserve strict TypeScript and the existing single-quote/semicolon style.
 - Reuse theme tokens, shared components, contexts, and service helpers before adding equivalents.

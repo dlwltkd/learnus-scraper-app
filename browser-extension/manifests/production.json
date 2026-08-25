@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "LearnUs Connect",
+  "version": "0.1.0",
+  "description": "Connect a completed LearnUs SSO session to LearnUs Connect.",
+  "minimum_chrome_version": "109",
+  "incognito": "not_allowed",
+  "permissions": [
+    "cookies"
+  ],
+  "host_permissions": [
+    "https://ys.learnus.org/*",
+    "https://luconnect.dlwltkd.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "LearnUs Connect",
+    "default_popup": "popup.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}

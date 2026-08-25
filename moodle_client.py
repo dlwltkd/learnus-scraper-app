@@ -4,8 +4,47 @@ import logging
 import re
 import time
 import html as html_lib
-from urllib.parse import urljoin
+from urllib.parse import parse_qs, urljoin, urlparse
 from datetime import datetime
+
+
+def _origin(url):
+    """Return a normalized origin tuple, or None for a malformed URL."""
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not parsed.scheme or not hostname:
+            return None
+        port = parsed.port
+    except ValueError:
+        return None
+
+    if port is None:
+        port = 443 if parsed.scheme.lower() == "https" else 80
+    return parsed.scheme.lower(), hostname.lower(), port
+
+
+class _OriginBoundSession(requests.Session):
+    """Never attach Moodle cookies outside the client's exact base origin."""
+
+    def __init__(self, base_url):
+        super().__init__()
+        self._allowed_origin = _origin(base_url)
+
+    def _strip_off_origin_cookies(self, prepared_request):
+        if _origin(prepared_request.url) != self._allowed_origin:
+            prepared_request.headers.pop("Cookie", None)
+
+    def prepare_request(self, request):
+        prepared = super().prepare_request(request)
+        self._strip_off_origin_cookies(prepared)
+        return prepared
+
+    def send(self, request, **kwargs):
+        # Redirect handling prepares requests internally instead of calling
+        # prepare_request(), so enforce the boundary again at the final egress point.
+        self._strip_off_origin_cookies(request)
+        return super().send(request, **kwargs)
 
 class MoodleClient:
     def __init__(self, base_url, username=None, password=None, service="moodle_mobile_app", session_file=None, cookies=None):
@@ -17,7 +56,8 @@ class MoodleClient:
         self.user_id = None
         self.logger = logging.getLogger(__name__)
         
-        self.session = requests.Session()
+        self._base_origin = _origin(base_url)
+        self.session = _OriginBoundSession(base_url)
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         })
@@ -32,7 +72,19 @@ class MoodleClient:
     def set_cookies(self, cookies, sesskey=None):
         self.cookies = cookies
         self.sesskey = sesskey
-        self.session.cookies.update(self.cookies)
+        # The domain keeps requests from treating these as global cookies. The session's
+        # egress guard additionally blocks sibling subdomains and scheme downgrades.
+        hostname = urlparse(self.base_url).hostname
+        secure = self._base_origin is not None and self._base_origin[0] == "https"
+        self.session.cookies.clear()
+        for name, value in self.cookies.items():
+            self.session.cookies.set(
+                str(name),
+                str(value),
+                domain=hostname,
+                path="/",
+                secure=secure,
+            )
         if not self.sesskey:
             self.refresh_sesskey()
             
@@ -75,9 +127,42 @@ class MoodleClient:
     def is_session_valid(self):
         try:
             res = self.session.get(f"{self.base_url}/my/", timeout=10, allow_redirects=True)
-            return "login" not in res.url
+            return (
+                res.status_code == 200
+                and self._is_base_origin_url(res.url)
+                and "login/logout.php" in (res.text or "")
+            )
         except Exception:
             return False
+
+    def _is_base_origin_url(self, url):
+        return self._base_origin is not None and _origin(url) == self._base_origin
+
+    def _response_path(self, response):
+        """A diagnostic location that cannot include query-string credentials."""
+        if not self._is_base_origin_url(response.url):
+            return "off-origin"
+        return urlparse(response.url).path or "/"
+
+    def _query_id(self, url, expected_path, parameter):
+        if not self._is_base_origin_url(url):
+            return None
+        parsed = urlparse(url)
+        if parsed.path.rstrip("/") != expected_path.rstrip("/"):
+            return None
+        values = parse_qs(parsed.query).get(parameter, [])
+        if len(values) != 1 or not values[0].isdigit():
+            return None
+        value = int(values[0])
+        return value if value > 0 else None
+
+    def _linked_query_id(self, html, expected_path, parameter):
+        for raw_href in re.findall(r'href=["\']([^"\']+)["\']', html or "", re.IGNORECASE):
+            href = html_lib.unescape(raw_href)
+            value = self._query_id(urljoin(self.base_url, href), expected_path, parameter)
+            if value is not None:
+                return value
+        return None
 
     def refresh_sesskey(self):
         try:
@@ -120,108 +205,91 @@ class MoodleClient:
 
     def get_user_id(self):
         """
-        Scrapes dashboard to find user's Moodle ID/Profile. 
-        Used to uniquely identify user from session.
+        Derive the authenticated account's canonical Moodle ID.
+
+        Every source must remain on the configured Moodle origin. If LearnUs changes its
+        markup and none of the canonical sources match, authentication fails instead of
+        inventing an identity from session material.
         """
-        # Strategy 0: Check Grade Report for user link (Most Reliable)
+        # The overview's course-user links consistently identify the current student.
         try:
             url = f"{self.base_url}/grade/report/overview/index.php"
             res = self.session.get(url, timeout=10)
             self.logger.info(
-                "Grade report scrape URL: %s (Status: %s, Content-Type: %s, Length: %s)",
-                res.url,
+                "Grade report identity lookup: path=%s status=%s content_type=%s length=%s",
+                self._response_path(res),
                 res.status_code,
                 res.headers.get("content-type", ""),
                 len(res.text or ""),
             )
-            if res.status_code == 200:
-                self.logger.info(
-                    "Grade report markers: course_user=%s user_param=%s login=%s",
-                    "course/user.php" in res.text,
-                    "user=" in res.text,
-                    "login" in res.url.lower() or "login" in res.text[:2000].lower(),
+            if res.status_code == 200 and self._is_base_origin_url(res.url):
+                user_id = self._linked_query_id(
+                    res.text,
+                    "/course/user.php",
+                    "user",
                 )
-                match = re.search(r'href="[^"]*course/user\.php\?.*?user=(\d+)', res.text)
-                if match:
-                    self.logger.info(f"Found UserID via Grade Report: {match.group(1)}")
-                    return int(match.group(1))
+                if user_id is not None:
+                    self.logger.info("Found canonical user id via grade report")
+                    return user_id
                 self.logger.warning("Grade report loaded but no course/user.php user id matched")
-                self.logger.info(f"Grade report HTML prefix: {(res.text or '')[:1200]!r}")
             else:
-                self.logger.warning(f"Grade report returned non-200 status: {res.status_code}")
-        except Exception as e:
-            self.logger.warning(f"Strategy 0 (Grade Report) failed: {e}")
+                self.logger.warning("Grade report identity lookup left the LearnUs origin or failed")
+        except Exception:
+            self.logger.warning("Grade report identity lookup failed")
 
         try:
             res = self.session.get(f"{self.base_url}/my/", timeout=10)
-            self.logger.info(f"Dashboard scrape URL: {res.url} (Status: {res.status_code})")
-            
-            if "login.php" in res.url:
-                self.logger.warning("get_user_id redirected to login page")
+            self.logger.info(
+                "Dashboard identity lookup: path=%s status=%s",
+                self._response_path(res),
+                res.status_code,
+            )
+            if res.status_code != 200 or not self._is_base_origin_url(res.url):
+                self.logger.warning("Dashboard identity lookup left the LearnUs origin or failed")
                 return None
 
-            # Strategy 1: Look for Profile Link
-            # It might appear multiple times, e.g. user/profile.php?id=12345
-            match = re.search(r'user/profile\.php\?id=(\d+)', res.text)
-            if match: 
-                self.logger.info(f"Found UserID via profile link: {match.group(1)}")
-                return int(match.group(1))
-
-            # Strategy 2: Look for 'data-userid' attribute in body or other tags
-            match = re.search(r'data-userid="(\d+)"', res.text)
+            # Moodle's page bootstrap describes the current user, unlike arbitrary
+            # profile links elsewhere in course content.
+            match = re.search(r'"userid"\s*:\s*(\d+)', res.text or "")
             if match:
-                self.logger.info(f"Found UserID via data-userid: {match.group(1)}")
-                return int(match.group(1))
+                user_id = int(match.group(1))
+                if user_id > 0:
+                    self.logger.info("Found canonical user id via Moodle page config")
+                    return user_id
 
-            # Strategy 3: Look for JavaScript 'userid' config
-            match = re.search(r'"userid":\s*(\d+)', res.text)
+            match = re.search(
+                r'<body\b[^>]*\bdata-userid=["\'](\d+)["\']',
+                res.text or "",
+                re.IGNORECASE,
+            )
             if match:
-                self.logger.info(f"Found UserID via JS config: {match.group(1)}")
-                return int(match.group(1))
-
-            # Strategy 4 (Fallback): Try to get from header-user-profile URL if present
-            # <a href="https://ys.learnus.org/user/profile.php?id=..." class="...">
-            match = re.search(r'href=".*?/user/profile\.php\?id=(\d+)"', res.text)
-            if match:
-                self.logger.info(f"Found UserID via generic profile link: {match.group(1)}")
-                return int(match.group(1))
+                user_id = int(match.group(1))
+                if user_id > 0:
+                    self.logger.info("Found canonical user id via dashboard body")
+                    return user_id
 
             self.logger.warning("UserID not found on Dashboard. Attempting to fetch Profile page directly...")
-            
-            # Strategy 5 (Deep Scan): Fetch the profile page explicitly
-            # We don't know the ID, but typical Moodle allows /user/profile.php without ID to redirect to self? 
-            # OR we can try /user/preferences.php which usually links back to profile
-            
-            # 5a. Try preferences page for links
+
             pref_res = self.session.get(f"{self.base_url}/user/preferences.php", timeout=10)
-            if pref_res.status_code == 200:
-                 match = re.search(r'user/profile\.php\?id=(\d+)', pref_res.text)
-                 if match:
-                     self.logger.info(f"Found UserID via Preferences page: {match.group(1)}")
-                     return int(match.group(1))
+            if pref_res.status_code == 200 and self._is_base_origin_url(pref_res.url):
+                user_id = self._linked_query_id(
+                    pref_res.text,
+                    "/user/profile.php",
+                    "id",
+                )
+                if user_id is not None:
+                    self.logger.info("Found canonical user id via preferences")
+                    return user_id
 
-            # 5b. Try accessing /user/profile.php directly to see if it redirects to ?id=...
             prof_res = self.session.get(f"{self.base_url}/user/profile.php", allow_redirects=True, timeout=10)
-            self.logger.info(f"Profile redirect URL: {prof_res.url}")
-            match = re.search(r'id=(\d+)', prof_res.url)
-            if match:
-                self.logger.info(f"Found UserID via Profile Redirect: {match.group(1)}")
-                return int(match.group(1))
+            user_id = self._query_id(prof_res.url, "/user/profile.php", "id")
+            if user_id is not None:
+                self.logger.info("Found canonical user id via profile redirect")
+                return user_id
 
-            # Strategy 6 (Last Resort): Hash the sesskey to create a consistent pseudo-ID
-            # If we are here, we are authenticated (dashboard loaded), just can't find the ID.
-            # We need *some* ID to store in the DB.
-            if self.sesskey:
-                pseudo_id = abs(hash(self.sesskey)) % 100000000
-                self.logger.warning(f"Could not find real UserID. Using pseudo-ID from sesskey: {pseudo_id}")
-                return pseudo_id
-
-            self.logger.error("FAILED to find UserID in dashboard HTML")
-            # Log a larger chunk of HTML to debug structure
-            self.logger.debug(f"HTML Snippet: {res.text[:4000]}...") 
-            
-        except Exception as e: 
-            self.logger.error(f"get_user_id scraping error: {e}")
+            self.logger.error("Canonical user id was not present in authenticated Moodle pages")
+        except Exception:
+            self.logger.error("Canonical user id lookup failed")
         return None
 
     def get_courses(self):

@@ -1,12 +1,33 @@
 import os
-from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Depends, Header, Request, BackgroundTasks, Response
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import APIKeyHeader
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport, Job, PushToken, NotificationHistory, AIUsageLog, FlashcardDeck, Flashcard, FileResource
+from database import init_db, User, Course, Assignment, VOD, Board, Post, VodTranscript, LoginDebugReport, Job, PushToken, NotificationHistory, AIUsageLog, FlashcardDeck, Flashcard, FileResource, WebSession
 from moodle_client import MoodleClient
+from auth_service import (
+    ConsumedWebLoginTicket,
+    ExpiredWebLoginTicket,
+    InvalidMoodleSession,
+    InvalidWebLoginTicket,
+    allowed_web_origins,
+    authenticate_web_session,
+    clear_web_session_cookie,
+    consume_web_login_ticket,
+    hash_secret,
+    has_active_web_session,
+    issue_web_login_ticket,
+    set_web_session_cookie,
+    upsert_moodle_user,
+    verify_moodle_cookie_session,
+    web_login_ticket_ttl_seconds,
+    web_session_cookie_name,
+)
 from slowapi import Limiter
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
@@ -25,6 +46,8 @@ from schemas import (
     CourseActiveUpdate,
     CourseResponse,
     DashboardOverviewResponse,
+    ExtensionCookieExchangeRequest,
+    ExtensionTicketCompleteRequest,
     FlashcardDeckResponse,
     GenerateFlashcardsRequest,
     BrainChatRequest,
@@ -54,10 +77,13 @@ SessionLocal = None if os.getenv("TESTING") else init_db()
 # --- Rate limiting (per-IP + per-user) ---
 
 def _get_user_key(request: Request) -> str:
-    """Rate limit key: use authenticated user token if available, else IP."""
+    """Rate limit by a credential digest when available, otherwise by IP."""
     token = request.headers.get("X-API-Token")
     if token:
-        return f"user:{token}"
+        return f"native:{hash_secret(token)}"
+    browser_session = request.cookies.get(web_session_cookie_name())
+    if browser_session:
+        return f"web:{hash_secret(browser_session)}"
     return get_remote_address(request)
 
 # A global ceiling applies to every route, so a new endpoint is limited the day it is
@@ -90,6 +116,27 @@ app = FastAPI(title="LearnUs Connect API (Beta)")
 app.state.limiter = limiter
 # Required for default_limits to apply to undecorated routes.
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=sorted(allowed_web_origins()),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-API-Token", "X-Requested-With"],
+)
+
+
+@app.middleware("http")
+async def require_same_origin_for_browser_mutations(request: Request, call_next):
+    """Cookie-authenticated writes must originate from an approved web origin."""
+    if (
+        request.method not in {"GET", "HEAD", "OPTIONS"}
+        and not request.headers.get("X-API-Token")
+        and request.cookies.get(web_session_cookie_name())
+    ):
+        origin = request.headers.get("Origin", "").rstrip("/")
+        if origin not in allowed_web_origins():
+            return JSONResponse(status_code=403, content={"detail": "Invalid request origin"})
+    return await call_next(request)
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
@@ -98,6 +145,19 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         status_code=429,
         content={"detail": "요청이 너무 많아요. 잠시 후 다시 시도해주세요."},
     )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    # FastAPI's default validation payload includes the rejected input. Redact the two
+    # endpoints whose inputs are live cookies or one-time secrets.
+    if request.url.path in {"/auth/extension/exchange", "/auth/extension/complete"}:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Invalid authentication request"},
+            headers={"Cache-Control": "no-store"},
+        )
+    return await request_validation_exception_handler(request, exc)
 
 ENABLE_DEBUG = os.getenv("ENABLE_DEBUG", "false").lower() == "true" 
 
@@ -121,18 +181,39 @@ def get_db():
 
 api_key_header = APIKeyHeader(name="X-API-Token", auto_error=False)
 
-def get_current_user(token: str = Depends(api_key_header), db: Session = Depends(get_db)):
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing Authentication Token")
-    user = db.query(User).filter(User.api_token == token).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid Authentication Token")
+
+def get_current_user(
+    request: Request,
+    token: str = Depends(api_key_header),
+    db: Session = Depends(get_db),
+):
+    # A supplied native credential always wins. In particular, a bad header must not
+    # silently fall back to a valid browser cookie and hide a client configuration bug.
+    native_header_present = "X-API-Token" in request.headers
+    if native_header_present:
+        if not token:
+            raise HTTPException(status_code=401, detail="Invalid Authentication Token")
+        user = db.query(User).filter(User.api_token == token).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid Authentication Token")
+        request.state.auth_method = "native"
+        request.state.web_session_id = None
+    else:
+        raw_session = request.cookies.get(web_session_cookie_name())
+        if not raw_session:
+            raise HTTPException(status_code=401, detail="Missing Authentication Token")
+        authenticated = authenticate_web_session(db, raw_session)
+        if authenticated is None:
+            raise HTTPException(status_code=401, detail="Invalid Browser Session")
+        browser_session, user = authenticated
+        request.state.auth_method = "web"
+        request.state.web_session_id = browser_session.id
 
     # Tokens age out. Without this a token never stopped working once issued, so a copy
     # taken from a device stayed valid forever. The client already treats 401 as a
     # session expiry and re-runs the SSO flow, so this surfaces as a normal re-login.
     import spend_limits
-    if spend_limits.API_TOKEN_TTL_DAYS > 0:
+    if token and spend_limits.API_TOKEN_TTL_DAYS > 0:
         issued = user.token_issued_at
         if issued is None:
             # Pre-expiry token: stamp it now rather than reject a user who did nothing
@@ -751,44 +832,134 @@ def clear_notifications(user: User = Depends(get_current_user), db: Session = De
     db.commit()
     return {"status": "success"}
 
+
+@app.post("/auth/extension/exchange")
+@limiter.limit("5/minute", key_func=get_remote_address)
+def exchange_extension_cookies(
+    request: Request,
+    response: Response,
+    payload: ExtensionCookieExchangeRequest,
+    db: Session = Depends(get_db),
+):
+    """Validate explicitly captured SSO cookies and mint a one-time web ticket."""
+    try:
+        verified = verify_moodle_cookie_session(payload.cookies)
+        user = upsert_moodle_user(
+            db,
+            verified.user_id,
+            payload.cookies,
+            issue_native_token=False,
+        )
+        raw_ticket, _ = issue_web_login_ticket(db, user)
+        db.commit()
+    except InvalidMoodleSession:
+        db.rollback()
+        raise HTTPException(status_code=401, detail="Invalid LearnUs session")
+    except Exception:
+        db.rollback()
+        logger.error("Extension SSO exchange failed after session validation")
+        raise HTTPException(status_code=500, detail="Could not create web login")
+
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "status": "success",
+        "ticket": raw_ticket,
+        "expires_in": web_login_ticket_ttl_seconds(),
+    }
+
+
+@app.post("/auth/extension/complete")
+@limiter.limit("10/minute", key_func=get_remote_address)
+def complete_extension_login(
+    request: Request,
+    response: Response,
+    payload: ExtensionTicketCompleteRequest,
+    db: Session = Depends(get_db),
+):
+    """Consume one extension ticket and establish a host-only browser session."""
+    origin = request.headers.get("Origin", "").rstrip("/")
+    if origin not in allowed_web_origins():
+        raise HTTPException(status_code=403, detail="Invalid request origin")
+    try:
+        raw_session, _, user = consume_web_login_ticket(db, payload.ticket)
+        db.commit()
+    except ExpiredWebLoginTicket:
+        db.rollback()
+        raise HTTPException(status_code=410, detail="Web login ticket expired")
+    except ConsumedWebLoginTicket:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Web login ticket already used")
+    except InvalidWebLoginTicket:
+        db.rollback()
+        raise HTTPException(status_code=401, detail="Invalid web login ticket")
+    except Exception:
+        db.rollback()
+        logger.error("Web login completion failed")
+        raise HTTPException(status_code=500, detail="Could not complete web login")
+
+    set_web_session_cookie(response, raw_session)
+    response.headers["Cache-Control"] = "no-store"
+    return {"status": "success", "username": user.username}
+
+
+@app.get("/auth/web-session")
+def get_web_session(response: Response, user: User = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "no-store"
+    return {"authenticated": True, "username": user.username}
+
+
 @app.post("/auth/logout")
 @limiter.limit("20/minute")
-def logout(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def logout(
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """
-    Revoke this account's API token.
+    Revoke only the credential used for this request.
 
-    Signing out used to be purely local — the app forgot the token while the server kept
-    honouring it forever. Anything that had copied it stayed authenticated. Clearing the
-    token server-side is what makes signing out mean something, and it is the lever for
-    revoking a token believed to be leaked.
-
-    The stored Moodle session is cleared with it: it is a credential this account no
-    longer needs held on its behalf.
+    The shared Moodle session is cleared only after the account has no remaining native
+    token or browser session.
     """
-    user.api_token = None
-    user.token_issued_at = None
-    user.moodle_cookies = None
+    # Serialize all logout decisions for this account. Without the row lock, two devices
+    # could each observe the other's still-active credential, preserve Moodle cookies,
+    # then both revoke and leave a live upstream credential stored with no login left.
+    user = (
+        db.query(User)
+        .filter(User.id == user.id)
+        .populate_existing()
+        .with_for_update()
+        .one()
+    )
+    if getattr(request.state, "auth_method", None) == "web":
+        browser_session = db.query(WebSession).filter(
+            WebSession.id == request.state.web_session_id,
+            WebSession.user_id == user.id,
+        ).first()
+        if browser_session:
+            browser_session.revoked_at = datetime.now()
+        db.flush()
+        if not user.api_token and not has_active_web_session(db, user.id):
+            user.moodle_cookies = None
+        clear_web_session_cookie(response)
+    else:
+        user.api_token = None
+        user.token_issued_at = None
+        db.flush()
+        if not has_active_web_session(db, user.id):
+            user.moodle_cookies = None
     db.commit()
+    response.headers["Cache-Control"] = "no-store"
     return {"status": "success"}
 
 
 @app.post("/auth/sync-session")
 @limiter.limit("10/minute", key_func=get_remote_address)
 def sync_session(request: Request, req: SessionSyncRequest, db: Session = Depends(get_db)):
-    cookies = {}
     if not req.cookies:
         logger.error("No cookies provided in request")
         raise HTTPException(status_code=400, detail="No cookies provided")
-
-    # Cookie values are live Moodle sessions. Logging them puts a working credential in
-    # the log file, so only the key names are recorded.
-    for item in req.cookies.split(';'):
-        if '=' in item:
-            k, v = item.strip().split('=', 1)
-            cookies[k.strip()] = v.strip()
-    logger.info(f"Session sync: cookie keys={list(cookies.keys())}")
-
-    client = MoodleClient("https://ys.learnus.org", cookies=cookies)
 
     # The account is derived from the session, never from the request body.
     #
@@ -797,16 +968,11 @@ def sync_session(request: Request, req: SessionSyncRequest, db: Session = Depend
     # working API token for that account — an unauthenticated takeover of any user whose
     # Moodle ID could be guessed. A claimed id is now only ever compared, never trusted.
     try:
-        res = client.session.get("https://ys.learnus.org/my/", timeout=15)
-        if "login" in res.url:
-            logger.warning("Session sync: cookies rejected by LearnUs")
-    except Exception as e:
-        logger.error(f"Network error during auth check: {e}")
-
-    uid = client.get_user_id()
-    if not uid:
+        verified = verify_moodle_cookie_session(req.cookies)
+    except InvalidMoodleSession:
         logger.error("Session sync rejected: could not derive a user from the session")
         raise HTTPException(status_code=401, detail="Invalid Session or Could not verify user")
+    uid = verified.user_id
 
     if req.user_id and str(req.user_id) != str(uid):
         # Either a stale client or someone claiming an account the session does not own.
@@ -814,24 +980,13 @@ def sync_session(request: Request, req: SessionSyncRequest, db: Session = Depend
             f"Session sync: claimed user_id={req.user_id!r} does not match session user {uid!r} — using session"
         )
     
-    # Use moodle_uid as username: "moodle_12345"
-    username = f"moodle_{uid}"
-    
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
-        user = User(username=username, moodle_username=str(uid),
-                    api_token=str(uuid.uuid4()), token_issued_at=datetime.now())
-        db.add(user)
-    else:
-        if not user.api_token: user.api_token = str(uuid.uuid4())
-        # Re-authenticating renews the clock. The token value is kept so other devices
-        # signed in to the same account are not silently kicked out.
-        user.token_issued_at = datetime.now()
-    
-    # Store raw cookie string to preserve all cookies including keyless tokens (e.g. device UUID)
-    user.moodle_cookies = req.cookies
-    user.session_expired_notified = False  # Reset — user just re-authenticated
-    db.commit()
+    try:
+        user = upsert_moodle_user(db, uid, req.cookies, issue_native_token=True)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.error("Could not persist verified Moodle session")
+        raise HTTPException(status_code=500, detail="Could not establish session")
     db.refresh(user)
 
     # Auto-sync courses list immediately to ensure DB is populated

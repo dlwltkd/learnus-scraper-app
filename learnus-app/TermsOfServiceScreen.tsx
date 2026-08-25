@@ -47,7 +47,7 @@ export default function TermsOfServiceScreen() {
                     <Text style={styles.headerTitle}>
                         {language === 'ko' ? '이용약관' : 'Terms of Service'}
                     </Text>
-                    <Text style={styles.lastUpdated}>Last updated: 2026-01-16</Text>
+                    <Text style={styles.lastUpdated}>Last updated: 2026-08-25</Text>
                 </View>
 
                 {/* Language Toggle */}
@@ -71,9 +71,9 @@ export default function TermsOfServiceScreen() {
                         {/* Korean Content */}
                         <View style={styles.introBox}>
                             <Text style={styles.introText}>
-                                "LearnUs Connect" (이하 "앱")를 이용해 주셔서 감사합니다.
-                                본 약관은 사용자가 앱을 이용함에 있어 필요한 권리, 의무 및 책임사항을 규정합니다.
-                                앱을 설치하고 이용함으로써 귀하는 본 약관에 동의하게 됩니다.
+                                LearnUs Connect(이하 "서비스")를 이용해 주셔서 감사합니다. 본 약관은 모바일 앱,
+                                웹 서비스와 LearnUs Connect 브라우저 확장 프로그램에 적용됩니다. 서비스를
+                                이용하면 본 약관에 동의한 것으로 봅니다.
                             </Text>
                         </View>
 
@@ -81,7 +81,9 @@ export default function TermsOfServiceScreen() {
                         <View style={styles.group}>
                             <PolicySection title="1. 서비스의 목적 및 성격" styles={styles}>
                                 <Text style={styles.policyText}>
-                                    본 앱은 연세대학교의 공식 앱이 아니며, 학생들이 학교 'LearnUs' 시스템의 공지사항, 과제, 강의 콘텐츠 등을 모바일에서 편리하게 확인할 수 있도록 돕기 위해 개발된 서드파티 유틸리티 앱입니다.
+                                    본 서비스는 연세대학교의 공식 서비스가 아닌 독립적인 서드파티 유틸리티입니다.
+                                    LearnUs의 공지, 과제와 강의 콘텐츠를 동기화하고 사용자가 선택한 알림·AI
+                                    기능을 제공합니다.
                                 </Text>
                             </PolicySection>
                         </View>
@@ -90,14 +92,26 @@ export default function TermsOfServiceScreen() {
                         <View style={styles.group}>
                             <PolicySection title="2. 계정 및 개인정보 관리 (Accounts & Privacy)" styles={styles}>
                                 <BulletPoint
-                                    boldTitle="로그인 정보"
-                                    text="본 앱은 사용자의 연세포털 ID와 비밀번호를 이용하여 LearnUs 시스템에서 데이터를 가져옵니다. 계정 정보는 사용자의 기기(로컬 스토리지)에만 암호화되어 저장되며, 개발자나 외부 서버로 전송되지 않습니다."
+                                    boldTitle="LearnUs 인증"
+                                    text="사용자는 연세대학교의 정상 SSO 화면에서 로그인합니다. 서비스는 로그인 후 생성된 LearnUs 세션 쿠키를 서버로 전송해 사용자를 확인하고 데이터를 동기화하며, 연세포털 비밀번호는 저장하지 않습니다."
                                     styles={styles}
                                     colors={colors}
                                 />
                                 <BulletPoint
-                                    boldTitle="기기 보안 책임"
-                                    text="기기 분실이나 타인의 기기 사용으로 인한 정보 유출에 대한 책임은 전적으로 사용자에게 있습니다."
+                                    boldTitle="브라우저 확장 프로그램"
+                                    text="사용자가 연결 버튼을 누른 경우에만 ys.learnus.org용 쿠키를 LearnUs Connect 서버로 전송합니다. 비밀번호를 읽거나 쿠키를 확장 저장소에 보관하지 않습니다."
+                                    styles={styles}
+                                    colors={colors}
+                                />
+                                <BulletPoint
+                                    boldTitle="서비스 데이터"
+                                    text="인증 세션, 동기화된 학습 정보와 사용자가 요청한 결과는 서버에 보관될 수 있습니다. 자세한 처리 범위와 삭제 방법은 개인정보처리방침을 따릅니다."
+                                    styles={styles}
+                                    colors={colors}
+                                />
+                                <BulletPoint
+                                    boldTitle="보안 책임"
+                                    text="사용자는 자신의 기기와 브라우저 세션을 보호하고 공유 기기에서는 사용 후 로그아웃해야 합니다."
                                     styles={styles}
                                     colors={colors}
                                 />
@@ -109,7 +123,7 @@ export default function TermsOfServiceScreen() {
                             <PolicySection title="3. 서비스의 제공 및 변경" styles={styles}>
                                 <BulletPoint
                                     boldTitle="데이터 정확성"
-                                    text="본 앱은 스크래핑(Scraping) 기술을 사용하여 데이터를 가져오므로, LearnUs 웹사이트의 구조 변경이나 시스템 점검 등으로 인해 데이터가 정확하지 않거나 업데이트가 지연될 수 있습니다."
+                                    text="본 서비스는 스크래핑(Scraping) 기술을 사용하여 데이터를 가져오므로, LearnUs 웹사이트의 구조 변경이나 시스템 점검 등으로 인해 데이터가 정확하지 않거나 업데이트가 지연될 수 있습니다."
                                     styles={styles}
                                     colors={colors}
                                 />
@@ -127,7 +141,7 @@ export default function TermsOfServiceScreen() {
                             <PolicySection title="4. 책임의 한계 (Disclaimers)" styles={styles}>
                                 <BulletPoint
                                     boldTitle="면책 조항"
-                                    text="개발자는 본 앱의 사용으로 인해 발생하는 어떠한 손해(과제 제출 기한 놓침, 데이터 오류 등)에 대해서도 법적 책임을 지지 않습니다. 중요한 학사 일정은 반드시 학교 공식 웹사이트나 공식 앱을 통해 교차 확인하시기 바랍니다."
+                                    text="법령이 허용하는 범위에서 서비스 운영자는 데이터 오류나 지연 등으로 발생한 간접 손해를 책임지지 않습니다. 중요한 학사 일정은 학교 공식 웹사이트나 공식 앱에서 반드시 확인해야 합니다."
                                     styles={styles}
                                     colors={colors}
                                 />
@@ -154,8 +168,8 @@ export default function TermsOfServiceScreen() {
                         {/* English Content */}
                         <View style={styles.introBox}>
                             <Text style={styles.introText}>
-                                "LearnUs Connect" (hereinafter referred to as the "App").
-                                By downloading or using the App, you agree to these Terms of Service.
+                                These Terms apply to the LearnUs Connect mobile app, web service, and browser
+                                extension (the "Service"). By using the Service, you agree to them.
                             </Text>
                         </View>
 
@@ -163,8 +177,9 @@ export default function TermsOfServiceScreen() {
                         <View style={styles.group}>
                             <PolicySection title="1. Nature of Service" styles={styles}>
                                 <Text style={styles.policyText}>
-                                    This App is NOT an official application of Yonsei University.
-                                    It is a third-party utility designed to help students conveniently check announcements, assignments, and lecture contents from the 'LearnUs' system.
+                                    The Service is an independent third-party utility and is not an official Yonsei
+                                    University service. It synchronizes LearnUs announcements, assignments, and lecture
+                                    content and provides optional notification and AI features.
                                 </Text>
                             </PolicySection>
                         </View>
@@ -173,14 +188,26 @@ export default function TermsOfServiceScreen() {
                         <View style={styles.group}>
                             <PolicySection title="2. Accounts & Privacy" styles={styles}>
                                 <BulletPoint
-                                    boldTitle="Login Credentials"
-                                    text="The App uses your Yonsei Portal ID and password to fetch data. Your credentials are stored encrypted locally on your device only and are NEVER transmitted to the developer or any external servers."
+                                    boldTitle="LearnUs Authentication"
+                                    text="You sign in through Yonsei University's normal SSO pages. The Service sends the resulting LearnUs session cookies to its server to verify your identity and synchronize data. It does not store your Yonsei Portal password."
                                     styles={styles}
                                     colors={colors}
                                 />
                                 <BulletPoint
-                                    boldTitle="Device Security"
-                                    text="You are solely responsible for securing your device to prevent unauthorized access to your stored credentials."
+                                    boldTitle="Browser Extension"
+                                    text="The extension sends cookies applicable to ys.learnus.org only after you select Connect. It does not read your password or retain cookies in extension storage."
+                                    styles={styles}
+                                    colors={colors}
+                                />
+                                <BulletPoint
+                                    boldTitle="Service Data"
+                                    text="Authentication sessions, synchronized learning information, and requested results may be stored on the server. The Privacy Policy explains processing and deletion requests."
+                                    styles={styles}
+                                    colors={colors}
+                                />
+                                <BulletPoint
+                                    boldTitle="Security"
+                                    text="You are responsible for protecting your devices and browser sessions and should sign out after using a shared device."
                                     styles={styles}
                                     colors={colors}
                                 />
@@ -192,7 +219,7 @@ export default function TermsOfServiceScreen() {
                             <PolicySection title="3. Service Operation" styles={styles}>
                                 <BulletPoint
                                     boldTitle="Data Accuracy"
-                                    text="As the App relies on web scraping, data may be inaccurate or delayed due to changes in the LearnUs website structure or system maintenance."
+                                    text="As the Service relies on web scraping, data may be inaccurate or delayed due to changes in the LearnUs website structure or system maintenance."
                                     styles={styles}
                                     colors={colors}
                                 />
@@ -210,7 +237,7 @@ export default function TermsOfServiceScreen() {
                             <PolicySection title="4. Disclaimers" styles={styles}>
                                 <BulletPoint
                                     boldTitle="Limitation of Liability"
-                                    text="The developer is NOT responsible for any damages arising from the use of this App, including but not limited to missed assignment deadlines or data errors. Please always double-check important academic schedules on the official website."
+                                    text="To the extent permitted by law, the operator is not responsible for indirect loss caused by data errors, delays, or Service use. Always verify important academic schedules through an official university service."
                                     styles={styles}
                                     colors={colors}
                                 />

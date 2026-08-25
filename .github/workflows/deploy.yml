@@ -28,10 +28,61 @@ jobs:
           TESTING: '1'
         run: pytest tests/ -v --tb=short
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: learnus-app/.nvmrc
+          cache: npm
+          cache-dependency-path: learnus-app/package-lock.json
+
+      - name: Build web client
+        working-directory: learnus-app
+        env:
+          EXPO_NO_TELEMETRY: '1'
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx expo export --platform web
+          test -s dist/index.html
+          grep -R -I -q '/api' dist/_expo/static/js
+          ! grep -R -I -q 'api.dlwltkd.com' dist/_expo/static/js
+          npm audit --omit=dev --audit-level=critical
+
+      - name: Test browser helper
+        working-directory: browser-extension
+        run: |
+          npm test
+          npm run build:production
+
+      - name: Upload web client
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: learnus-app/dist
+          if-no-files-found: error
+          retention-days: 7
+
   deploy-api:
     needs: test
     runs-on: ubuntu-latest
     steps:
+      - name: Download web client
+        uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: web-dist
+
+      - name: Stage web client on Droplet
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          source: 'web-dist/*'
+          target: '/tmp/learnus-web-${{ github.sha }}'
+          strip_components: 1
+          rm: true
+
       - name: Deploy API
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -48,8 +99,38 @@ jobs:
             git pull origin main
             # Prove the checkout is actually the commit that triggered this run.
             test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+
+            web_release="/tmp/learnus-web-${{ github.sha }}"
+            test -s "$web_release/index.html"
+            # Keep old content-addressed assets for tabs left open across a release.
+            if [ -d web-dist/_expo/static ]; then
+              mkdir -p "$web_release/_expo/static"
+              cp -a web-dist/_expo/static/. "$web_release/_expo/static/"
+            fi
+            if [ -d web-dist/assets ]; then
+              mkdir -p "$web_release/assets"
+              cp -a web-dist/assets/. "$web_release/assets/"
+            fi
+            rm -rf web-dist.previous
+            if [ -d web-dist ]; then
+              mv web-dist web-dist.previous
+            fi
+
+            rollback_web() {
+              rm -rf web-dist
+              if [ -d web-dist.previous ]; then
+                mv web-dist.previous web-dist
+              fi
+              docker compose up -d --force-recreate caddy || true
+            }
+            trap rollback_web ERR
+            mv "$web_release" web-dist
             docker compose up -d --no-deps --build api
-            docker compose up -d caddy
+            docker compose up -d --force-recreate caddy
+            docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile
+            curl --fail --silent --show-error http://127.0.0.1:8000/version >/dev/null
+            trap - ERR
+            rm -rf web-dist.previous
 
   deploy-worker:
     runs-on: ubuntu-latest
