@@ -144,25 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: deploy-api
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - uses: dorny/paths-filter@v3
-        id: changes
-        with:
-          filters: |
-            worker:
-              - 'worker.py'
-              - 'scheduler.py'
-              - 'ai_service.py'
-              - 'moodle_client.py'
-              - 'database.py'
-              - 'requirements.txt'
-              - 'Dockerfile'
-
       - name: Rebuild worker
-        if: steps.changes.outputs.worker == 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.DROPLET_HOST }}
@@ -172,6 +154,4 @@ jobs:
             set -euo pipefail
             cd ${{ secrets.DEPLOY_PATH }}
             # The pull happened in deploy-api, which this job depends on.
-            docker compose rm -sf worker || true
-            docker rm -f learnus_worker || true
             docker compose up -d --no-deps --build --force-recreate worker

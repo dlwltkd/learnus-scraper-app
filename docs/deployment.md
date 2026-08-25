@@ -23,7 +23,7 @@ PostgreSQL and the API's direct port are published only on loopback. Do not make
 2. Install the repository Node version, type-check and export Expo Web, and test/package the browser helper.
 3. Upload the static web artifact, SSH to the server, pull `main`, atomically install the web release, rebuild the API, and recreate Caddy.
 4. Validate Caddy and the loopback API health endpoint.
-5. Rebuild the worker when its Python sources, requirements, or Dockerfile changed.
+5. Gracefully rebuild the worker after the API deploy so both services always run the same commit, including after a recovered partial deployment.
 
 The workflow requires these repository secrets:
 
