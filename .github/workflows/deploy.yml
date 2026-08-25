@@ -128,7 +128,15 @@ jobs:
             docker compose up -d --no-deps --build api
             docker compose up -d --force-recreate caddy
             docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile
-            curl --fail --silent --show-error http://127.0.0.1:8000/version >/dev/null
+            api_ready=false
+            for attempt in $(seq 1 30); do
+              if curl --fail --silent http://127.0.0.1:8000/version >/dev/null; then
+                api_ready=true
+                break
+              fi
+              sleep 1
+            done
+            test "$api_ready" = true
             trap - ERR
             rm -rf web-dist.previous
 
