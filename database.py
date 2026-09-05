@@ -43,6 +43,8 @@ class User(Base):
     # Transcription rate limiting
     transcribe_count_today = Column(Integer, default=0)
     transcribe_count_date = Column(String, nullable=True)
+    transcribe_seconds_today = Column(Integer, default=0)
+    transcribe_seconds_date = Column(String, nullable=True)
 
     # Hidden lab settings
     labs_unlocked = Column(Boolean, default=False)
@@ -348,6 +350,14 @@ class LoginDebugReport(Base):
     log_json = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
 
+
+class DailySpendBudget(Base):
+    __tablename__ = 'daily_spend_budgets'
+
+    spend_date = Column(String, primary_key=True)
+    chat_units = Column(Integer, default=0, nullable=False)
+    transcription_units = Column(Integer, default=0, nullable=False)
+
 def init_db(db_url=None):
     if not db_url:
         db_url = os.getenv('DATABASE_URL', 'sqlite:///learnus.db')
@@ -461,6 +471,12 @@ def init_db(db_url=None):
         with engine.connect() as conn:
             conn.execute(text("ALTER TABLE users ADD COLUMN transcribe_count_today INTEGER DEFAULT 0"))
             conn.execute(text("ALTER TABLE users ADD COLUMN transcribe_count_date TEXT"))
+            conn.commit()
+    user_cols = [col['name'] for col in sa_inspect(engine).get_columns('users')]
+    if 'transcribe_seconds_today' not in user_cols:
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN transcribe_seconds_today INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE users ADD COLUMN transcribe_seconds_date TEXT"))
             conn.commit()
 
     # Migration: add hidden lab settings to users. Existing and new users default off.

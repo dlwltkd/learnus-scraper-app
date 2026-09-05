@@ -193,8 +193,7 @@ def upsert_moodle_user(
     user.session_expired_notified = False
 
     if issue_native_token:
-        if not user.api_token:
-            user.api_token = str(uuid.uuid4())
+        user.api_token = str(uuid.uuid4())
         user.token_issued_at = datetime.now()
 
     db.flush()

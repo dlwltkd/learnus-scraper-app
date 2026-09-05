@@ -1,5 +1,10 @@
 import os
 import subprocess
+import selectors
+import signal
+import ipaddress
+import socket
+from urllib.parse import urlsplit
 import tempfile
 import glob
 import time
@@ -38,6 +43,23 @@ TRANSCRIPT_CONTEXT_CHARS = 80000
 # what buys precision instead: 120s gives ±2 minutes, enough to jump to the right part of
 # a lecture, at no extra cost — billing is per minute of audio, not per request.
 TRANSCRIBE_CHUNK_SECONDS = 120
+MAX_MEDIA_DURATION_SECONDS = int(os.getenv("MAX_MEDIA_DURATION_SECONDS", "14400"))
+FFMPEG_WALL_TIMEOUT_SECONDS = int(os.getenv("FFMPEG_WALL_TIMEOUT_SECONDS", "1800"))
+FFMPEG_NETWORK_TIMEOUT_US = int(os.getenv("FFMPEG_NETWORK_TIMEOUT_US", "30000000"))
+FFMPEG_PROTOCOLS = "http,https,tcp,tls,crypto"
+
+
+def _validate_remote_media_url(input_url: str) -> None:
+    parsed = urlsplit(input_url)
+    if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("Media URL must be an authenticated HTTPS resource")
+    addresses = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+    if not addresses:
+        raise ValueError("Media host could not be resolved")
+    for address in addresses:
+        ip = ipaddress.ip_address(address[4][0])
+        if not ip.is_global:
+            raise ValueError("Media host resolves to a non-public address")
 
 # Text model for every chat/summary/flashcard call.
 #
@@ -218,11 +240,11 @@ Rules:
                 "_usage": {"model": TEXT_MODEL, **usage},
             }
 
-        except json.JSONDecodeError as e:
-            print(f"JSON Parse Error for {course_name}: {e}")
+        except json.JSONDecodeError:
+            logger.warning("Summary provider returned invalid JSON")
             return self._fallback_summary(course_name, status, urgent_items, upcoming_items)
-        except Exception as e:
-            print(f"Error generating summary for {course_name}: {e}")
+        except Exception as exc:
+            logger.warning("Summary generation failed (%s)", type(exc).__name__)
             return self._fallback_summary(course_name, status, urgent_items, upcoming_items)
 
     def _fallback_summary(self, course_name, status="calm", urgent_items=None, upcoming_items=None):
@@ -240,11 +262,14 @@ Rules:
 
     def _probe_duration_seconds(self, input_url: str) -> float | None:
         """Try to fetch media duration via ffprobe. Returns None when unavailable."""
+        _validate_remote_media_url(input_url)
         try:
             result = subprocess.run(
                 [
                     "ffprobe",
                     "-v", "error",
+                    "-protocol_whitelist", FFMPEG_PROTOCOLS,
+                    "-rw_timeout", str(FFMPEG_NETWORK_TIMEOUT_US),
                     "-show_entries", "format=duration",
                     "-of", "default=noprint_wrappers=1:nokey=1",
                     input_url,
@@ -259,16 +284,23 @@ Rules:
             if not value:
                 return None
             dur = float(value)
+            if dur > MAX_MEDIA_DURATION_SECONDS:
+                raise ValueError("Media exceeds the maximum duration")
             return dur if dur > 0 else None
+        except ValueError:
+            raise
         except Exception:
             return None
 
     def _extract_audio_with_progress(self, input_url: str, output_mp3_path: str, emit):
+        _validate_remote_media_url(input_url)
         duration_seconds = self._probe_duration_seconds(input_url)
         last_pct = -1
 
         cmd = [
             "ffmpeg", "-v", "error", "-y",
+            "-protocol_whitelist", FFMPEG_PROTOCOLS,
+            "-rw_timeout", str(FFMPEG_NETWORK_TIMEOUT_US),
             "-i", input_url,
             "-vn",
             "-acodec", "libmp3lame",
@@ -284,10 +316,22 @@ Rules:
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
+            start_new_session=True,
         )
         try:
             if proc.stdout:
-                for line in proc.stdout:
+                selector = selectors.DefaultSelector()
+                selector.register(proc.stdout, selectors.EVENT_READ)
+                deadline = time.monotonic() + FFMPEG_WALL_TIMEOUT_SECONDS
+                while proc.poll() is None:
+                    if time.monotonic() >= deadline:
+                        raise subprocess.TimeoutExpired(cmd, FFMPEG_WALL_TIMEOUT_SECONDS)
+                    events = selector.select(timeout=1)
+                    if not events:
+                        continue
+                    line = proc.stdout.readline()
+                    if not line:
+                        continue
                     line = line.strip()
                     if line.startswith("out_time_ms=") and duration_seconds:
                         try:
@@ -301,9 +345,11 @@ Rules:
                             pass
                     elif line == "progress=end":
                         emit("extracting_audio", 100)
-            ret = proc.wait(timeout=900)
+                selector.close()
+            ret = proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=5)
             raise RuntimeError("ffmpeg audio extraction timed out")
 
         stderr_text = ""
@@ -721,5 +767,5 @@ Transcript:
             logger.info(f"summarize_text usage: {usage}")
             return response.choices[0].message.content.strip()
         except Exception as e:
-            logger.error(f"Error summarizing text: {e}")
+            logger.error(f"Error summarizing text type={type(e).__name__}")
             return text[:max_length]

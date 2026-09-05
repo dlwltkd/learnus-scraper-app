@@ -22,7 +22,7 @@ import type { ColorScheme, TypographyType, LayoutType } from './constants/theme'
 import { useTheme } from './context/ThemeContext';
 import { BlinkingCursor, SelectableMarkdown, createMarkdownStyles } from './AIChatModal';
 import VodWebViewer from './components/VodWebViewer';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { secureStorage } from './services/secureStorage';
 import {
     chatWithCourseBrain,
     filePageSource,
@@ -226,7 +226,7 @@ export default function CourseBrainChatScreen() {
             await Linking.openURL(url);
             return;
         }
-        const cookies = (await AsyncStorage.getItem('userToken')) || '';
+        const cookies = (await secureStorage.getItem('userToken')) || '';
         setPlayer({ url, title: citation.title, cookies, startAt: seconds });
     }, [itemFor]);
 

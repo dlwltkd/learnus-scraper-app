@@ -35,6 +35,9 @@ from slowapi import Limiter
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from limits import parse as parse_rate_limit
+from limits.storage import storage_from_string
+from limits.strategies import FixedWindowRateLimiter
 import logging
 import uuid
 import json
@@ -80,19 +83,23 @@ SessionLocal = None if os.getenv("TESTING") else init_db()
 # --- Rate limiting (per-IP + per-user) ---
 
 def _get_user_key(request: Request) -> str:
-    """Rate limit by a credential digest when available, otherwise by IP."""
-    token = request.headers.get("X-API-Token")
-    if token:
-        return f"native:{hash_secret(token)}"
-    browser_session = request.cookies.get(web_session_cookie_name())
-    if browser_session:
-        return f"web:{hash_secret(browser_session)}"
-    return get_remote_address(request)
+    """Use a verified account identity when available; unverified traffic stays IP keyed."""
+    user_id = getattr(request.state, "rate_limit_user_id", None)
+    return f"user:{user_id}" if user_id is not None else f"ip:{get_remote_address(request)}"
 
 # A global ceiling applies to every route, so a new endpoint is limited the day it is
 # written rather than whenever someone remembers to decorate it. Explicit @limiter.limit
 # decorators still apply on top for the expensive paths.
-limiter = Limiter(key_func=_get_user_key, default_limits=["120/minute"])
+rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI", "memory://")
+limiter = Limiter(
+    key_func=_get_user_key,
+    default_limits=["120/minute"],
+    application_limits=["120/minute"],
+    storage_uri=rate_limit_storage_uri,
+    key_style="endpoint",
+)
+ip_ceiling = FixedWindowRateLimiter(storage_from_string(rate_limit_storage_uri))
+ip_ceiling_rate = parse_rate_limit(os.getenv("IP_RATE_LIMIT", "120/minute"))
 
 # ============================================================
 # APP VERSION — Reads from learnus-app/app.json automatically.
@@ -126,6 +133,17 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-API-Token", "X-Requested-With"],
 )
+
+
+@app.middleware("http")
+async def enforce_application_ip_ceiling(request: Request, call_next):
+    """Apply one pre-authentication ceiling across every route and API process."""
+    if not ip_ceiling.hit(ip_ceiling_rate, f"ip:{get_remote_address(request)}"):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "요청이 너무 많아요. 잠시 후 다시 시도해주세요."},
+        )
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -211,6 +229,8 @@ def get_current_user(
         browser_session, user = authenticated
         request.state.auth_method = "web"
         request.state.web_session_id = browser_session.id
+
+    request.state.rate_limit_user_id = user.id
 
     # Tokens age out. Without this a token never stopped working once issued, so a copy
     # taken from a device stayed valid forever. The client already treats 401 as a
@@ -298,7 +318,7 @@ def _require_course_brain(course: Course):
         raise HTTPException(status_code=403, detail="Course brain is not enabled for this course")
 
 def _require_auto_watch_enabled(user: User):
-    if not user.auto_watch_enabled:
+    if not user.labs_unlocked or not user.auto_watch_enabled:
         raise HTTPException(status_code=403, detail="Auto watch is disabled")
 
 @app.post("/auth/login")
@@ -308,7 +328,7 @@ def login(request: Request, creds: LoginRequest, db: Session = Depends(get_db)):
     try:
         client.login(creds.username, creds.password)
     except Exception as e:
-        logger.error(f"Moodle Login Failed: {e}")
+        logger.error(f"Moodle login failed type={type(e).__name__}")
         raise HTTPException(status_code=401, detail="Moodle Login Failed")
     
     cookies_json = json.dumps(client.session.cookies.get_dict())
@@ -319,9 +339,8 @@ def login(request: Request, creds: LoginRequest, db: Session = Depends(get_db)):
                     api_token=str(uuid.uuid4()), token_issued_at=datetime.now())
         db.add(user)
     else:
-        if not user.api_token: user.api_token = str(uuid.uuid4())
-        # Re-authenticating renews the clock. The token value is kept so other devices
-        # signed in to the same account are not silently kicked out.
+        # Rotate on every verified login so an expired or copied bearer cannot be revived.
+        user.api_token = str(uuid.uuid4())
         user.token_issued_at = datetime.now()
             
     # Authentication only needs the resulting Moodle session cookies. Clear any
@@ -647,14 +666,7 @@ def brain_chat(
     if not corpus.strip() or not sources:
         raise HTTPException(409, "아직 학습된 자료가 없어요. 먼저 강의 자료를 학습시켜주세요.")
 
-    today_str = date.today().isoformat()
-    if user.chat_count_date != today_str:
-        user.chat_count_today = 0
-        user.chat_count_date = today_str
-    if user.chat_count_today >= DAILY_CHAT_LIMIT:
-        raise HTTPException(429, f"일일 AI 채팅 한도({DAILY_CHAT_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
-    user.chat_count_today += 1
-    db.commit()
+    _claim_chat_or_429(db, user)
 
     user_id = user.id
     course_name = course.name
@@ -681,13 +693,10 @@ def brain_chat(
                      if r in by_ref]
             yield f"event: done\ndata: {json.dumps({'citations': cited}, ensure_ascii=False)}\n\n"
         except Exception as e:
-            logger.error(f"Brain chat failed for course {course_id}: {e}")
+            logger.error(f"Brain chat failed for course {course_id} type={type(e).__name__}")
             refund_db = SessionLocal()
             try:
-                u = refund_db.query(User).filter(User.id == user_id).first()
-                if u:
-                    u.chat_count_today = max(0, u.chat_count_today - 1)
-                    refund_db.commit()
+                _refund_chat(refund_db, user_id)
             finally:
                 refund_db.close()
             yield f"event: error\ndata: {json.dumps({'error': 'AI 응답 생성 중 오류가 발생했어요.'}, ensure_ascii=False)}\n\n"
@@ -1304,7 +1313,7 @@ def _build_transcribe_status(db: Session, vod: VOD, row: Optional[VodTranscript]
         "queue_ahead": queue_ahead,
         "elapsed_seconds": elapsed_seconds,
         "eta_seconds": eta_seconds,
-        "error_message": row.error_message or None,
+        "error_message": "Transcription failed. Please retry." if status == "failed" else None,
         "updated_at": (row.completed_at or row.started_at or row.created_at).isoformat() if (row.completed_at or row.started_at or row.created_at) else None,
     }
 
@@ -1329,7 +1338,7 @@ def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user
     if row.transcript and not row.is_processing:
         return {"status": "ok", "transcript": row.transcript}
     if row.status == "failed" and not row.is_processing:
-        return {"status": "failed", "error_message": row.error_message or "Transcription failed"}
+        return {"status": "failed", "error_message": "Transcription failed. Please retry."}
     if row.is_processing or row.status in ("queued", "running"):
         status_meta = _build_transcribe_status(db, vod, row)
         return {
@@ -1346,6 +1355,8 @@ def get_vod_transcript(vod_moodle_id: int, user: User = Depends(get_current_user
 @app.post("/vods/{vod_moodle_id}/transcribe")
 def transcribe_vod(request: Request, vod_moodle_id: int, req: Optional[ManualTranscribeRequest] = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     logger.info(f"Transcribe request user={user.username} user_id={user.id} vod={vod_moodle_id}")
+    if not user.labs_unlocked:
+        raise HTTPException(status_code=403, detail="Labs not unlocked")
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
         logger.warning(f"Transcribe request denied (VOD not found) user_id={user.id} vod={vod_moodle_id}")
@@ -1378,43 +1389,27 @@ def transcribe_vod(request: Request, vod_moodle_id: int, req: Optional[ManualTra
             )
             return {"status": "processing"}
 
-    # Daily transcription cap (optionally bypassed for designated test users)
-    if not _is_transcribe_limit_bypassed(user):
-        from datetime import date as date_type
-        today_str = date_type.today().isoformat()
-        if user.transcribe_count_date != today_str:
-            user.transcribe_count_today = 0
-            user.transcribe_count_date = today_str
-        if user.transcribe_count_today >= DAILY_TRANSCRIBE_LIMIT:
-            logger.warning(
-                f"Transcribe daily limit exceeded user_id={user.id} vod={vod_moodle_id} "
-                f"count_today={user.transcribe_count_today} limit={DAILY_TRANSCRIBE_LIMIT}"
-            )
-            raise HTTPException(429, f"일일 텍스트 추출 한도({DAILY_TRANSCRIBE_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
-        user.transcribe_count_today += 1
-        db.commit()
-    else:
-        logger.info(f"Transcribe limit bypass enabled for user {user.username} (vod={vod_moodle_id})")
+    # Only verified LearnUs media may populate the shared transcript cache. The worker
+    # resolves the current stream from this owned VOD when it starts; no URL or cookie is
+    # retained in the job payload.
+    client = get_moodle_client(user)
+    if not client.is_session_valid():
+        logger.warning(f"Transcribe denied due to expired Moodle session user_id={user.id} vod={vod_moodle_id}")
+        raise HTTPException(401, "Moodle session expired. Please re-login.")
 
-    manual_media_url = (req.media_url.strip() if req and req.media_url else "")
-    if manual_media_url:
-        if not manual_media_url.lower().startswith(("http://", "https://")):
-            raise HTTPException(400, "media_url must be an http(s) URL")
-        m3u8_url = manual_media_url
-        safe_source = m3u8_url.split("?", 1)[0]
-        logger.info(f"Transcribe manual media URL accepted user_id={user.id} vod={vod_moodle_id} source={safe_source}")
-    else:
-        # Get stream URL now (requires active Moodle session)
-        client = get_moodle_client(user)
-        if not client.is_session_valid():
-            logger.warning(f"Transcribe denied due to expired Moodle session user_id={user.id} vod={vod_moodle_id}")
-            raise HTTPException(401, "Moodle session expired. Please re-login.")
-        m3u8_url = client.get_vod_stream_url(vod_moodle_id, viewer_url=vod.url)
-        if not m3u8_url:
-            logger.error(f"Transcribe stream URL not found user_id={user.id} vod={vod_moodle_id}")
-            raise HTTPException(502, "Could not find stream URL for this VOD")
-        safe_source = m3u8_url.split("?", 1)[0]
-        logger.info(f"Transcribe stream resolved user_id={user.id} vod={vod_moodle_id} source={safe_source}")
+    max_queued = int(os.getenv("MAX_QUEUED_TRANSCRIPTIONS_PER_USER", "3"))
+    queued = db.query(Job).filter(
+        Job.type == "transcribe",
+        Job.status.in_(["pending", "processing"]),
+        Job.payload["user_id"].as_integer() == user.id,
+    ).count()
+    if queued >= max_queued:
+        raise HTTPException(429, "Too many transcription jobs are already queued")
+
+    import spend_limits
+    if not spend_limits.claim_transcription(db, user):
+        logger.warning(f"Transcribe daily limit exceeded user_id={user.id} vod={vod_moodle_id}")
+        raise HTTPException(429, f"일일 텍스트 추출 한도({DAILY_TRANSCRIBE_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
 
     vod_title = vod.title
     course_obj = db.query(Course).filter(Course.id == vod.course_id).first()
@@ -1446,9 +1441,8 @@ def transcribe_vod(request: Request, vod_moodle_id: int, req: Optional[ManualTra
 
     # Enqueue job for the worker
     db.add(Job(type='transcribe', payload={
+        'vod_id': vod.id,
         'vod_moodle_id': vod_moodle_id,
-        'm3u8_url': m3u8_url,
-        'cookies': user.moodle_cookies or '',
         'user_id': user.id,
         'vod_title': vod_title,
         'course_name': course_name,
@@ -1475,14 +1469,20 @@ def summarize_vod(request: Request, vod_moodle_id: int, user: User = Depends(get
     if cached.summary:
         return {"status": "cached", "summary": cached.summary}
 
+    _claim_chat_or_429(db, user)
     try:
         from ai_service import AIService
         course = db.query(Course).filter(Course.id == vod.course_id).first()
         summary, usage = AIService().summarize_transcript(cached.transcript, course.name if course else "")
         _log_ai_usage(db, user.id, "summarize", usage)
     except Exception as e:
-        logger.error(f"Summarization failed for VOD {vod_moodle_id}: {e}")
-        raise HTTPException(500, f"Summarization failed: {str(e)}")
+        error_id = uuid.uuid4().hex[:12]
+        _refund_chat(db, user.id)
+        logger.error(
+            f"Summarization failed for VOD {vod_moodle_id} "
+            f"error_id={error_id} type={type(e).__name__}"
+        )
+        raise HTTPException(500, f"Summarization failed (reference: {error_id})")
 
     cached.summary = summary
     db.commit()
@@ -1504,24 +1504,27 @@ def _log_ai_usage(db: Session, user_id: int | None, endpoint: str, usage: dict):
             total_tokens=usage.get("total_tokens", 0),
         ))
         db.commit()
-    except Exception as e:
-        logger.warning(f"Failed to log AI usage: {e}")
+    except Exception as exc:
+        logger.warning("Failed to log AI usage (%s)", type(exc).__name__)
+
+
+def _claim_chat_or_429(db: Session, user: User, units: int = 1) -> None:
+    import spend_limits
+    if not spend_limits.claim_chat(db, user, units=units):
+        raise HTTPException(
+            429,
+            f"일일 AI 사용 한도({DAILY_CHAT_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.",
+        )
+
+
+def _refund_chat(db: Session, user_id: int, units: int = 1) -> None:
+    import spend_limits
+    spend_limits.refund_chat(db, user_id, units=units)
 
 @app.post("/vods/{vod_moodle_id}/chat")
 @limiter.limit("10/minute")
 def chat_with_vod(request: Request, vod_moodle_id: int, req: ChatRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Multi-turn AI chat about a VOD transcript."""
-    from datetime import date as date_type
-
-    # Rate limiting
-    today_str = date_type.today().isoformat()
-    if user.chat_count_date != today_str:
-        user.chat_count_today = 0
-        user.chat_count_date = today_str
-
-    if user.chat_count_today >= DAILY_CHAT_LIMIT:
-        raise HTTPException(429, f"일일 채팅 한도({DAILY_CHAT_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
-
     # Get transcript
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
@@ -1535,9 +1538,7 @@ def chat_with_vod(request: Request, vod_moodle_id: int, req: ChatRequest, user: 
     course_name = course.name if course else ""
     lecture_title = vod.title or ""
 
-    # Increment count before calling API
-    user.chat_count_today += 1
-    db.commit()
+    _claim_chat_or_429(db, user)
 
     try:
         from ai_service import AIService
@@ -1547,9 +1548,8 @@ def chat_with_vod(request: Request, vod_moodle_id: int, req: ChatRequest, user: 
         _log_ai_usage(db, user.id, "chat", usage)
     except Exception as e:
         # Refund the count on failure
-        user.chat_count_today = max(0, user.chat_count_today - 1)
-        db.commit()
-        logger.error(f"Chat failed for VOD {vod_moodle_id}: {e}")
+        _refund_chat(db, user.id)
+        logger.error(f"Chat failed for VOD {vod_moodle_id} type={type(e).__name__}")
         raise HTTPException(500, "AI 응답을 생성할 수 없어요.")
 
     remaining = DAILY_CHAT_LIMIT - user.chat_count_today
@@ -1559,16 +1559,6 @@ def chat_with_vod(request: Request, vod_moodle_id: int, req: ChatRequest, user: 
 @limiter.limit("10/minute")
 def chat_with_vod_stream(request: Request, vod_moodle_id: int, req: ChatRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Streaming version of chat — returns SSE events with tokens."""
-    from datetime import date as date_type
-
-    today_str = date_type.today().isoformat()
-    if user.chat_count_date != today_str:
-        user.chat_count_today = 0
-        user.chat_count_date = today_str
-
-    if user.chat_count_today >= DAILY_CHAT_LIMIT:
-        raise HTTPException(429, f"일일 채팅 한도({DAILY_CHAT_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
-
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
         raise HTTPException(404, "VOD not found")
@@ -1581,8 +1571,7 @@ def chat_with_vod_stream(request: Request, vod_moodle_id: int, req: ChatRequest,
     course_name = course.name if course else ""
     lecture_title = vod.title or ""
 
-    user.chat_count_today += 1
-    db.commit()
+    _claim_chat_or_429(db, user)
     remaining = DAILY_CHAT_LIMIT - user.chat_count_today
     user_id = user.id
 
@@ -1604,13 +1593,10 @@ def chat_with_vod_stream(request: Request, vod_moodle_id: int, req: ChatRequest,
                         usage_db.close()
             yield f"event: done\ndata: {json.dumps({'remaining': remaining})}\n\n"
         except Exception as e:
-            logger.error(f"Stream failed for VOD {vod_moodle_id}: {e}")
+            logger.error(f"Stream failed for VOD {vod_moodle_id} type={type(e).__name__}")
             refund_db = SessionLocal()
             try:
-                u = refund_db.query(User).filter(User.id == user_id).first()
-                if u:
-                    u.chat_count_today = max(0, u.chat_count_today - 1)
-                    refund_db.commit()
+                _refund_chat(refund_db, user_id)
             finally:
                 refund_db.close()
             error_data = json.dumps({"error": "AI 응답 생성 중 오류가 발생했어요."}, ensure_ascii=False)
@@ -1696,8 +1682,10 @@ from ai_service import AIService
 @app.post("/dashboard/ai-summary")
 @limiter.limit("3/minute")
 def get_ai_summary(request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    ai_service = AIService()
     courses = db.query(Course).filter(Course.owner_id == user.id, Course.is_active == True).all()
+    if courses:
+        _claim_chat_or_429(db, user, units=len(courses))
+    ai_service = AIService()
     summaries = []
     for course in courses:
         assignments = db.query(Assignment).filter(Assignment.course_id == course.id).all()
@@ -1730,16 +1718,6 @@ def get_ai_summary(request: Request, user: User = Depends(get_current_user), db:
 @limiter.limit("5/minute")
 def generate_flashcards(request: Request, vod_moodle_id: int, req: GenerateFlashcardsRequest = GenerateFlashcardsRequest(), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Generate flashcards from a VOD transcript using AI."""
-    from datetime import date as date_type
-
-    # Rate limiting (counts against daily chat limit)
-    today_str = date_type.today().isoformat()
-    if user.chat_count_date != today_str:
-        user.chat_count_today = 0
-        user.chat_count_date = today_str
-    if user.chat_count_today >= DAILY_CHAT_LIMIT:
-        raise HTTPException(429, f"일일 AI 사용 한도({DAILY_CHAT_LIMIT}회)에 도달했어요. 내일 다시 이용해주세요.")
-
     vod = db.query(VOD).join(Course).filter(VOD.moodle_id == vod_moodle_id, Course.owner_id == user.id).first()
     if not vod:
         raise HTTPException(404, "VOD not found")
@@ -1752,17 +1730,15 @@ def generate_flashcards(request: Request, vod_moodle_id: int, req: GenerateFlash
     course_name = course.name if course else ""
     lecture_title = vod.title or ""
 
-    user.chat_count_today += 1
-    db.commit()
+    _claim_chat_or_429(db, user)
 
     try:
         from ai_service import AIService
         cards, usage = AIService().generate_flashcards(cached.transcript, course_name, lecture_title, req.count)
         _log_ai_usage(db, user.id, "flashcard_generate", usage)
     except Exception as e:
-        user.chat_count_today = max(0, user.chat_count_today - 1)
-        db.commit()
-        logger.error(f"Flashcard generation failed for VOD {vod_moodle_id}: {e}")
+        _refund_chat(db, user.id)
+        logger.error(f"Flashcard generation failed for VOD {vod_moodle_id} type={type(e).__name__}")
         raise HTTPException(500, "플래시카드를 생성할 수 없어요.")
 
     remaining = DAILY_CHAT_LIMIT - user.chat_count_today
@@ -1883,7 +1859,7 @@ def debug_vod_inspect(vod_id: int, user: User = Depends(get_current_user)):
             "logtime_from_page": args[22],
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": "VOD inspection failed"}
 
 @app.post("/vods/{vod_moodle_id}/watch")
 def watch_single_vod(vod_moodle_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -1895,7 +1871,11 @@ def watch_single_vod(vod_moodle_id: int, user: User = Depends(get_current_user),
     client = get_moodle_client(user)
     if not client.is_session_valid():
         raise HTTPException(401, "Moodle session expired. Please re-login.")
-    db.add(Job(type='watch_one', payload={'user_id': user.id, 'vod_moodle_id': vod_moodle_id}))
+    db.add(Job(type='watch_one', payload={
+        'user_id': user.id,
+        'vod_id': vod.id,
+        'vod_moodle_id': vod_moodle_id,
+    }))
     db.commit()
     return {"status": "started"}
 
@@ -1983,7 +1963,7 @@ def debug_vod_time_test(vod_id: int, user: User = Depends(get_current_user)):
         elapsed = log[-1]["time"] - log[0]["time"]
         return {"vod_id": vod_id, "elapsed_sec": elapsed, "signals": log}
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": "VOD watch failed"}
 
 @app.post("/debug/vod-action-test/{vod_id}", dependencies=[Depends(require_debug)])
 def debug_vod_action_test(vod_id: int, user: User = Depends(get_current_user)):
@@ -2020,7 +2000,7 @@ def debug_vod_action_test(vod_id: int, user: User = Depends(get_current_user)):
             "looks_like_homepage": "<html" in r.text[:100].lower(),
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": "VOD status lookup failed"}
 
 @app.post("/debug/create-test-assignment", dependencies=[Depends(require_debug)])
 def create_test_assignment(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -2152,16 +2132,7 @@ def send_push_direct(
 
 @app.get("/debug/login-reports", dependencies=[Depends(require_debug)])
 def get_login_debug_reports(db: Session = Depends(get_db)):
-    reports = db.query(LoginDebugReport).order_by(LoginDebugReport.created_at.desc()).all()
-    return [
-        {
-            "id": r.id,
-            "device_info": r.device_info,
-            "created_at": r.created_at,
-            "logs": json.loads(r.log_json),
-        }
-        for r in reports
-    ]
+    raise HTTPException(404, "Not found")
 
 @app.post("/debug/login-report", dependencies=[Depends(require_debug)])
 def submit_login_debug_report(req: LoginDebugReportRequest, db: Session = Depends(get_db)):

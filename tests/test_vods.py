@@ -104,15 +104,20 @@ def test_get_transcribe_status_failed(client, test_user, auth_headers, db):
     assert status_resp.status_code == 200
     assert status_resp.json()["status"] == "failed"
     assert status_resp.json()["progress_pct"] == 0
-    assert status_resp.json()["error_message"] == "boom"
+    assert status_resp.json()["error_message"] == "Transcription failed. Please retry."
 
     transcript_resp = client.get("/vods/503/transcript", headers=auth_headers)
     assert transcript_resp.status_code == 200
     assert transcript_resp.json()["status"] == "failed"
-    assert transcript_resp.json()["error_message"] == "boom"
+    assert transcript_resp.json()["error_message"] == "Transcription failed. Please retry."
 
 
-def test_transcribe_vod_accepts_manual_media_url(client, test_user, auth_headers, db):
+def test_transcribe_vod_queues_owned_resource_without_credentials(client, test_user, auth_headers, db, monkeypatch):
+    from types import SimpleNamespace
+    import api
+
+    test_user.labs_unlocked = True
+    monkeypatch.setattr(api, "get_moodle_client", lambda user: SimpleNamespace(is_session_valid=lambda: True))
     course = Course(moodle_id=100, owner_id=test_user.id, name="Test", is_active=True)
     db.add(course)
     db.commit()
@@ -128,7 +133,7 @@ def test_transcribe_vod_accepts_manual_media_url(client, test_user, auth_headers
     resp = client.post(
         "/vods/504/transcribe",
         headers=auth_headers,
-        json={"media_url": "https://cdn.example.com/lecture.m3u8?token=secret"},
+        json={},
     )
 
     assert resp.status_code == 200
@@ -141,11 +146,13 @@ def test_transcribe_vod_accepts_manual_media_url(client, test_user, auth_headers
 
     job = db.query(Job).filter(Job.type == "transcribe").first()
     assert job is not None
+    assert job.payload["vod_id"] == vod.id
     assert job.payload["vod_moodle_id"] == 504
-    assert job.payload["m3u8_url"] == "https://cdn.example.com/lecture.m3u8?token=secret"
+    assert "m3u8_url" not in job.payload
+    assert "cookies" not in job.payload
 
 
-def test_transcribe_vod_rejects_manual_non_http_url(client, test_user, auth_headers, db):
+def test_transcribe_vod_rejects_manual_media_url(client, test_user, auth_headers, db):
     course = Course(moodle_id=100, owner_id=test_user.id, name="Test", is_active=True)
     db.add(course)
     db.commit()
@@ -161,11 +168,10 @@ def test_transcribe_vod_rejects_manual_non_http_url(client, test_user, auth_head
     resp = client.post(
         "/vods/505/transcribe",
         headers=auth_headers,
-        json={"media_url": "file:///tmp/lecture.mp4"},
+        json={"media_url": "https://attacker.invalid/audio.mp3"},
     )
 
-    assert resp.status_code == 400
-    assert "media_url" in resp.json()["detail"]
+    assert resp.status_code == 422
     assert db.query(Job).filter(Job.type == "transcribe").count() == 0
 
 

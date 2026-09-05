@@ -17,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
 from database import Base, User, Course, Assignment, VOD, Board, Post, VodTranscript, Job
+import api as api_module
 from api import app, get_db
 
 
@@ -81,10 +82,14 @@ def client(db):
         finally:
             pass
 
+    api_module.limiter._storage.reset()
+    api_module.ip_ceiling.storage.reset()
     app.dependency_overrides[get_db] = _override_get_db
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+    api_module.limiter._storage.reset()
+    api_module.ip_ceiling.storage.reset()
 
 
 @pytest.fixture()

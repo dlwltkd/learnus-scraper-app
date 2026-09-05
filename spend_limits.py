@@ -11,8 +11,120 @@ account needs the same ceiling, so the rule lives in one place both can import.
 import os
 from datetime import date
 
+from sqlalchemy import case, func, or_, update
+from sqlalchemy.exc import IntegrityError
+
+from database import DailySpendBudget, User
+
 DAILY_CHAT_LIMIT = int(os.getenv('DAILY_CHAT_LIMIT', '30'))
 DAILY_TRANSCRIBE_LIMIT = int(os.getenv('DAILY_TRANSCRIBE_LIMIT', '3'))
+DAILY_SERVICE_CHAT_LIMIT = int(os.getenv('DAILY_SERVICE_CHAT_LIMIT', '1000'))
+DAILY_SERVICE_TRANSCRIBE_LIMIT = int(os.getenv('DAILY_SERVICE_TRANSCRIBE_LIMIT', '100'))
+DAILY_TRANSCRIBE_SECONDS_LIMIT = int(os.getenv('DAILY_TRANSCRIBE_SECONDS_LIMIT', '21600'))
+
+
+def _claim_service_daily(db, column, limit: int, units: int) -> bool:
+    if units < 1 or units > limit:
+        return False
+    today = date.today().isoformat()
+    result = db.execute(
+        update(DailySpendBudget)
+        .where(DailySpendBudget.spend_date == today, column <= limit - units)
+        .values({column: column + units})
+    )
+    if result.rowcount == 1:
+        db.commit()
+        return True
+    db.rollback()
+    try:
+        with db.begin_nested():
+            db.add(DailySpendBudget(
+                spend_date=today,
+                chat_units=units if column.key == 'chat_units' else 0,
+                transcription_units=units if column.key == 'transcription_units' else 0,
+            ))
+            db.flush()
+        db.commit()
+        return units <= limit
+    except IntegrityError:
+        db.rollback()
+        result = db.execute(
+            update(DailySpendBudget)
+            .where(DailySpendBudget.spend_date == today, column <= limit - units)
+            .values({column: column + units})
+        )
+        db.commit()
+        return result.rowcount == 1
+
+
+def _refund_service_daily(db, column, units: int) -> None:
+    today = date.today().isoformat()
+    db.execute(
+        update(DailySpendBudget)
+        .where(DailySpendBudget.spend_date == today)
+        .values({column: case((column >= units, column - units), else_=0)})
+    )
+    db.commit()
+
+
+def _claim_daily(db, user, *, counter, counter_date, limit: int, units: int = 1) -> bool:
+    """Atomically reserve daily units without holding a transaction across network I/O."""
+    if units < 1 or limit < units:
+        return False
+    today = date.today().isoformat()
+    current_count = func.coalesce(counter, 0)
+    same_day = counter_date == today
+    result = db.execute(
+        update(User)
+        .where(
+            User.id == user.id,
+            or_(counter_date.is_(None), counter_date != today, current_count <= limit - units),
+        )
+        .values({
+            counter: case((same_day, current_count + units), else_=units),
+            counter_date: today,
+        })
+    )
+    db.commit()
+    db.expire(user)
+    return result.rowcount == 1
+
+
+def _refund_daily(db, user_id: int, *, counter, counter_date, units: int = 1) -> None:
+    today = date.today().isoformat()
+    db.execute(
+        update(User)
+        .where(User.id == user_id, counter_date == today)
+        .values({counter: case((counter >= units, counter - units), else_=0)})
+    )
+    db.commit()
+
+
+def claim_chat(db, user, units: int = 1) -> bool:
+    if not _claim_service_daily(db, DailySpendBudget.chat_units, DAILY_SERVICE_CHAT_LIMIT, units):
+        return False
+    claimed = _claim_daily(
+        db,
+        user,
+        counter=User.chat_count_today,
+        counter_date=User.chat_count_date,
+        limit=DAILY_CHAT_LIMIT,
+        units=units,
+    )
+    if not claimed:
+        _refund_service_daily(db, DailySpendBudget.chat_units, units)
+    return claimed
+
+
+def refund_chat(db, user_id: int, units: int = 1) -> None:
+    _refund_daily(
+        db,
+        user_id,
+        counter=User.chat_count_today,
+        counter_date=User.chat_count_date,
+        units=units,
+    )
+    _refund_service_daily(db, DailySpendBudget.chat_units, units)
 
 
 def is_transcribe_limit_bypassed(user) -> bool:
@@ -46,18 +158,38 @@ def claim_transcription(db, user) -> bool:
     each other's claims. Callers that get False should defer rather than fail: brain
     builds are resumable, so a course simply continues tomorrow.
     """
+    if not _claim_service_daily(
+        db,
+        DailySpendBudget.transcription_units,
+        DAILY_SERVICE_TRANSCRIBE_LIMIT,
+        1,
+    ):
+        return False
     if is_transcribe_limit_bypassed(user):
         return True
 
-    today = date.today().isoformat()
-    if user.transcribe_count_date != today:
-        user.transcribe_count_today = 0
-        user.transcribe_count_date = today
-    if (user.transcribe_count_today or 0) >= DAILY_TRANSCRIBE_LIMIT:
-        return False
-    user.transcribe_count_today = (user.transcribe_count_today or 0) + 1
-    db.commit()
-    return True
+    claimed = _claim_daily(
+        db,
+        user,
+        counter=User.transcribe_count_today,
+        counter_date=User.transcribe_count_date,
+        limit=DAILY_TRANSCRIBE_LIMIT,
+    )
+    if not claimed:
+        _refund_service_daily(db, DailySpendBudget.transcription_units, 1)
+    return claimed
+
+
+def claim_transcription_seconds(db, user, seconds: int) -> bool:
+    units = max(1, int(seconds))
+    return _claim_daily(
+        db,
+        user,
+        counter=User.transcribe_seconds_today,
+        counter_date=User.transcribe_seconds_date,
+        limit=DAILY_TRANSCRIBE_SECONDS_LIMIT,
+        units=units,
+    )
 
 
 # ─── API token lifetime ───────────────────────────────────────────────────────

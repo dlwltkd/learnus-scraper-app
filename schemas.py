@@ -85,16 +85,25 @@ class PreferencesRequest(BaseModel):
     notice: bool = True
 
 
+class ChatMessage(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    role: str = Field(pattern=r'^(user|assistant)$')
+    content: str = Field(min_length=1, max_length=8_000)
+
+
 class ChatRequest(BaseModel):
-    messages: list
+    model_config = ConfigDict(extra='forbid')
+
+    messages: list[ChatMessage] = Field(min_length=1, max_length=30)
 
 
-class BrainChatRequest(BaseModel):
-    messages: list
+class BrainChatRequest(ChatRequest):
+    pass
 
 
 class ManualTranscribeRequest(BaseModel):
-    media_url: Optional[str] = None
+    model_config = ConfigDict(extra='forbid')
 
 
 class LoginDebugReportRequest(BaseModel):

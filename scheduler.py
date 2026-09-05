@@ -310,7 +310,12 @@ def watch_vods_for_user(user_id, SessionLocal, blocking=False):
     db = SessionLocal()
     try:
         user = db.query(User).filter_by(id=user_id).first()
-        if not user or not user.moodle_cookies:
+        if (
+            not user
+            or not user.moodle_cookies
+            or not user.labs_unlocked
+            or not user.auto_watch_enabled
+        ):
             return
 
         client = get_client(user)
@@ -351,6 +356,20 @@ def watch_vods_for_user(user_id, SessionLocal, blocking=False):
     _watch_running.add(user_id)
 
     def watch_single_vod(vod_id, vod_db_id, vod_title, cookies, vod_duration=None, vod_url=None):
+        authority_db = SessionLocal()
+        try:
+            authorized = authority_db.query(VOD).join(Course).join(
+                User, Course.owner_id == User.id
+            ).filter(
+                VOD.id == vod_db_id,
+                Course.owner_id == user_id,
+                User.labs_unlocked == True,
+                User.auto_watch_enabled == True,
+            ).first()
+            if not authorized:
+                return False
+        finally:
+            authority_db.close()
         # Each thread gets its own MoodleClient/session — requests.Session is not thread-safe
         c = MoodleClient("https://ys.learnus.org", cookies=cookies)
         success = c.watch_vod(vod_id, duration=vod_duration, viewer_url=vod_url)
@@ -466,7 +485,13 @@ def _top_up_brain(db, course):
     Courses that were never opted in are ignored entirely: this must not start spending
     on all 8 courses because one of them was enabled.
     """
-    if not getattr(course, 'brain_enabled', False):
+    owner = getattr(course, 'owner', None)
+    if (
+        not getattr(course, 'brain_enabled', False)
+        or not owner
+        or not getattr(owner, 'labs_unlocked', False)
+        or not getattr(owner, 'brain_enabled', False)
+    ):
         return
     try:
         import course_brain

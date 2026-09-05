@@ -4,14 +4,15 @@ The backend deploys from `main` through GitHub Actions. The mobile app is built 
 
 ## Server topology
 
-`docker-compose.yml` runs four containers:
+`docker-compose.yml` runs five containers:
 
 | Container | Role | Persistent state |
 |---|---|---|
 | `learnus_caddy` | TLS termination, API proxy, and Expo Web static hosting | `caddy_data` volume; `web-dist/` release artifact |
-| `learnus_api` | FastAPI service on port 8000 | PostgreSQL; bind-mounted `api_debug.log` |
+| `learnus_api` | FastAPI service on port 8000 | PostgreSQL; `course_files` volume |
 | `learnus_worker` | queued and scheduled work | PostgreSQL; bind-mounted `error_log/` |
 | `learnus_db` | PostgreSQL 15 | `postgres_data` volume |
+| `redis` | Shared durable API rate-limit counters | `redis_data` volume |
 
 PostgreSQL and the API's direct port are published only on loopback. Do not make either bind public. Caddy is the only public HTTP entry point on ports 80 and 443; it forwards the original client address to Uvicorn over the private Compose network.
 
@@ -69,14 +70,18 @@ WEB_SESSION_COOKIE_NAME=__Host-luconnect_session
 WEB_SESSION_COOKIE_SECURE=true
 ```
 
-Before the first `docker compose up`, create the bind-mount targets with the correct types:
+Before the first `docker compose up`, create the worker log directory and give the
+container's fixed unprivileged UID access:
 
 ```bash
 mkdir -p error_log
-touch api_debug.log
+sudo chown -R 10001:10001 error_log
+docker compose run --rm --user 0 worker chown -R 10001:10001 /app/course_files
 ```
 
-Docker otherwise creates a missing `api_debug.log` target as a directory, and the application cannot write the log file.
+The API and worker run as UID/GID 10001 with read-only root filesystems. Their named
+volumes and `/tmp` are the only writable container paths. Redis persists limiter state,
+so restarting or scaling the API does not reset request budgets.
 
 ## Web build and SSO helper
 

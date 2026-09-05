@@ -15,8 +15,6 @@ from datetime import datetime
 
 from database import init_db, Job, VodTranscript, User, VOD, Course
 from ai_service import AIService, TRANSCRIBE_MODEL
-from moodle_client import MoodleClient
-from parsing import parse_cookie_string as _parse_cookie_string
 from scheduler import check_notices_job, sync_dashboard_job, check_session_health_job, watch_vods_for_user
 from apscheduler.schedulers.background import BackgroundScheduler
 from exponent_server_sdk import PushClient, PushMessage
@@ -57,8 +55,8 @@ def _append_transcribe_timing_log(row: dict):
         with _timing_log_lock:
             with open(TRANSCRIBE_TIMING_LOG_PATH, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
-    except Exception as e:
-        logger.error(f"Failed to write transcribe timing log: {e}")
+    except Exception as exc:
+        logger.error("Failed to write transcribe timing log (%s)", type(exc).__name__)
 
 def _claim_job(db):
     """Atomically claim one pending job. Uses SELECT FOR UPDATE SKIP LOCKED (PostgreSQL)."""
@@ -133,9 +131,7 @@ def _to_overall_progress(stage: str, stage_pct: int | None) -> int:
 
 def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_s: float | None = None):
     vod_moodle_id = payload['vod_moodle_id']
-    m3u8_url = payload['m3u8_url']
-    cookies_raw = payload.get('cookies', '')
-    user_id = payload.get('user_id')
+    user_id = payload['user_id']
     vod_title = payload.get('vod_title')
     course_name = payload.get('course_name')
     started_perf = time.perf_counter()
@@ -149,6 +145,34 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
     )
 
     try:
+        from scheduler import get_client
+
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user or not user.labs_unlocked:
+            raise PermissionError("Transcription permission was revoked")
+        vod_query = db.query(VOD).join(Course).filter(
+            Course.owner_id == user_id,
+            VOD.moodle_id == vod_moodle_id,
+        )
+        if payload.get('vod_id') is not None:
+            vod_query = vod_query.filter(VOD.id == payload['vod_id'])
+        vod = vod_query.first()
+        if not vod:
+            raise PermissionError("VOD ownership could not be verified")
+        client = get_client(user)
+        if not client:
+            raise PermissionError("Moodle session is no longer valid")
+        m3u8_url = client.get_vod_stream_url(vod_moodle_id, viewer_url=vod.url)
+        if not m3u8_url:
+            raise RuntimeError("Canonical media is unavailable")
+        ai = AIService()
+        duration_seconds = vod.duration or ai._probe_duration_seconds(m3u8_url)
+        if not duration_seconds:
+            raise RuntimeError("Media duration could not be verified")
+        import spend_limits
+        if not spend_limits.claim_transcription_seconds(db, user, int(duration_seconds)):
+            raise PermissionError("Daily audio-duration budget is exhausted")
+
         now = datetime.now()
         _set_transcript_status(
             db,
@@ -163,14 +187,6 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
         last_stage = "extracting_audio"
         stage_started_perf = time.perf_counter()
         logger.info(f"Transcribe stage start job_id={job_id} vod={vod_moodle_id} stage={last_stage}")
-
-        client = MoodleClient("https://ys.learnus.org")
-        if isinstance(cookies_raw, dict):
-            client.set_cookies(cookies_raw)
-        elif cookies_raw and cookies_raw.startswith('{'):
-            client.set_cookies(json.loads(cookies_raw))
-        elif cookies_raw:
-            client.set_cookies(_parse_cookie_string(cookies_raw))
 
         progress_log_buckets: dict[str, int] = {}
 
@@ -219,7 +235,7 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
                     f"stage_pct={bucket}% overall_pct={overall_pct}%{detail}"
                 )
 
-        transcript, usage = AIService().transcribe_vod(
+        transcript, usage = ai.transcribe_vod(
             m3u8_url,
             on_stage=_on_stage,
             on_progress=_on_progress,
@@ -299,9 +315,10 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
         if stage_started_perf is not None:
             stage_durations_s[last_stage] = round(time.perf_counter() - stage_started_perf, 3)
         total_s = time.perf_counter() - started_perf
-        logger.exception(
-            f"Transcribe failed job_id={job_id} vod={vod_moodle_id} "
-            f"stage={last_stage} elapsed_s={total_s:.1f}: {e}"
+        error_id = os.urandom(8).hex()
+        logger.error(
+            f"Transcribe failed job_id={job_id} vod={vod_moodle_id} stage={last_stage} "
+            f"elapsed_s={total_s:.1f} error_id={error_id} type={type(e).__name__}"
         )
         _set_transcript_status(
             db,
@@ -310,7 +327,7 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
             stage='failed',
             is_processing=False,
             progress_pct=0,
-            error_message=str(e)[:2000],
+            error_message=f"Transcription failed (reference: {error_id})",
             completed_at=datetime.now(),
         )
         _append_transcribe_timing_log({
@@ -322,7 +339,8 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
             "queue_wait_s": round(queue_wait_s, 3) if queue_wait_s is not None else None,
             "total_s": round(total_s, 3),
             "stage_durations_s": stage_durations_s,
-            "error": str(e)[:500],
+            "error_id": error_id,
+            "error_type": type(e).__name__,
         })
         raise
 
@@ -340,9 +358,16 @@ def _run_watch_one(payload: dict):
     try:
         from scheduler import get_client
         user = db.query(User).filter(User.id == user_id).first()
-        if not user:
+        if not user or not user.labs_unlocked or not user.auto_watch_enabled:
             raise ValueError(f"User {user_id} not found")
-        vod = db.query(VOD).filter(VOD.moodle_id == vod_moodle_id).first()
+        vod = db.query(VOD).join(Course).filter(
+            VOD.moodle_id == vod_moodle_id,
+            Course.owner_id == user_id,
+        ).first()
+        if payload.get('vod_id') is not None:
+            vod = vod if vod and vod.id == payload['vod_id'] else None
+        if not vod:
+            raise PermissionError("VOD ownership could not be verified")
         client = get_client(user)
         if not client:
             raise ValueError(f"No valid Moodle session for user {user_id}")
@@ -380,6 +405,9 @@ def _run_brain_build(payload: dict):
             return
 
         user = db.query(User).filter(User.id == course.owner_id).first()
+        if not user or not user.labs_unlocked or not user.brain_enabled:
+            logger.info(f"brain build skipped, account permission revoked course={course_id}")
+            return
         client = get_client(user) if user else None
         if not client:
             raise ValueError(f"No valid Moodle session for user {course.owner_id}")
@@ -420,13 +448,27 @@ def _run_brain_build(payload: dict):
         # uncapped way to spend: one tap could transcribe an entire semester.
         import spend_limits
 
-        def can_transcribe():
-            return spend_limits.claim_transcription(db, user)
+        def can_transcribe(vod, media_url):
+            db.refresh(user)
+            db.refresh(course)
+            if not user.labs_unlocked or not user.brain_enabled or not course.brain_enabled:
+                return False
+            if not spend_limits.claim_transcription(db, user):
+                return False
+            duration = vod.duration or AIService()._probe_duration_seconds(media_url)
+            return bool(duration and spend_limits.claim_transcription_seconds(db, user, int(duration)))
+
+        def can_caption():
+            db.refresh(user)
+            db.refresh(course)
+            if not user.labs_unlocked or not user.brain_enabled or not course.brain_enabled:
+                return False
+            return spend_limits.claim_chat(db, user)
 
         ai = AIService()
         summary = course_brain.build_course_brain(
             client, db, course, ai, transcribe=True, force=False, on_stage=on_stage,
-            can_transcribe=can_transcribe,
+            can_transcribe=can_transcribe, can_caption=can_caption,
         )
 
         # Per-item failures do not fail the build: a course with one dead lecture is
@@ -449,7 +491,7 @@ def _run_brain_build(payload: dict):
         if course:
             course.brain_status = 'error'
             course.brain_stage = None
-            course.brain_error = str(e)[:2000]
+            course.brain_error = "Course build failed. Please retry."
             db.commit()
         raise
     finally:
@@ -465,6 +507,7 @@ def _run_brain_learn_item(payload: dict):
     gets picked up afterwards.
     """
     import course_brain
+    import spend_limits
     from scheduler import get_client
 
     db = SessionLocal()
@@ -473,22 +516,32 @@ def _run_brain_learn_item(payload: dict):
         if not course:
             raise ValueError(f"Course {payload['course_id']} not found")
         user = db.query(User).filter(User.id == course.owner_id).first()
+        if not user or not user.labs_unlocked or not user.brain_enabled:
+            logger.info(f"brain learn skipped, account permission revoked course={course.id}")
+            return
         client = get_client(user) if user else None
         if not client:
             raise ValueError(f"No valid Moodle session for user {course.owner_id}")
 
-        # A single-item learn of a lecture is a transcription like any other.
-        if payload['item_type'] == 'vod':
-            import spend_limits
+        def still_authorized():
+            db.refresh(user)
+            return bool(user.labs_unlocked and user.brain_enabled)
+
+        def can_transcribe(vod, media_url):
+            if not still_authorized():
+                return False
             if not spend_limits.claim_transcription(db, user):
-                logger.info(
-                    f"brain learn deferred: daily transcription budget spent "
-                    f"user={user.id} vod={payload['item_id']}"
-                )
-                return
+                return False
+            duration = vod.duration or AIService()._probe_duration_seconds(media_url)
+            return bool(duration and spend_limits.claim_transcription_seconds(db, user, int(duration)))
+
+        def can_caption():
+            return still_authorized() and spend_limits.claim_chat(db, user)
 
         report = course_brain.build_single_item(
             client, db, course, AIService(), payload['item_type'], payload['item_id'],
+            can_caption=can_caption,
+            can_transcribe=can_transcribe,
         )
         logger.info(
             f"brain learn done course={course.moodle_id} "
@@ -539,10 +592,14 @@ def _process_job(job_id: int):
             logger.info(f"Job {job.id} done runtime_s={time.perf_counter() - run_started:.1f}")
         except Exception as e:
             job.status = 'failed'
-            job.error = str(e)[:2000]
+            error_id = os.urandom(8).hex()
+            job.error = f"Job failed (reference: {error_id})"
             job.completed_at = datetime.now()
             db.commit()
-            logger.exception(f"Job {job.id} failed runtime_s={time.perf_counter() - run_started:.1f}: {e}")
+            logger.error(
+                f"Job {job.id} failed runtime_s={time.perf_counter() - run_started:.1f} "
+                f"error_id={error_id} type={type(e).__name__}"
+            )
     finally:
         db.close()
 
@@ -558,6 +615,18 @@ def main():
     # Reset any jobs that were left in 'processing' state (worker died mid-job)
     db = SessionLocal()
     try:
+        # Remove credential-bearing fields left by older releases. Current jobs contain
+        # only account and resource references and resolve the live session at dispatch.
+        sanitized = 0
+        for job in db.query(Job).filter(Job.type == 'transcribe').all():
+            payload = dict(job.payload or {})
+            if payload.pop('cookies', None) is not None or payload.pop('m3u8_url', None) is not None:
+                job.payload = payload
+                sanitized += 1
+        if sanitized:
+            db.commit()
+            logger.info(f"Removed credential copies from {sanitized} transcription job payload(s)")
+
         stuck_jobs = db.query(Job).filter(Job.status == 'processing').count()
         if stuck_jobs:
             db.query(Job).filter(Job.status == 'processing').update({'status': 'pending'})
@@ -598,7 +667,10 @@ def main():
                 try:
                     fut.result()
                 except Exception as e:
-                    logger.error(f"Unhandled worker thread exception for job {job_meta['id']}: {e}")
+                    logger.error(
+                        f"Unhandled worker thread exception for job {job_meta['id']} "
+                        f"type={type(e).__name__}"
+                    )
 
             if _shutdown:
                 time.sleep(0.2)
@@ -611,7 +683,7 @@ def main():
                 try:
                     job = _claim_job(db)
                 except Exception as e:
-                    logger.error(f"Worker loop error while claiming job: {e}")
+                    logger.error(f"Worker loop error while claiming job type={type(e).__name__}")
                     job = None
                 finally:
                     db.close()

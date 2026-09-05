@@ -25,10 +25,16 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - DAILY_CHAT_LIMIT=${DAILY_CHAT_LIMIT:-30}
       - DAILY_TRANSCRIBE_LIMIT=${DAILY_TRANSCRIBE_LIMIT:-3}
+      - DAILY_SERVICE_CHAT_LIMIT=${DAILY_SERVICE_CHAT_LIMIT:-1000}
+      - DAILY_SERVICE_TRANSCRIBE_LIMIT=${DAILY_SERVICE_TRANSCRIBE_LIMIT:-100}
+      - DAILY_TRANSCRIBE_SECONDS_LIMIT=${DAILY_TRANSCRIBE_SECONDS_LIMIT:-21600}
+      - MAX_QUEUED_TRANSCRIPTIONS_PER_USER=${MAX_QUEUED_TRANSCRIPTIONS_PER_USER:-3}
       - TRANSCRIBE_BYPASS_USERS=${TRANSCRIBE_BYPASS_USERS:-}
       - TRANSCRIBE_BYPASS_TOKENS=${TRANSCRIBE_BYPASS_TOKENS:-}
       - LABS_ALLOWED_USERS=${LABS_ALLOWED_USERS:-}
       - API_TOKEN_TTL_DAYS=${API_TOKEN_TTL_DAYS:-30}
+      - RATE_LIMIT_STORAGE_URI=redis://redis:6379/0
+      - IP_RATE_LIMIT=${IP_RATE_LIMIT:-120/minute}
       - WEB_ALLOWED_ORIGINS=${WEB_ALLOWED_ORIGINS:-https://luconnect.dlwltkd.com}
       - WEB_LOGIN_TICKET_TTL_SECONDS=${WEB_LOGIN_TICKET_TTL_SECONDS:-90}
       - WEB_SESSION_TTL_DAYS=${WEB_SESSION_TTL_DAYS:-7}
@@ -39,9 +45,18 @@ services:
       - FORWARDED_ALLOW_IPS=*
     depends_on:
       - db
+      - redis
     restart: always
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    pids_limit: 256
     volumes:
-      - ./api_debug.log:/app/api_debug.log
       # Downloaded course material. Must be a volume: without it every rebuild wipes
       # the corpus and it can only be refetched with a live LearnUs session.
       - course_files:/app/course_files
@@ -55,13 +70,31 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - WORKER_MAX_CONCURRENCY=${WORKER_MAX_CONCURRENCY:-4}
       - DAILY_TRANSCRIBE_LIMIT=${DAILY_TRANSCRIBE_LIMIT:-3}
+      - DAILY_CHAT_LIMIT=${DAILY_CHAT_LIMIT:-30}
+      - DAILY_SERVICE_CHAT_LIMIT=${DAILY_SERVICE_CHAT_LIMIT:-1000}
+      - DAILY_SERVICE_TRANSCRIBE_LIMIT=${DAILY_SERVICE_TRANSCRIBE_LIMIT:-100}
+      - DAILY_TRANSCRIBE_SECONDS_LIMIT=${DAILY_TRANSCRIBE_SECONDS_LIMIT:-21600}
       - TRANSCRIBE_BYPASS_USERS=${TRANSCRIBE_BYPASS_USERS:-}
       - TRANSCRIBE_BYPASS_TOKENS=${TRANSCRIBE_BYPASS_TOKENS:-}
       - TRANSCRIBE_TIMING_LOG_ENABLED=${TRANSCRIBE_TIMING_LOG_ENABLED:-true}
       - TRANSCRIBE_TIMING_LOG_PATH=${TRANSCRIBE_TIMING_LOG_PATH:-/app/error_log/transcribe_timing.jsonl}
+      - LABS_ALLOWED_USERS=${LABS_ALLOWED_USERS:-}
+      - MAX_MEDIA_DURATION_SECONDS=${MAX_MEDIA_DURATION_SECONDS:-14400}
+      - FFMPEG_WALL_TIMEOUT_SECONDS=${FFMPEG_WALL_TIMEOUT_SECONDS:-1800}
+      - FFMPEG_NETWORK_TIMEOUT_US=${FFMPEG_NETWORK_TIMEOUT_US:-30000000}
     depends_on:
       - db
+      - redis
     restart: always
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    pids_limit: 256
     volumes:
       - ./error_log:/app/error_log
       - course_files:/app/course_files
@@ -80,7 +113,21 @@ services:
       - postgres_data:/var/lib/postgresql/data
     restart: always
 
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    restart: always
+    volumes:
+      - redis_data:/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    pids_limit: 128
+
 volumes:
   postgres_data:
   caddy_data:
   course_files:
+  redis_data:

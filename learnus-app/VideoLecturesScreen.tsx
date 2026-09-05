@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { secureStorage } from './services/secureStorage';
 
 import { useNavigation } from '@react-navigation/native';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -114,7 +114,7 @@ const VideoLecturesScreen = () => {
             return;
         }
 
-        const cookies = await AsyncStorage.getItem('userToken') || '';
+        const cookies = await secureStorage.getItem('userToken') || '';
         await ScreenOrientation.unlockAsync();
         setWebViewer({ url: viewerUrl, title: item.title, cookies });
     };

@@ -107,7 +107,7 @@ def warm_pages(local_path: str, file_kind: str, course_moodle_id: int, file_mood
 
 
 def build_file(session, file_row, course_moodle_id: int, ai_service=None,
-               caption: bool = True, force: bool = False) -> dict:
+               caption: bool = True, force: bool = False, can_caption=None) -> dict:
     """
     Download, extract and (optionally) caption one file resource.
 
@@ -133,13 +133,33 @@ def build_file(session, file_row, course_moodle_id: int, ai_service=None,
 
     # --- download -----------------------------------------------------------------
     try:
-        response = session.get(file_row.url, timeout=120, allow_redirects=True)
+        response = session.get(file_row.url, timeout=120, allow_redirects=True, stream=True)
         response.raise_for_status()
-        data = response.content
+        declared_size = int(response.headers.get('Content-Length') or 0)
+        if declared_size > ce.MAX_FILE_BYTES:
+            file_row.extract_status = 'too_large'
+            file_row.file_bytes = declared_size
+            file_row.extracted_at = datetime.now()
+            report['status'] = 'too_large'
+            return report
+        chunks = []
+        received = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            received += len(chunk)
+            if received > ce.MAX_FILE_BYTES:
+                file_row.extract_status = 'too_large'
+                file_row.file_bytes = received
+                file_row.extracted_at = datetime.now()
+                report['status'] = 'too_large'
+                return report
+            chunks.append(chunk)
+        data = b''.join(chunks)
         filename = _safe_name(response.url.split('?')[0].rsplit('/', 1)[-1])
     except Exception as e:
         file_row.extract_status = 'error'
-        file_row.extract_error = f"download: {type(e).__name__}: {e}"
+        file_row.extract_error = "File download failed"
         file_row.extracted_at = datetime.now()
         report.update(status='error', error=file_row.extract_error)
         return report
@@ -174,6 +194,8 @@ def build_file(session, file_row, course_moodle_id: int, ai_service=None,
                     render_dir = os.path.join(target_dir, 'pages')
                     renders = ce.render_pdf_pages(local_path, targets, render_dir)
                     for page_no, image_path in sorted(renders.items()):
+                        if can_caption is not None and not can_caption():
+                            break
                         text, _usage = ai_service.caption_slide(
                             image_path, file_row.title or '', page_no)
                         if text:
@@ -193,9 +215,9 @@ def build_file(session, file_row, course_moodle_id: int, ai_service=None,
 
     except ce.ExtractionError as e:
         file_row.extract_status = 'error'
-        file_row.extract_error = str(e)
+        file_row.extract_error = "File extraction failed"
         file_row.extracted_at = datetime.now()
-        report.update(status='error', error=str(e))
+        report.update(status='error', error=file_row.extract_error)
         return report
 
     if len(content) > ce.MAX_TEXT_CHARS:
@@ -629,7 +651,7 @@ def fetch_assignment_descriptions(client, db, course, force: bool = False) -> di
 
 
 def build_course_files(session, db, course, ai_service=None, caption: bool = True,
-                       force: bool = False, on_progress=None) -> dict:
+                       force: bool = False, on_progress=None, can_caption=None) -> dict:
     """
     Build every file resource in a course. Commits after each file so an interrupted
     run keeps its work.
@@ -642,7 +664,7 @@ def build_course_files(session, db, course, ai_service=None, caption: bool = Tru
 
     for index, row in enumerate(files, start=1):
         report = build_file(session, row, course.moodle_id, ai_service=ai_service,
-                            caption=caption, force=force)
+                            caption=caption, force=force, can_caption=can_caption)
         db.commit()
 
         key = report['status'] if report['status'] in summary else 'error'
@@ -724,7 +746,8 @@ class _Skipped(Exception):
 
 
 def build_course_brain(client, db, course, ai_service, *, transcribe: bool = True,
-                       force: bool = False, on_stage=None, can_transcribe=None) -> dict:
+                       force: bool = False, on_stage=None, can_transcribe=None,
+                       can_caption=None) -> dict:
     """
     Bring a course's corpus up to date: assignment instructions, lecture transcripts,
     then file text and captions.
@@ -733,7 +756,7 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
     commits as it goes, so a deploy that restarts the container mid-build loses only the
     item in flight — the next run resumes from there rather than starting over.
 
-    `can_transcribe()` is asked before each lecture and gates spend. Returning False
+    `can_transcribe(vod, media_url)` is asked before each lecture and gates spend. Returning False
     stops the transcription stage cleanly rather than failing the build: what is already
     done is kept, and the next run picks up where the budget ran out.
 
@@ -760,7 +783,7 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
         summary['assignments'] = {'skipped_by_scope': True}
     except Exception as e:
         logger.exception("brain build: assignment descriptions failed")
-        summary['errors'].append(f"assignments: {type(e).__name__}: {e}")
+        summary['errors'].append("Assignment import failed")
     stage('assignments', 1, 1)
 
     # 2. Lecture transcripts. The expensive stage, and the one most worth resuming:
@@ -778,15 +801,6 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
             if done_already and timestamped and not force:
                 summary['vods']['skipped'] += 1
                 continue
-            if can_transcribe is not None and not can_transcribe():
-                # Budget spent. Everything transcribed so far is committed, and the
-                # remaining lectures are simply still pending for the next run.
-                summary['vods']['deferred'] = len(vods) - index + 1
-                logger.info(
-                    f"brain build course={course.moodle_id}: transcription budget spent, "
-                    f"deferring {summary['vods']['deferred']} lectures"
-                )
-                break
             try:
                 stream = client.get_vod_stream_url(vod.moodle_id, vod.url)
                 m3u8 = stream if isinstance(stream, str) else (stream or {}).get('m3u8_url')
@@ -794,6 +808,13 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
                     summary['vods']['failed'] += 1
                     summary['errors'].append(f"vod {vod.moodle_id}: no stream url")
                     continue
+                if can_transcribe is not None and not can_transcribe(vod, m3u8):
+                    summary['vods']['deferred'] = len(vods) - index + 1
+                    logger.info(
+                        f"brain build course={course.moodle_id}: transcription budget spent, "
+                        f"deferring {summary['vods']['deferred']} lectures"
+                    )
+                    break
                 transcript, _usage = ai_service.transcribe_vod(m3u8)
                 if not row:
                     row = VodTranscript(moodle_id=vod.moodle_id)
@@ -809,7 +830,7 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
             except Exception as e:
                 db.rollback()
                 summary['vods']['failed'] += 1
-                summary['errors'].append(f"vod {vod.moodle_id}: {type(e).__name__}: {e}")
+                summary['errors'].append(f"VOD {vod.moodle_id} transcription failed")
                 logger.exception(f"brain build: vod {vod.moodle_id} failed")
         stage('vods', len(vods), len(vods))
 
@@ -822,13 +843,13 @@ def build_course_brain(client, db, course, ai_service, *, transcribe: bool = Tru
             raise _Skipped()
         summary['files'] = build_course_files(
             client.session, db, course, ai_service=ai_service,
-            caption=True, force=force, on_progress=file_progress,
+            caption=True, force=force, on_progress=file_progress, can_caption=can_caption,
         )
     except _Skipped:
         summary['files'] = {'skipped_by_scope': True}
     except Exception as e:
         logger.exception("brain build: file build failed")
-        summary['errors'].append(f"files: {type(e).__name__}: {e}")
+        summary['errors'].append("File import failed")
 
     return summary
 
@@ -864,7 +885,8 @@ def enqueue_brain_build(db, course, *, full: bool = False) -> bool:
     return True
 
 
-def build_single_item(client, db, course, ai_service, item_type: str, item_id: int) -> dict:
+def build_single_item(client, db, course, ai_service, item_type: str, item_id: int,
+                      can_caption=None, can_transcribe=None) -> dict:
     """
     Learn one item on demand.
 
@@ -879,7 +901,8 @@ def build_single_item(client, db, course, ai_service, item_type: str, item_id: i
         if not row:
             raise ValueError(f"File {item_id} not in course {course.id}")
         report = build_file(client.session, row, course.moodle_id,
-                            ai_service=ai_service, caption=True, force=False)
+                            ai_service=ai_service, caption=True, force=False,
+                            can_caption=can_caption)
         db.commit()
         return report
 
@@ -891,6 +914,8 @@ def build_single_item(client, db, course, ai_service, item_type: str, item_id: i
         m3u8 = stream if isinstance(stream, str) else (stream or {}).get('m3u8_url')
         if not m3u8:
             raise ValueError("No stream URL for this lecture")
+        if can_transcribe is not None and not can_transcribe(vod, m3u8):
+            return {'status': 'deferred', 'chars': 0, 'captioned': 0}
         transcript, _usage = ai_service.transcribe_vod(m3u8)
         row = db.query(VodTranscript).filter_by(moodle_id=vod.moodle_id).first()
         if not row:

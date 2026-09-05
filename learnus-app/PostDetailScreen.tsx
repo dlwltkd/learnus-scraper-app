@@ -6,6 +6,13 @@ import type { ColorScheme, TypographyType, LayoutType } from './constants/theme'
 import { useTheme } from './context/ThemeContext';
 import { getPostDetail } from './services/api';
 
+const escapeHtml = (value: unknown): string => String(value ?? '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#039;');
+
 export default function PostDetailScreen() {
   const route = useRoute();
   const navigation = useNavigation();
@@ -65,7 +72,7 @@ export default function PostDetailScreen() {
 
   const metaParts = [post?.writer, post?.date].filter(Boolean);
   const metaHtml = metaParts.length > 0
-    ? `<div class="meta">${metaParts.join(' | ')}</div>`
+    ? `<div class="meta">${escapeHtml(metaParts.join(' | '))}</div>`
     : '';
   const contentHtml = loadError
     ? `<p>${loadError}</p>`
@@ -93,7 +100,7 @@ export default function PostDetailScreen() {
         </style>
       </head>
       <body>
-        <h2>${post?.title || '게시물'}</h2>
+        <h2>${escapeHtml(post?.title || '게시물')}</h2>
         ${metaHtml}
         <hr />
         ${contentHtml}
@@ -105,8 +112,10 @@ export default function PostDetailScreen() {
     <View style={styles.container}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={colors.background} />
       <WebView
-        originWhitelist={['*']}
+        originWhitelist={['about:blank']}
         source={{ html: htmlContent }}
+        javaScriptEnabled={false}
+        onShouldStartLoadWithRequest={(request) => request.url === 'about:blank'}
         style={{ flex: 1, width: width, backgroundColor: colors.background }}
         textZoom={100}
       />

@@ -21,7 +21,7 @@ Worker (worker.py)
   -> writes to the same database and sends Expo push notifications
 
 Caddy -> FastAPI
-PostgreSQL in Docker; SQLite for local backend development and in-memory tests
+PostgreSQL and Redis in Docker; SQLite for local backend development and in-memory tests
 
 Chrome/Edge MV3 helper (browser-extension/)
   -> reads cookies applicable only to https://ys.learnus.org/my/ after a click
@@ -29,7 +29,7 @@ Chrome/Edge MV3 helper (browser-extension/)
   -> opens the fixed web completion page with a short-lived one-use ticket
 ```
 
-The API and worker are separate processes. Both initialize their own SQLAlchemy session factory. Work that must survive an API restart is stored in the `jobs` table and claimed by the worker.
+The API and worker are separate processes. Both initialize their own SQLAlchemy session factory. Work that must survive an API restart is stored in the `jobs` table and claimed by the worker. Redis holds shared request-rate counters so restarts and multiple API processes cannot reset or split a limit.
 
 ## Repository map
 
@@ -59,7 +59,7 @@ The API and worker are separate processes. Both initialize their own SQLAlchemy 
 ├── scripts/                  Operational and maintenance scripts
 ├── docs/                     Architecture, deployment, and runbooks
 ├── .github/workflows/        CI and deployment automation
-├── docker-compose.yml        API, worker, PostgreSQL, and Caddy topology
+├── docker-compose.yml        API, worker, PostgreSQL, Redis, and Caddy topology
 └── Caddyfile                 Public reverse proxy configuration
 ```
 
@@ -117,8 +117,8 @@ Manual assignment completion overrides must survive scraper refreshes.
 ### Transcription
 
 1. A route proves the requested VOD belongs to the current user through its course.
-2. The API creates or updates `vod_transcripts` state and enqueues a `jobs` row.
-3. The worker atomically claims the job and persists extraction, transcription, and finalization progress.
+2. The API charges the atomic daily attempt budget, creates or updates `vod_transcripts` state, and enqueues a `jobs` row containing identifiers only.
+3. The worker atomically claims the job, reloads the current account flags and Moodle session, resolves the canonical media URL, charges the duration budget, and persists extraction, transcription, and finalization progress.
 4. The completed transcript can feed summaries, chat, and flashcards.
 
 `vod_transcripts.moodle_id` is globally unique and has no user foreign key, so it is never sufficient for authorization by itself.

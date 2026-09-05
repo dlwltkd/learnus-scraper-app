@@ -16,10 +16,23 @@ interface VodWebViewerProps {
     startAt?: number;
 }
 
+const ALLOWED_VOD_HOSTS = new Set(['ys.learnus.org', 'commons.ys.learnus.org']);
+
+export const isAllowedVodUrl = (value: string): boolean => {
+    try {
+        const parsed = new URL(value);
+        return parsed.protocol === 'https:' && ALLOWED_VOD_HOSTS.has(parsed.hostname);
+    } catch {
+        return false;
+    }
+};
+
 export default function VodWebViewer({ url, title, cookies, onClose, startAt }: VodWebViewerProps) {
     const { colors, typography, layout, isDark } = useTheme();
     const styles = useMemo(() => createStyles(colors, typography, layout, isDark), [colors, typography, layout, isDark]);
     const [loading, setLoading] = useState(true);
+    const safeUrl = isAllowedVodUrl(url) ? url : 'about:blank';
+    const requestHeaders = safeUrl === 'about:blank' ? undefined : { Cookie: cookies };
 
     const cookieScript = cookies
         ? cookies.split(';').map(c => c.trim()).filter(Boolean)
@@ -58,7 +71,7 @@ true;` : undefined;
                     <View style={{ width: 36 }} />
                 </View>
                 <WebView
-                    source={{ uri: url, headers: { Cookie: cookies } }}
+                    source={{ uri: safeUrl, headers: requestHeaders }}
                     style={{ flex: 1 }}
                     injectedJavaScriptBeforeContentLoaded={cookieScript}
                     injectedJavaScript={seekScript}
@@ -73,11 +86,9 @@ true;` : undefined;
                     allowFileAccess={false}
                     allowFileAccessFromFileURLs={false}
                     allowUniversalAccessFromFileURLs={false}
-                    originWhitelist={['https://ys.learnus.org', 'https://*']}
+                    originWhitelist={['https://ys.learnus.org', 'https://commons.ys.learnus.org']}
                     onShouldStartLoadWithRequest={(request) => {
-                        return request.url.startsWith('https://ys.learnus.org') ||
-                               request.url.startsWith('https://commons.ys.learnus.org') ||
-                               request.url.startsWith('about:blank');
+                        return request.url === 'about:blank' || isAllowedVodUrl(request.url);
                     }}
                 />
                 {loading && (
