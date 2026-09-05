@@ -17,15 +17,18 @@ from auth_service import (
     InvalidWebLoginTicket,
     allowed_web_origins,
     authenticate_web_session,
+    clear_web_login_cookie,
     clear_web_session_cookie,
     consume_web_login_ticket,
     hash_secret,
     has_active_web_session,
     issue_web_login_ticket,
+    matches_web_login_cookie,
     set_web_session_cookie,
     upsert_moodle_user,
     verify_moodle_cookie_session,
     web_login_ticket_ttl_seconds,
+    web_login_cookie_name,
     web_session_cookie_name,
 )
 from slowapi import Limiter
@@ -880,6 +883,16 @@ def complete_extension_login(
     origin = request.headers.get("Origin", "").rstrip("/")
     if origin not in allowed_web_origins():
         raise HTTPException(status_code=403, detail="Invalid request origin")
+    # Origin checks alone do not stop a link from logging another browser into the
+    # link sender's account: the completion page itself makes a same-origin POST.
+    if not matches_web_login_cookie(
+        payload.ticket, request.cookies.get(web_login_cookie_name())
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Start web login from the extension in this browser",
+            headers={"Cache-Control": "no-store"},
+        )
     try:
         raw_session, _, user = consume_web_login_ticket(db, payload.ticket)
         db.commit()
@@ -898,6 +911,7 @@ def complete_extension_login(
         raise HTTPException(status_code=500, detail="Could not complete web login")
 
     set_web_session_cookie(response, raw_session)
+    clear_web_login_cookie(response)
     response.headers["Cache-Control"] = "no-store"
     return {"status": "success", "username": user.username}
 

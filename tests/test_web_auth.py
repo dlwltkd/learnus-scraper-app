@@ -19,6 +19,7 @@ KEYLESS_COOKIE_SECRET = "keyless-device-cookie-secret"
 CAPTURED_COOKIES = f"MoodleSession=captured-session; {KEYLESS_COOKIE_SECRET}"
 ALLOWED_ORIGIN = "http://testserver"
 SESSION_COOKIE_NAME = "luconnect_session"
+LOGIN_COOKIE_NAME = "luconnect_login"
 
 
 class _MoodleSession:
@@ -160,10 +161,17 @@ def _exchange(client, monkeypatch):
     assert response.headers["cache-control"] == "no-store"
     ticket = body.get("ticket")
     assert isinstance(ticket, str) and ticket
+    assert "set-cookie" not in response.headers
     return ticket
 
 
+def _bind_ticket(client, ticket):
+    # The extension sets this cookie locally; the exchange response cannot set it.
+    client.cookies.set(LOGIN_COOKIE_NAME, ticket, domain="testserver.local", path="/")
+
+
 def _complete(client, ticket):
+    _bind_ticket(client, ticket)
     response = client.post(
         "/auth/extension/complete",
         json={"ticket": ticket},
@@ -176,7 +184,8 @@ def _complete(client, ticket):
 
 def _session_cookie(response):
     cookies = SimpleCookie()
-    cookies.load(response.headers["set-cookie"])
+    for header in response.headers.get_list("set-cookie"):
+        cookies.load(header)
     return cookies[SESSION_COOKIE_NAME]
 
 
@@ -324,6 +333,7 @@ def test_extension_complete_consumes_once_and_hashes_browser_session(
 
     assert response.json()["username"] == USERNAME
     assert "api_token" not in response.json()
+    assert LOGIN_COOKIE_NAME not in client.cookies
     morsel = _session_cookie(response)
     raw_session = morsel.value
     assert raw_session
@@ -342,6 +352,7 @@ def test_extension_complete_consumes_once_and_hashes_browser_session(
     assert session.revoked_at is None
     assert session.expires_at > datetime.now()
 
+    _bind_ticket(client, raw_ticket)
     replay = client.post(
         "/auth/extension/complete",
         json={"ticket": raw_ticket},
@@ -358,6 +369,7 @@ def test_extension_complete_rejects_expired_ticket(
     web_user,
 ):
     raw_ticket = _exchange(client, monkeypatch)
+    _bind_ticket(client, raw_ticket)
     ticket = db.query(WebLoginTicket).one()
     ticket.expires_at = datetime.now() - timedelta(seconds=1)
     db.commit()
@@ -372,6 +384,78 @@ def test_extension_complete_rejects_expired_ticket(
     assert db.query(WebSession).count() == 0
     db.refresh(ticket)
     assert ticket.consumed_at is None
+
+
+@pytest.mark.parametrize("binding", [None, "other-browser-ticket"])
+def test_completion_rejects_a_copied_link_without_consuming_it(
+    client, db, monkeypatch, web_user, binding,
+):
+    raw_ticket = _exchange(client, monkeypatch)
+    if binding is not None:
+        _bind_ticket(client, binding)
+
+    response = client.post(
+        "/auth/extension/complete",
+        json={"ticket": raw_ticket},
+        headers={"Origin": ALLOWED_ORIGIN},
+    )
+
+    assert response.status_code == 401
+    assert response.headers["cache-control"] == "no-store"
+    assert raw_ticket not in response.text
+    assert db.query(WebSession).count() == 0
+    assert db.query(WebLoginTicket).one().consumed_at is None
+    assert _complete(client, raw_ticket).status_code == 200
+
+
+@pytest.mark.parametrize("binding", [None, "", "다른-브라우저", "x" * 513])
+def test_malformed_browser_binding_fails_closed(binding):
+    assert not auth_service.matches_web_login_cookie("valid-ticket", binding)
+
+
+def test_copied_login_link_cannot_replace_an_existing_browser_account(
+    client, db, monkeypatch, web_user, test_user,
+):
+    victim_session = WebSession(
+        user_id=test_user.id,
+        token_hash=auth_service.hash_secret("victim-browser-session"),
+        expires_at=datetime.now() + timedelta(days=1),
+    )
+    db.add(victim_session)
+    db.commit()
+    raw_ticket = _exchange(client, monkeypatch)
+    client.cookies.set(
+        SESSION_COOKIE_NAME, "victim-browser-session", domain="testserver.local", path="/",
+    )
+
+    response = client.post(
+        "/auth/extension/complete",
+        json={"ticket": raw_ticket},
+        headers={"Origin": ALLOWED_ORIGIN},
+    )
+
+    assert response.status_code == 401
+    assert "set-cookie" not in response.headers
+    assert client.get("/auth/web-session").json()["username"] == test_user.username
+    assert db.query(WebSession).count() == 1
+    assert db.query(WebLoginTicket).one().consumed_at is None
+
+
+def test_login_binding_cookie_uses_the_host_prefix_and_is_cleared_securely(monkeypatch):
+    monkeypatch.setenv("WEB_SESSION_COOKIE_SECURE", "true")
+    response = Response()
+
+    auth_service.clear_web_login_cookie(response)
+
+    cookies = SimpleCookie()
+    cookies.load(response.headers["set-cookie"])
+    morsel = cookies["__Host-luconnect_login"]
+    assert morsel["max-age"] == "0"
+    assert morsel["path"] == "/"
+    assert morsel["domain"] == ""
+    assert morsel["httponly"] is True
+    assert morsel["secure"] is True
+    assert morsel["samesite"] == "strict"
 
 
 def test_extension_complete_requires_the_exact_web_origin(

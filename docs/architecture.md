@@ -96,8 +96,8 @@ Web:
 1. The user completes Yonsei SSO in a normal LearnUs tab.
 2. After an explicit click, the MV3 helper reads the HttpOnly cookies applicable to the exact LearnUs origin and sends them to the fixed exchange endpoint.
 3. The API validates the same Moodle identity boundary without minting a native API token, stores only the hash of a 90-second one-use ticket, and returns the raw ticket once.
-4. The helper opens the fixed luconnect completion page with the ticket in the URL fragment. The page removes the fragment immediately and exchanges it same-origin.
-5. The API atomically consumes the ticket and sets a host-only `Secure; HttpOnly; SameSite=Strict` browser-session cookie. Only a SHA-256 digest is stored in `web_sessions`.
+4. The helper binds the ticket to the initiating browser in a short-lived host-only `Secure; HttpOnly; SameSite=Strict` login cookie, then opens the fixed luconnect completion page with the ticket in the URL fragment. The page removes the fragment immediately and exchanges it same-origin.
+5. The API requires the login cookie to match the ticket, atomically consumes the ticket, clears the login cookie, and sets a new host-only `Secure; HttpOnly; SameSite=Strict` browser-session cookie. Only a SHA-256 digest is stored in `web_sessions`. A copied completion link cannot establish a session in another browser.
 
 Cookie-authenticated mutations and ticket completion require an exact allowed `Origin`. A browser logout revokes only that `WebSession`; it does not invalidate the native bearer or another browser.
 

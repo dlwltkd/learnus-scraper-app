@@ -71,25 +71,19 @@ export async function exchangeCookieHeader(cookieHeader, config, fetchImpl = fet
   const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
   try {
-    let response;
-    try {
-      response = await fetchImpl(config.exchangeUrl, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ cookies: cookieHeader }),
-        cache: 'no-store',
-        credentials: 'omit',
-        redirect: 'error',
-        referrerPolicy: 'no-referrer',
-        signal: controller.signal,
-      });
-    } catch (error) {
-      if (error?.name === 'AbortError') throw new BridgeError('TIMEOUT');
-      throw new BridgeError('NETWORK');
-    }
+    const response = await fetchImpl(config.exchangeUrl, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ cookies: cookieHeader }),
+      cache: 'no-store',
+      credentials: 'omit',
+      redirect: 'error',
+      referrerPolicy: 'no-referrer',
+      signal: controller.signal,
+    });
 
     if (!response.ok) throw errorForStatus(response.status);
 
@@ -105,7 +99,15 @@ export async function exchangeCookieHeader(cookieHeader, config, fetchImpl = fet
       throw new BridgeError('BAD_RESPONSE');
     }
 
-    return completionUrlFromExchange(payload, config);
+    return {
+      completionUrl: completionUrlFromExchange(payload, config),
+      ticket: payload.ticket,
+      expiresIn: payload.expires_in,
+    };
+  } catch (error) {
+    if (error instanceof BridgeError) throw error;
+    if (error?.name === 'AbortError') throw new BridgeError('TIMEOUT');
+    throw new BridgeError('NETWORK');
   } finally {
     clearTimeout(timeout);
   }

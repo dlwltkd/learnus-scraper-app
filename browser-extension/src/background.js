@@ -19,6 +19,7 @@ async function handleMessage(message) {
     await connectBrowser({
       config: CONFIG,
       getCookies: (url) => chrome.cookies.getAll({ url }),
+      setCookie: (details) => chrome.cookies.set(details),
       openTab,
       fetchImpl: fetch,
     });

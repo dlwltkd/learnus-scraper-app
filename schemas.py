@@ -71,7 +71,7 @@ class ExtensionCookieExchangeRequest(BaseModel):
 class ExtensionTicketCompleteRequest(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
-    ticket: str = Field(min_length=32, max_length=512)
+    ticket: str = Field(min_length=32, max_length=512, pattern=r"^[A-Za-z0-9_-]+$")
 
 
 class PushTokenRequest(BaseModel):

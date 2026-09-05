@@ -6,6 +6,7 @@ const PUBLIC_ERROR_CODES = new Set([
   'TIMEOUT',
   'SERVER',
   'BAD_RESPONSE',
+  'COOKIE_UNAVAILABLE',
 ]);
 
 export class BridgeError extends Error {

@@ -4,5 +4,6 @@ export const CONFIG = Object.freeze({
   exchangeUrl: 'http://localhost:8000/auth/extension/exchange',
   completionOrigin: 'http://localhost:8081',
   completionPath: '/auth/extension',
+  loginCookieName: 'luconnect_login',
   requestTimeoutMs: 20_000,
 });

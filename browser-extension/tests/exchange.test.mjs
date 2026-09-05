@@ -77,7 +77,7 @@ test('exchangeCookieHeader sends one no-store credential-free request', async ()
 
   const result = await exchangeCookieHeader('MoodleSession=secret', CONFIG, fetchImpl);
 
-  assert.equal(result, validCompletionUrl);
+  assert.deepEqual(result, { completionUrl: validCompletionUrl, ticket, expiresIn: 90 });
   assert.equal(capturedUrl, CONFIG.exchangeUrl);
   assert.equal(capturedOptions.method, 'POST');
   assert.equal(capturedOptions.cache, 'no-store');
@@ -114,5 +114,19 @@ test('exchangeCookieHeader does not surface network exception text', async () =>
       && error.code === 'NETWORK'
       && !error.message.includes('secret')
     ),
+  );
+});
+
+test('a timeout while reading the response body is reported without exception text', async () => {
+  await assert.rejects(
+    exchangeCookieHeader('MoodleSession=secret', { ...CONFIG, requestTimeoutMs: 5 }, async (_url, options) => ({
+      ok: true,
+      text: () => new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => {
+          reject(new DOMException('body contained a secret', 'AbortError'));
+        }, { once: true });
+      }),
+    })),
+    (error) => error instanceof BridgeError && error.code === 'TIMEOUT' && !error.message.includes('secret'),
   );
 });

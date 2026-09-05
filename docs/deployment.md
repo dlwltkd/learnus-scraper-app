@@ -100,6 +100,8 @@ test -s dist/index.html
 
 Production web builds are fixed to same-origin `/api`; inherited native or EAS values such as `https://api.dlwltkd.com` are deliberately ignored because they cannot receive the luconnect host-only cookie. CI publishes the export atomically to the ignored `web-dist/` directory, keeps `index.html` non-cacheable, and retains old content-addressed assets for open tabs. Verify both `/auth/extension` (SPA fallback) and `/api/version` through the public origin before publishing the helper. In browser developer tools, confirm the session check goes to `https://luconnect.dlwltkd.com/api/auth/web-session` and that no request targets localhost or `api.dlwltkd.com`.
 
+### Browser helper
+
 Build and validate the helper separately:
 
 ```bash
@@ -109,6 +111,18 @@ npm run build:production
 ```
 
 The production manifest is fixed to `ys.learnus.org` and `luconnect.dlwltkd.com`; the development manifest is a separate build with localhost access. Never add localhost, wildcard hosts, content scripts, storage, or API-token handling to the production package. Before rollout, complete a real Chrome/Edge SSO test and confirm the exact LearnUs host permission can read every cookie the session needs.
+
+The browser-binding check requires helper **0.1.1** or later. Distribute that helper and
+reload unpacked installations before deploying the API change. The new helper works with
+the previous API; the updated API rejects new logins from older helpers. Existing browser
+sessions continue to work. No schema migration is needed for this check.
+
+On a fresh login, verify that the helper's temporary `__Host-luconnect_login` cookie is
+host-only, Secure, HttpOnly, and SameSite=Strict, then disappears after completion. In
+development the name is `luconnect_login` and Secure is off, matching
+`WEB_SESSION_COOKIE_SECURE=false`. Test a copied completion link in another browser: it
+must fail without changing that browser's existing account. A blocked cookie must show
+Korean recovery guidance in the helper.
 
 Confirm the public hostname before packaging the store build. The host permission and completion URL are compiled into the extension, so changing the hostname later requires a new reviewed package.
 

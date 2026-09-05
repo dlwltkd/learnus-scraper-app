@@ -26,11 +26,19 @@ action.
   or access to Yonsei's SSO host.
 - The service worker reads cookies applicable to `https://ys.learnus.org/my/`, including
   HttpOnly cookies, only after the user presses **Connect**.
-- Cookie values remain in service-worker memory for one request. They are never sent to
+- LearnUs cookie values remain in service-worker memory for one request. They are never sent to
   the popup, browser storage, or console.
 - The endpoint is compiled into the extension. Popup messages cannot supply a URL.
 - The server response may open only the configured completion origin and path, with one
   base64url ticket in the URL fragment.
+- Before opening completion, the helper sets the ticket in a host-only, short-lived
+  `Secure; HttpOnly; SameSite=Strict` cookie named `__Host-luconnect_login` on the service
+  host. The API requires that cookie to match the ticket and clears it after completion.
+  A copied link cannot sign another browser into the link sender's account. This uses
+  the existing `cookies` permission; neither LearnUs cookies nor tickets enter
+  `chrome.storage`.
+- Reopening the popup during an exchange joins the pending attempt instead of uploading
+  cookies again. A failed cookie write prevents the completion tab from opening.
 - Incognito mode is disabled to avoid reading from or confusing separate cookie stores.
 
 The backend necessarily retains the LearnUs session used by its synchronization workers;
@@ -63,10 +71,19 @@ The extension validates the ticket and lifetime, constructs the completion URL f
 compiled origin and path, and places the ticket in that URL's fragment. It never follows a
 server-provided redirect URL. The ticket must be random, single-use, expire within 30–300
 seconds, and be exchanged by the web page for a host-only HttpOnly browser-session cookie.
+The temporary login cookie shares the ticket's lifetime. A missing or mismatched cookie
+rejects completion without consuming the ticket or changing an existing browser session.
 
 Development uses `http://localhost:8000/auth/extension/exchange` and accepts a completion
 page at `http://localhost:8081/auth/extension`. Localhost access is absent from the
-production manifest and package.
+production manifest and package. Development sets an HttpOnly `luconnect_login` cookie
+through the permitted `http://localhost:8000/` URL with `Secure=false`; cookies are
+host-scoped, so the same localhost browser can complete the flow at port 8081.
+
+Version 0.1.1 is required for browser binding. Update/reload the helper before deploying
+the API check: 0.1.1 can use the previous API, but the updated API rejects completion
+from 0.1.0. Existing authenticated browser sessions are unaffected. See the
+[deployment guide](../docs/deployment.md#browser-helper) for release coordination.
 
 ## Build and test
 

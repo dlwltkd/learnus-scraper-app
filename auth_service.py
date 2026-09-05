@@ -71,6 +71,29 @@ def web_session_cookie_name() -> str:
     return os.getenv("WEB_SESSION_COOKIE_NAME", "__Host-luconnect_session")
 
 
+def web_login_cookie_name() -> str:
+    return "__Host-luconnect_login" if web_session_cookie_secure() else "luconnect_login"
+
+
+def matches_web_login_cookie(raw_ticket: str, cookie_ticket: str | None) -> bool:
+    """Require the HttpOnly cookie set by the helper in the initiating browser."""
+    return bool(
+        cookie_ticket
+        and len(cookie_ticket) <= 512
+        and secrets.compare_digest(raw_ticket.encode("utf-8"), cookie_ticket.encode("utf-8"))
+    )
+
+
+def clear_web_login_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=web_login_cookie_name(),
+        path="/",
+        secure=web_session_cookie_secure(),
+        httponly=True,
+        samesite="strict",
+    )
+
+
 def allowed_web_origins() -> set[str]:
     configured = os.getenv("WEB_ALLOWED_ORIGINS", "https://luconnect.dlwltkd.com")
     return {origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()}
