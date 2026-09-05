@@ -107,6 +107,19 @@ def _broadcast_push(tokens: list[str], title: str, body: str, data: dict):
             logger.error(f"Expo Send Error for {token[:15]}...: {exc}")
 
 
+def send_push_to_user_devices(
+    user: User,
+    title: str,
+    body: str,
+    data: dict,
+    db: Session = None,
+) -> int:
+    """Broadcast a push to every device currently registered to the user."""
+    tokens = _get_user_push_tokens(user, db)
+    _broadcast_push(tokens, title, body, data)
+    return len(tokens)
+
+
 def send_push_notification(user: User, course: Course, post: Post, db: Session = None):
     try:
         # Use AI to summarize the post content
@@ -126,8 +139,7 @@ def send_push_notification(user: User, course: Course, post: Post, db: Session =
             "saveToHistory": True,
         }
 
-        tokens = _get_user_push_tokens(user, db)
-        _broadcast_push(tokens, title, msg_body, data)
+        send_push_to_user_devices(user, title, msg_body, data, db)
 
         # Save to server-side history
         if db:
@@ -287,8 +299,7 @@ def send_simple_push(user: User, title: str, body: str, notif_type: str = "gener
         "courseName": course_name,
         "saveToHistory": True,
     }
-    tokens = _get_user_push_tokens(user, db)
-    _broadcast_push(tokens, title, body, data)
+    send_push_to_user_devices(user, title, body, data, db)
 
     # Save to server-side history
     if db:

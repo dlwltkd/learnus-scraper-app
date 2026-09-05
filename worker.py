@@ -15,9 +15,14 @@ from datetime import datetime
 
 from database import init_db, Job, VodTranscript, User, VOD, Course
 from ai_service import AIService, TRANSCRIBE_MODEL
-from scheduler import check_notices_job, sync_dashboard_job, check_session_health_job, watch_vods_for_user
+from scheduler import (
+    check_notices_job,
+    sync_dashboard_job,
+    check_session_health_job,
+    watch_vods_for_user,
+    send_push_to_user_devices,
+)
 from apscheduler.schedulers.background import BackgroundScheduler
-from exponent_server_sdk import PushClient, PushMessage
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [worker] %(levelname)s %(message)s')
 logger = logging.getLogger("worker")
@@ -127,6 +132,37 @@ def _to_overall_progress(stage: str, stage_pct: int | None) -> int:
     if stage == "queued":
         return 0
     return p
+
+
+def _send_transcription_complete_push(
+    user: User,
+    db,
+    *,
+    job_id: int | None,
+    vod_moodle_id: int,
+    vod_title: str | None,
+    course_name: str | None,
+) -> None:
+    try:
+        device_count = send_push_to_user_devices(
+            user,
+            "텍스트 추출 완료",
+            vod_title or "강의 텍스트가 준비되었습니다",
+            {
+                "type": "transcription_complete",
+                "vodMoodleId": vod_moodle_id,
+                "vodTitle": vod_title,
+                "courseName": course_name,
+                "saveToHistory": True,
+            },
+            db,
+        )
+        logger.info(
+            f"Transcribe push sent job_id={job_id} vod={vod_moodle_id} "
+            f"user_id={user.id} devices={device_count}"
+        )
+    except Exception as exc:
+        logger.error(f"Transcribe push failed job_id={job_id} vod={vod_moodle_id}: {exc}")
 
 
 def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_s: float | None = None):
@@ -289,27 +325,14 @@ def _run_transcribe(payload: dict, db, *, job_id: int | None = None, queue_wait_
             logger.warning(f"Transcribe usage log failed job_id={job_id} vod={vod_moodle_id}")
             pass
 
-        # Push notification
-        if user_id:
-            user = db.query(User).filter(User.id == user_id).first()
-            if user and user.push_token:
-                try:
-                    PushClient().publish(PushMessage(
-                        to=user.push_token,
-                        sound="default",
-                        title="텍스트 추출 완료",
-                        body=vod_title or "강의 텍스트가 준비되었습니다",
-                        data={
-                            "type": "transcription_complete",
-                            "vodMoodleId": vod_moodle_id,
-                            "vodTitle": vod_title,
-                            "courseName": course_name,
-                            "saveToHistory": True,
-                        }
-                    ))
-                    logger.info(f"Transcribe push sent job_id={job_id} vod={vod_moodle_id} user_id={user_id}")
-                except Exception as exc:
-                    logger.error(f"Transcribe push failed job_id={job_id} vod={vod_moodle_id}: {exc}")
+        _send_transcription_complete_push(
+            user,
+            db,
+            job_id=job_id,
+            vod_moodle_id=vod_moodle_id,
+            vod_title=vod_title,
+            course_name=course_name,
+        )
 
     except Exception as e:
         if stage_started_perf is not None:

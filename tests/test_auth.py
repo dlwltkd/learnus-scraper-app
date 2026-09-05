@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+from database import PushToken
+
 
 class _AuthenticatedMoodleClient:
     def __init__(self, base_url):
@@ -38,6 +40,26 @@ def test_push_token_registration(client, test_user, auth_headers):
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
+
+
+def test_push_token_registration_keeps_multiple_devices(client, test_user, auth_headers, db):
+    tokens = ["ExponentPushToken[device-a]", "ExponentPushToken[device-b]"]
+
+    for token in tokens:
+        resp = client.post(
+            "/auth/push-token",
+            json={"token": token},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+
+    registered = (
+        db.query(PushToken.token)
+        .filter(PushToken.user_id == test_user.id)
+        .order_by(PushToken.id)
+        .all()
+    )
+    assert [row[0] for row in registered] == tokens
 
 
 def test_push_token_empty_rejected(client, test_user, auth_headers):
