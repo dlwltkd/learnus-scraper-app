@@ -111,7 +111,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 clearBrowserSession();
                 setIsLoggedIn(false);
                 if (error instanceof BrowserAuthError && error.reason === 'invalid-ticket') {
-                    setWebLoginError('연결 링크가 만료됐거나 이미 사용됐어요. 확장 프로그램에서 다시 연결해주세요.');
+                    setWebLoginError('연결 링크가 만료됐거나 이 브라우저에서 시작한 연결이 아니에요. 최신 확장 프로그램에서 “이 브라우저 연결”을 다시 눌러주세요.');
                 } else {
                     setWebLoginError('서버에 연결하지 못했어요. 네트워크를 확인한 뒤 잠시 후 다시 시도해주세요.');
                 }

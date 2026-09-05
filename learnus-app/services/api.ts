@@ -2,13 +2,15 @@ import axios from 'axios';
 import EventSource from 'react-native-sse';
 import { Platform } from 'react-native';
 import { secureStorage } from './secureStorage';
-import { isDemoMode } from './demoMode';
+import { DEMO_USERNAME, isDemoMode } from './demoMode';
 
 // Shape-appropriate empty responses for demo mode, so screens render their normal empty
 // state instead of an error. Screens with real mock data (dashboard, courses, lectures,
 // transcripts) short-circuit before reaching the network at all.
 function demoEmptyPayload(url?: string): unknown {
     if (!url) return {};
+    if (url === '/auth/web-session') return { authenticated: true, username: DEMO_USERNAME };
+    if (url === '/auth/extension/complete') return { status: 'success', username: DEMO_USERNAME };
     if (url.includes('/notifications')) return [];
     if (url.includes('/flashcards/decks')) return [];
     if (url.includes('/courses')) return [];
@@ -16,6 +18,7 @@ function demoEmptyPayload(url?: string): unknown {
 }
 
 const AUTH_TOKEN_KEY = 'auth_token';
+const BROWSER_AUTH_TIMEOUT_MS = 15_000;
 
 // Use localhost for local development (or configure via .env in a real setup)
 // Note: Android Emulator uses 10.0.2.2 to access host localhost.
@@ -76,7 +79,7 @@ export const getAuthToken = () => authToken;
  */
 export const logoutServerSide = async (): Promise<void> => {
     try {
-        await api.post('/auth/logout');
+        await api.post('/auth/logout', undefined, { timeout: BROWSER_AUTH_TIMEOUT_MS });
     } catch (error) {
         if (Platform.OS === 'web') {
             if (axios.isAxiosError(error) && error.response?.status === 401) {
@@ -102,12 +105,19 @@ export class BrowserAuthError extends Error {
 export const restoreBrowserSession = async (): Promise<boolean> => {
     if (Platform.OS !== 'web') return false;
     try {
-        await api.get('/auth/web-session');
+        const { data } = await api.get<unknown>('/auth/web-session', { timeout: BROWSER_AUTH_TIMEOUT_MS });
+        if (
+            !data || typeof data !== 'object'
+            || !('authenticated' in data) || data.authenticated !== true
+            || !('username' in data) || typeof data.username !== 'string' || !data.username.trim()
+        ) {
+            throw new BrowserAuthError('unavailable');
+        }
         browserSessionActive = true;
         return true;
     } catch (error) {
+        browserSessionActive = false;
         if (axios.isAxiosError(error) && error.response?.status === 401) {
-            browserSessionActive = false;
             return false;
         }
         throw new BrowserAuthError('unavailable');
@@ -121,7 +131,7 @@ export const takeExtensionLoginTicket = (): string | null => {
 
     const fragment = new URLSearchParams(window.location.hash.slice(1));
     const ticket = fragment.get('ticket');
-    if (!ticket) return null;
+    if (!fragment.has('ticket')) return null;
 
     // Remove the bearer before any async work, so it cannot linger in history or the
     // address bar if completion fails or an existing browser session is restored.
@@ -133,8 +143,10 @@ export const takeExtensionLoginTicket = (): string | null => {
 
     const entries = [...fragment.entries()];
     if (
-        entries.length !== 1
+        window.location.pathname !== '/auth/extension'
+        || entries.length !== 1
         || entries[0][0] !== 'ticket'
+        || !ticket
         || !EXTENSION_TICKET_PATTERN.test(ticket)
     ) {
         throw new BrowserAuthError('invalid-ticket');
@@ -144,10 +156,18 @@ export const takeExtensionLoginTicket = (): string | null => {
 
 export const completeExtensionLogin = async (ticket: string) => {
     try {
-        const response = await api.post('/auth/extension/complete', { ticket });
+        const { data } = await api.post<unknown>('/auth/extension/complete', { ticket }, { timeout: BROWSER_AUTH_TIMEOUT_MS });
+        if (
+            !data || typeof data !== 'object'
+            || !('status' in data) || data.status !== 'success'
+            || !('username' in data) || typeof data.username !== 'string' || !data.username.trim()
+        ) {
+            throw new BrowserAuthError('unavailable');
+        }
         browserSessionActive = true;
-        return response.data as { status: string; username: string };
+        return { status: data.status, username: data.username };
     } catch (error) {
+        browserSessionActive = false;
         const status = axios.isAxiosError(error) ? error.response?.status : undefined;
         const reason = status && [401, 409, 410, 422].includes(status)
             ? 'invalid-ticket'

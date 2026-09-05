@@ -186,6 +186,7 @@ These were each a real defect. Re-breaking any of them is a security regression,
 | ORM/migration | fresh-schema test plus migration-path regression; full backend suite |
 | Worker/scheduler/concurrency | focused state-transition/failure test; full backend suite |
 | App TypeScript | `cd learnus-app && npx tsc --noEmit` |
+| App browser-auth client | typecheck plus `cd learnus-app && node tests/browser-auth.test.cjs` |
 | Browser extension | `cd browser-extension && npm test`, then build the intended production/development package |
 | App UI | typecheck plus manual Expo check; attach screenshot/video to PR when visible |
 | Deployment/config | validate syntax and run the narrowest available container/config check |
