@@ -1,0 +1,202 @@
+.preferences-page {
+    max-width: 1280px;
+}
+.preferences-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 38px;
+    align-items: start;
+}
+.preferences-main {
+    display: grid;
+    gap: 20px;
+    min-width: 0;
+}
+.preferences-section {
+    padding: 26px;
+    min-width: 0;
+}
+.preferences-section h2,
+.preferences-aside h2 {
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 1.5;
+}
+.preferences-section header p,
+.preferences-toggle-row p {
+    color: var(--web-muted);
+    font-size: 13px;
+    line-height: 1.8;
+    margin-top: 7px;
+}
+.preferences-field {
+    display: grid;
+    gap: 10px;
+    margin-top: 28px;
+    font-size: 13px;
+    font-weight: 600;
+}
+.preferences-field .web-input {
+    width: 100%;
+    font-size: 15px;
+    padding: 12px 14px;
+}
+.preferences-field-note {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 10px;
+    color: var(--web-muted);
+    font-size: 12px;
+}
+.preferences-save {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    margin-top: 30px;
+    padding-top: 22px;
+    border-top: 1px solid var(--web-border);
+}
+.preferences-save p,
+.preferences-status {
+    color: var(--web-muted);
+    font-size: 12px;
+    line-height: 1.7;
+}
+.preferences-save .web-button {
+    flex-shrink: 0;
+}
+.preferences-aside {
+    padding: 5px 0;
+}
+.preferences-aside p {
+    color: var(--web-muted);
+    font-size: 13px;
+    line-height: 1.85;
+    margin-top: 14px;
+}
+.preferences-aside h3 {
+    font-size: 13px;
+    margin-top: 28px;
+}
+.preferences-toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+}
+.preferences-toggle-row > div:first-child {
+    min-width: 0;
+}
+.preferences-note,
+.preferences-feature-detail p {
+    color: var(--web-muted);
+    font-size: 13px;
+    line-height: 1.8;
+    margin-top: 20px;
+}
+.preferences-feature-detail {
+    border-top: 1px solid var(--web-border);
+    margin-top: 20px;
+}
+.preferences-feature-detail .web-button {
+    margin-top: 16px;
+}
+.preferences-error {
+    padding: 12px 15px;
+    border-left: 2px solid var(--web-danger);
+    background: color-mix(in srgb, var(--web-danger) 5%, var(--web-surface));
+    color: var(--web-danger);
+    font-size: 13px;
+    line-height: 1.7;
+    margin-top: 16px;
+}
+.preferences-quick-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 20px;
+}
+.preferences-faq details + details {
+    border-top: 1px solid var(--web-border);
+}
+.preferences-faq summary {
+    padding: 22px 26px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 550;
+    line-height: 1.7;
+}
+.preferences-faq summary::marker {
+    color: var(--web-muted);
+}
+.preferences-faq details[open] summary {
+    color: var(--web-primary);
+}
+.preferences-faq p {
+    padding: 0 26px 24px;
+    font-size: 14px;
+    line-height: 1.9;
+    color: var(--web-muted);
+}
+.preferences-support-links {
+    display: grid;
+    justify-items: start;
+    gap: 16px;
+    margin-top: 24px;
+}
+.preferences-support-links a,
+.preferences-support-links button {
+    color: var(--web-primary);
+    background: none;
+    border: 0;
+    padding: 0;
+    text-align: left;
+    font-size: 13px;
+}
+.preferences-support-links a:hover,
+.preferences-support-links button:hover {
+    text-decoration: underline;
+}
+.preferences-version {
+    color: var(--web-muted);
+    border: 0;
+    background: none;
+    font-size: 12px;
+    padding: 0;
+    margin-top: 32px;
+}
+@media (max-width: 1100px) {
+    .preferences-layout {
+        grid-template-columns: minmax(0, 1fr) 220px;
+        gap: 26px;
+    }
+}
+@media (max-width: 900px) {
+    .preferences-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 28px;
+    }
+    .preferences-aside {
+        border-top: 1px solid var(--web-border);
+        padding-top: 24px;
+    }
+}
+@media (max-width: 550px) {
+    .preferences-section {
+        padding: 20px;
+    }
+    .preferences-save {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 12px;
+    }
+    .preferences-toggle-row {
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+    .preferences-toggle-row > div:first-child {
+        flex-basis: 100%;
+    }
+}

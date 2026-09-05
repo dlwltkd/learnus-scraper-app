@@ -100,6 +100,22 @@ test -s dist/index.html
 
 Production web builds are fixed to same-origin `/api`; inherited native or EAS values such as `https://api.dlwltkd.com` are deliberately ignored because they cannot receive the luconnect host-only cookie. CI publishes the export atomically to the ignored `web-dist/` directory, keeps `index.html` non-cacheable, and retains old content-addressed assets for open tabs. Verify both `/auth/extension` (SPA fallback) and `/api/version` through the public origin before publishing the helper. In browser developer tools, confirm the session check goes to `https://luconnect.dlwltkd.com/api/auth/web-session` and that no request targets localhost or `api.dlwltkd.com`.
 
+The desktop client is selected through `learnus-app/App.web.tsx` and its web screen variants; it shares the existing API and browser-session flow. See the [app source map and local preview](../learnus-app/README.md#development) for the development-only `/preview` route. A production export must retain normal authentication at `/preview`; the local sample workspace is guarded by `__DEV__`.
+
+### Web-only releases
+
+For changes confined to the static client, upload the validated `learnus-app/dist/` artifact to a unique staging directory on the same filesystem as the server checkout. Copy the current release's `_expo/static/` and `assets/` into staging without overwriting new files (`cp -an`) so open tabs can still load older content-addressed assets. Preserve the current `web-dist/` under a unique rollback name, then rename staging to `web-dist/`.
+
+Caddy bind-mounts the release directory, so replacing that directory requires recreating Caddy to attach the new inode. From the server checkout, run `docker compose config --quiet` before the swap and these commands afterward:
+
+```bash
+docker compose up -d --no-deps --force-recreate caddy
+docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile
+curl --fail https://luconnect.dlwltkd.com/api/version
+```
+
+Also verify `/`, `/auth/extension`, and the emitted JavaScript and CSS through the public origin, and compare the served HTML with the uploaded `index.html`. Keep the prior release until those checks pass. Roll back by moving the failed release aside, restoring the prior directory as `web-dist/`, and recreating only Caddy with the same command. This briefly restarts the public proxy; the API, worker, and database containers remain running. No source pull or backend rebuild is needed for a static-only release.
+
 ### Browser helper
 
 Build and validate the helper separately:

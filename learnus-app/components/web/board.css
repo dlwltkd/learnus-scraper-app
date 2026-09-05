@@ -1,0 +1,295 @@
+.board-page {
+    max-width: 1320px;
+}
+.board-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 24px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--web-muted);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+.board-back:hover {
+    color: var(--web-primary);
+}
+.board-list-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 20px 24px;
+}
+.board-list-heading p {
+    font-size: 13px;
+    color: var(--web-muted);
+}
+.board-list-heading strong {
+    color: var(--web-text);
+    margin-left: 5px;
+}
+.board-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 330px;
+    height: 38px;
+    padding: 0 12px;
+    background: var(--web-surface);
+    border: 1px solid var(--web-border);
+    border-radius: 8px;
+    color: var(--web-subtle);
+}
+.board-search:focus-within {
+    border-color: var(--web-primary);
+}
+.board-search input {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    outline: none;
+    border: 0;
+    background: none;
+    color: var(--web-text);
+    font: inherit;
+    font-size: 12px;
+}
+.board-search input::placeholder {
+    color: var(--web-subtle);
+}
+.board-table-wrap {
+    overflow-x: auto;
+}
+.board-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+.board-table th {
+    padding: 13px 18px;
+    border-top: 1px solid var(--web-border);
+    border-bottom: 1px solid var(--web-border);
+    background: var(--web-bg);
+    color: var(--web-muted);
+    font-size: 12px;
+    font-weight: 550;
+    white-space: nowrap;
+}
+.board-table th:first-child,
+.board-table td:first-child {
+    padding-left: 24px;
+}
+.board-table th:nth-child(2),
+.board-table td:nth-child(2) {
+    width: 145px;
+}
+.board-table th:nth-child(3),
+.board-table td:nth-child(3) {
+    width: 150px;
+}
+.board-table th:last-child,
+.board-table td:last-child {
+    padding-right: 24px;
+}
+.board-table td {
+    padding: 20px 18px;
+    border-bottom: 1px solid var(--web-border);
+}
+.board-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+.board-table tbody tr:hover,
+.board-table tbody tr:focus-within {
+    background: color-mix(in srgb, var(--web-primary-soft) 23%, transparent);
+}
+.board-post-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--web-text);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 550;
+    text-align: left;
+    cursor: pointer;
+    line-height: 1.7;
+    overflow-wrap: anywhere;
+}
+.board-post-title:hover {
+    color: var(--web-primary);
+}
+.board-post-writer,
+.board-post-date {
+    color: var(--web-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+.board-list-footer {
+    border-top: 1px solid var(--web-border);
+    padding: 17px 27px;
+    color: var(--web-subtle);
+    font-size: 11px;
+}
+.board-post-page {
+    max-width: 1040px;
+}
+.board-article-header {
+    padding: 38px 42px 30px;
+    border-bottom: 1px solid var(--web-border);
+}
+.board-article-eyebrow {
+    color: var(--web-muted);
+    font-size: 12px;
+    margin-bottom: 15px;
+}
+.board-article-header h1 {
+    color: var(--web-text);
+    font-size: 25px;
+    line-height: 1.55;
+    letter-spacing: -0.7px;
+    font-weight: 650;
+    margin-bottom: 20px;
+    overflow-wrap: anywhere;
+}
+.board-article-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 18px;
+    color: var(--web-subtle);
+    font-size: 12px;
+}
+.board-article-meta > span,
+.board-article-meta > a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.board-article-meta > a {
+    margin-left: auto;
+    color: var(--web-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+.board-article-meta > a:hover {
+    color: var(--web-primary);
+}
+.board-article-content {
+    min-height: 280px;
+    padding: 37px 42px 50px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--web-text);
+    font-size: 15px;
+    line-height: 1.95;
+}
+.board-article-footer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    padding: 23px 42px;
+    border-top: 1px solid var(--web-border);
+    background: color-mix(in srgb, var(--web-bg) 55%, transparent);
+}
+.board-source-note {
+    color: var(--web-muted);
+    font-size: 12px;
+    line-height: 1.75;
+}
+@media (max-width: 1050px) {
+    .board-table th:nth-child(2),
+    .board-table td:nth-child(2) {
+        width: auto;
+    }
+    .board-table th:nth-child(3),
+    .board-table td:nth-child(3) {
+        width: auto;
+    }
+    .board-article-header {
+        padding: 30px;
+    }
+    .board-article-content {
+        padding: 30px;
+    }
+    .board-article-footer {
+        padding: 22px 30px;
+    }
+}
+@media (max-width: 700px) {
+    .board-list-heading {
+        padding: 20px;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+    .board-search {
+        width: 100%;
+    }
+    .board-table thead {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+    }
+    .board-table tbody {
+        display: block;
+    }
+    .board-table tbody tr {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px 16px;
+        padding: 20px;
+        border-top: 1px solid var(--web-border);
+    }
+    .board-table tbody td,
+    .board-table tbody td:first-child,
+    .board-table tbody td:last-child {
+        display: block;
+        width: auto;
+        border: 0;
+        padding: 0;
+    }
+    .board-table .board-post-title-cell {
+        grid-column: 1 / -1;
+    }
+    .board-post-title {
+        font-size: 14px;
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+    .board-post-date {
+        font-size: 12px;
+    }
+    .board-list-footer {
+        padding-left: 20px;
+    }
+    .board-article-header {
+        padding: 24px;
+    }
+    .board-article-header h1 {
+        font-size: 21px;
+    }
+    .board-article-meta {
+        gap: 12px;
+        font-size: 11px;
+    }
+    .board-article-meta > a {
+        margin-left: 0;
+    }
+    .board-article-content {
+        padding: 25px 24px 35px;
+        font-size: 14px;
+    }
+    .board-article-footer {
+        padding: 20px 24px;
+    }
+}

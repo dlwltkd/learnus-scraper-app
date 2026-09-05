@@ -1,22 +1,16 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import React, { useEffect, useState } from 'react';
+import { useRoute } from '@react-navigation/native';
+import { getPostDetail, type BoardPost } from './services/api';
+import { isDemoMode } from './services/demoMode';
+import {
+    EmptyState,
+    LoadingState,
+    WebIcon,
+    useWebNavigation,
+} from './components/web/WebUI';
+import './components/web/board.css';
 
-import { useTheme } from './context/ThemeContext';
-import { getPostDetail } from './services/api';
-import { Spacing } from './constants/theme';
-import type { ColorScheme, LayoutType, TypographyType } from './constants/theme';
-
-
-interface PostData {
-    id?: number;
-    title?: string;
-    writer?: string;
-    date?: string;
-    content?: string;
-    url?: string;
-}
-
+type PostData = Partial<BoardPost>;
 
 function htmlToPlainText(html: string): string {
     const withBreaks = html
@@ -28,7 +22,9 @@ function htmlToPlainText(html: string): string {
     }
 
     const parsed = new DOMParser().parseFromString(withBreaks, 'text/html');
-    parsed.querySelectorAll('script, style, noscript').forEach(node => node.remove());
+    parsed
+        .querySelectorAll('script, style, noscript')
+        .forEach((node) => node.remove());
     return (parsed.body.textContent || '')
         .replace(/\u00a0/g, ' ')
         .replace(/[ \t]+\n/g, '\n')
@@ -36,25 +32,32 @@ function htmlToPlainText(html: string): string {
         .trim();
 }
 
-
 export default function PostDetailScreen() {
     const route = useRoute();
-    const navigation = useNavigation();
-    const { post: initialPost, postId } = (route.params ?? {}) as {
+    const navigation = useWebNavigation();
+    const {
+        post: initialPost,
+        postId,
+        boardTitle,
+        courseName,
+    } = (route.params ?? {}) as {
         post?: PostData;
         postId?: number;
+        boardTitle?: string;
+        courseName?: string;
     };
-    const { colors, typography, layout, isDark } = useTheme();
-    const styles = useMemo(
-        () => createStyles(colors, typography, layout, isDark),
-        [colors, typography, layout, isDark],
-    );
     const [post, setPost] = useState<PostData>(initialPost || {});
     const [loading, setLoading] = useState(false);
     const [loadError, setLoadError] = useState<string | null>(null);
+    const [revision, setRevision] = useState(0);
+    const resolvedPostId = postId ?? initialPost?.id;
 
     const shouldFetchPost = Boolean(
-        postId && (!initialPost?.content || !initialPost?.writer || !initialPost?.date),
+        !isDemoMode() &&
+            resolvedPostId &&
+            (!initialPost?.content ||
+                !initialPost?.writer ||
+                !initialPost?.date),
     );
 
     useEffect(() => {
@@ -63,17 +66,14 @@ export default function PostDetailScreen() {
     }, [postId, initialPost?.url, initialPost?.title]);
 
     useEffect(() => {
-        navigation.setOptions({ title: post.title || '게시물' });
-    }, [navigation, post.title]);
-
-    useEffect(() => {
-        if (!shouldFetchPost || !postId) return;
+        if (!shouldFetchPost || !resolvedPostId) return;
 
         let active = true;
         setLoading(true);
-        getPostDetail(postId)
+        setLoadError(null);
+        getPostDetail(resolvedPostId)
             .then((fullPost: PostData) => {
-                if (active) setPost(current => ({ ...current, ...fullPost }));
+                if (active) setPost((current) => ({ ...current, ...fullPost }));
             })
             .catch(() => {
                 if (active) setLoadError('게시물 내용을 불러오지 못했어요.');
@@ -85,75 +85,87 @@ export default function PostDetailScreen() {
         return () => {
             active = false;
         };
-    }, [postId, shouldFetchPost]);
+    }, [resolvedPostId, shouldFetchPost, revision]);
 
     const content = post.content
         ? htmlToPlainText(post.content)
         : '내용이 없어요.';
-    const meta = [post.writer, post.date].filter(Boolean).join(' · ');
+    let sourceUrl: string | undefined;
+    try {
+        const parsed = new URL(post.url || '');
+        if (parsed.protocol === 'https:' || parsed.protocol === 'http:')
+            sourceUrl = parsed.href;
+    } catch {
+        sourceUrl = undefined;
+    }
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-            <View style={styles.article}>
-                <Text style={styles.title}>{post.title || '게시물'}</Text>
-                {meta && <Text style={styles.meta}>{meta}</Text>}
-                <View style={styles.divider} />
+        <div className="web-page board-post-page">
+            <button className="board-back" onClick={() => navigation.goBack()}>
+                <WebIcon name="arrow-back-outline" size={16} />
+                {boardTitle || '이전 페이지'}로 돌아가기
+            </button>
+            <article className="web-panel board-article">
+                <header className="board-article-header">
+                    {(courseName || boardTitle) && (
+                        <p className="board-article-eyebrow">
+                            {[courseName, boardTitle]
+                                .filter(Boolean)
+                                .join(' / ')}
+                        </p>
+                    )}
+                    <h1>{post.title || '게시물'}</h1>
+                    <div className="board-article-meta">
+                        <span>{post.writer || '작성자 정보 없음'}</span>
+                        {post.date && <span>{post.date}</span>}
+                        {sourceUrl && (
+                            <a
+                                href={sourceUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                LearnUs에서 보기
+                                <WebIcon name="open-outline" size={14} />
+                            </a>
+                        )}
+                    </div>
+                </header>
                 {loading ? (
-                    <ActivityIndicator color={colors.primary} />
+                    <LoadingState label="게시물 내용을 불러오는 중이에요" />
+                ) : loadError ? (
+                    <EmptyState
+                        title="내용을 불러오지 못했어요"
+                        description={loadError}
+                        action={
+                            <button
+                                className="web-button"
+                                onClick={() =>
+                                    setRevision((value) => value + 1)
+                                }
+                            >
+                                다시 시도
+                            </button>
+                        }
+                    />
                 ) : (
-                    <Text style={[styles.content, loadError && styles.error]} selectable>
-                        {loadError || content}
-                    </Text>
+                    <div className="board-article-content">{content}</div>
                 )}
-            </View>
-        </ScrollView>
+                <footer className="board-article-footer">
+                    <button
+                        className="web-button"
+                        onClick={() => navigation.goBack()}
+                    >
+                        {boardTitle ? '목록으로' : '돌아가기'}
+                    </button>
+                    {sourceUrl &&
+                        /<(?:img|table|a)\b/i.test(post.content || '') && (
+                            <p className="board-source-note">
+                                첨부파일과 표는 LearnUs 원문에서 확인할 수
+                                있어요.
+                            </p>
+                        )}
+                </footer>
+            </article>
+        </div>
     );
 }
-
-
-const createStyles = (
-    colors: ColorScheme,
-    typography: TypographyType,
-    layout: LayoutType,
-    _isDark: boolean,
-) => StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    scrollContent: {
-        width: '100%',
-        maxWidth: 880,
-        alignSelf: 'center',
-        padding: Spacing.screenPadding,
-    },
-    article: {
-        borderWidth: 1,
-        borderColor: colors.border,
-        borderRadius: layout.borderRadius.xl,
-        backgroundColor: colors.surface,
-        padding: 28,
-    },
-    title: {
-        ...typography.header2,
-        color: colors.textPrimary,
-    },
-    meta: {
-        ...typography.caption,
-        color: colors.textSecondary,
-        marginTop: 10,
-    },
-    divider: {
-        height: 1,
-        backgroundColor: colors.divider,
-        marginVertical: 22,
-    },
-    content: {
-        ...typography.body1,
-        color: colors.textPrimary,
-        lineHeight: 27,
-    },
-    error: {
-        color: colors.error,
-    },
-});

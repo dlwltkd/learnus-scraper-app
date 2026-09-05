@@ -12,7 +12,7 @@ function demoEmptyPayload(url?: string): unknown {
     if (url === '/auth/web-session') return { authenticated: true, username: DEMO_USERNAME };
     if (url === '/auth/extension/complete') return { status: 'success', username: DEMO_USERNAME };
     if (url.includes('/notifications')) return [];
-    if (url.includes('/flashcards/decks')) return [];
+    if (url.includes('/flashcards/decks')) return { decks: [] };
     if (url.includes('/courses')) return [];
     return {};
 }
@@ -243,8 +243,82 @@ api.interceptors.response.use(
     }
 );
 
-export const getCourses = async () => {
-    const response = await api.get('/courses');
+export interface CourseSummary {
+    id: number;
+    name: string;
+    is_active: boolean;
+    professor?: string | null;
+}
+
+export interface DashboardAssignment {
+    id: number;
+    title: string;
+    course_id?: number | null;
+    course_name?: string | null;
+    due_date: string | null;
+    is_completed: boolean;
+    completion_overridden?: boolean;
+    url: string;
+}
+
+export interface DashboardVod {
+    id: number;
+    title: string;
+    course_id?: number | null;
+    course_name?: string | null;
+    start_date: string | null;
+    end_date: string | null;
+    is_completed: boolean;
+    url: string;
+}
+
+export type CourseAssignment = DashboardAssignment;
+export type CourseVod = DashboardVod;
+
+export interface CourseBoard {
+    id: number;
+    title: string;
+    url: string;
+}
+
+export interface BoardPost {
+    id: number;
+    title: string;
+    writer: string;
+    date: string;
+    url: string;
+    content: string | null;
+}
+
+export interface DashboardBriefing {
+    course_id: number;
+    course_name: string;
+    status_message: string;
+    status: string;
+    urgent?: { items: Array<{ title: string; due: string; type: string }> };
+    upcoming?: { items: Array<{ title: string; due: string; type: string }> };
+    announcement?: { has_new: boolean; summary: string | null };
+    insight?: string;
+}
+
+export interface DashboardOverview {
+    stats: {
+        completed_assignments_due: number;
+        total_assignments_due: number;
+        missed_vods_count: number;
+        missed_assignments_count: number;
+    };
+    upcoming_assignments: DashboardAssignment[];
+    missed_assignments: DashboardAssignment[];
+    available_vods: DashboardVod[];
+    missed_vods: DashboardVod[];
+    unchecked_vods: DashboardVod[];
+    upcoming_vods: DashboardVod[];
+    summary?: string | null;
+}
+
+export const getCourses = async (): Promise<CourseSummary[]> => {
+    const response = await api.get<CourseSummary[]>('/courses');
     return response.data;
 };
 
@@ -263,8 +337,8 @@ export const toggleCourseActive = async (courseId: number, isActive: boolean) =>
     return response.data;
 };
 
-export const getAssignments = async (courseId: number) => {
-    const response = await api.get(`/courses/${courseId}/assignments`);
+export const getAssignments = async (courseId: number): Promise<CourseAssignment[]> => {
+    const response = await api.get<CourseAssignment[]>(`/courses/${courseId}/assignments`);
     return response.data;
 };
 
@@ -281,18 +355,18 @@ export const updateAssignmentStatus = async (
     return response.data;
 };
 
-export const getBoards = async (courseId: number) => {
-    const response = await api.get(`/courses/${courseId}/boards`);
+export const getBoards = async (courseId: number): Promise<CourseBoard[]> => {
+    const response = await api.get<CourseBoard[]>(`/courses/${courseId}/boards`);
     return response.data;
 };
 
-export const getVods = async (courseId: number) => {
-    const response = await api.get(`/courses/${courseId}/vods`);
+export const getVods = async (courseId: number): Promise<CourseVod[]> => {
+    const response = await api.get<CourseVod[]>(`/courses/${courseId}/vods`);
     return response.data;
 };
 
-export const getPosts = async (boardId: number) => {
-    const response = await api.get(`/boards/${boardId}/posts`);
+export const getPosts = async (boardId: number): Promise<BoardPost[]> => {
+    const response = await api.get<BoardPost[]>(`/boards/${boardId}/posts`);
     return response.data;
 };
 
@@ -397,6 +471,10 @@ export const chatWithVodStream = (
     messages: ChatMessage[],
     callbacks: StreamCallbacks,
 ): (() => void) => {
+    if (isDemoMode()) {
+        callbacks.onError('미리보기에서는 AI 채팅을 사용할 수 없어요. 로그인 후 실제 강의에서 이용해주세요.');
+        return () => {};
+    }
     const url = `${API_URL}/vods/${vodMoodleId}/chat/stream`;
 
     const es = new EventSource<'message' | 'done' | 'error'>(url, {
@@ -785,6 +863,10 @@ export const chatWithCourseBrain = (
     messages: ChatMessage[],
     callbacks: BrainStreamCallbacks,
 ): (() => void) => {
+    if (isDemoMode()) {
+        callbacks.onError('미리보기에서는 AI 채팅을 사용할 수 없어요. 로그인 후 실제 강의에서 이용해주세요.');
+        return () => {};
+    }
     const es = new EventSource<'message' | 'done' | 'error'>(
         `${API_URL}/courses/${courseId}/brain/chat`,
         {

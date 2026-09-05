@@ -64,6 +64,7 @@ Caddy (`Caddyfile`) -> API in deployment
 | `spend_limits.py` | Daily chat/transcription caps, bypass allowlist, labs allowlist, API token TTL | Imported by both `api.py` and `worker.py`; must not import either. Never name this module `limits` — that shadows the PyPI package slowapi imports. |
 | `tests/` | Backend pytest suite and fixtures | New backend behavior requires a regression test. |
 | `learnus-app/` | Expo/React Native TypeScript application | Strict TypeScript; shared UI lives in `components/`, state in `context/`, I/O in `services/`. |
+| `learnus-app/App.web.tsx`, `*.web.tsx`, `components/web/` | Desktop web shell, platform-specific screens, and CSS | Keep shared service/auth contracts and native screens intact. `/preview` and `/preview/login` are development-only local-data previews. |
 | `browser-extension/` | Explicit Chrome/Edge bridge from a completed LearnUs SSO session to one-time web login | MV3; exact host permissions only; no content scripts, storage, logging, or API-token access. |
 | Docker/Caddy/workflow files | Deployment topology | Keep API and worker environment variables aligned where shared. |
 

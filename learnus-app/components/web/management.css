@@ -1,0 +1,399 @@
+.management-page {
+    max-width: 1360px;
+}
+.management-layout {
+    min-width: 0;
+}
+.management-course-list,
+.inbox-panel {
+    padding: 0;
+    overflow: hidden;
+}
+.management-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 9px 24px 0;
+    border-bottom: 1px solid var(--web-border);
+}
+.management-filters {
+    display: flex;
+    gap: 25px;
+    align-items: center;
+}
+.management-filters > button {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--web-muted);
+    padding: 17px 0;
+    font-size: 13px;
+    white-space: nowrap;
+}
+.management-filters > button.is-active {
+    border-bottom-color: var(--web-primary);
+    color: var(--web-primary);
+    font-weight: 650;
+}
+.management-filters > button > span {
+    color: var(--web-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+.management-filters > button.is-active > span {
+    color: var(--web-primary);
+}
+.management-search {
+    display: flex;
+    align-items: center;
+    margin: 20px 24px;
+}
+.management-search .web-input {
+    width: 100%;
+    font-size: 13px;
+}
+.management-error {
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 24px;
+    border-top: 1px solid var(--web-border);
+    border-bottom: 1px solid var(--web-border);
+    color: var(--web-danger);
+    font-size: 13px;
+}
+.management-course-rows {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.management-course-rows > li {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 23px 24px;
+    border-top: 1px solid var(--web-border);
+}
+.management-course-rows > li:hover {
+    background: var(--web-surface-muted);
+}
+.management-course-info {
+    flex: 1;
+    min-width: 0;
+}
+.management-course-title {
+    display: block;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 550;
+    line-height: 1.65;
+    color: var(--web-text);
+    text-align: left;
+    background: none;
+    border: 0;
+    padding: 0;
+    overflow-wrap: anywhere;
+}
+.management-course-title:hover {
+    color: var(--web-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+.management-course-info p {
+    font-size: 13px;
+    color: var(--web-muted);
+    margin-top: 4px;
+}
+.management-course-state {
+    color: var(--web-muted);
+    font-size: 12px;
+    white-space: nowrap;
+    min-width: 46px;
+    text-align: right;
+}
+.management-switch {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-shrink: 0;
+    padding: 3px;
+    width: 40px;
+    height: 23px;
+    border: 0;
+    border-radius: 20px;
+    background: var(--web-muted);
+    transition: background 0.2s;
+}
+.management-switch[aria-checked='true'] {
+    background: var(--web-primary);
+}
+.management-switch > span {
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: var(--web-bg);
+    box-shadow: 0 1px 3px #0002;
+    transition: transform 0.2s;
+}
+.management-switch[aria-checked='true'] > span {
+    transform: translateX(17px);
+    background: var(--web-primary-foreground);
+}
+.management-list-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-top: 1px solid var(--web-border);
+    padding: 16px 24px;
+    font-size: 12px;
+    color: var(--web-muted);
+}
+.management-footnote {
+    color: var(--web-muted);
+    font-size: 12px;
+    line-height: 1.8;
+    margin-top: 20px;
+}
+.inbox-search-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 20px 24px;
+}
+.inbox-search-row .management-search {
+    flex: 1;
+    margin: 0;
+    min-width: 0;
+}
+.inbox-search-row .web-select {
+    font-size: 13px;
+    min-width: 140px;
+}
+.inbox-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.inbox-list > li {
+    display: flex;
+    align-items: center;
+    border-top: 1px solid var(--web-border);
+    padding-right: 22px;
+}
+.inbox-list > .is-unread {
+    background: color-mix(
+        in srgb,
+        var(--web-primary-soft) 18%,
+        var(--web-surface)
+    );
+}
+.inbox-notification {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 24px;
+    flex: 1;
+    min-width: 0;
+    font: inherit;
+    text-align: left;
+    background: none;
+    color: var(--web-text);
+    border: 0;
+}
+.inbox-notification > .web-icon {
+    color: var(--web-muted);
+}
+.inbox-notification:hover > .inbox-content > strong {
+    color: var(--web-primary);
+}
+.inbox-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+.inbox-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    margin-bottom: 9px;
+    font-size: 12px;
+    color: var(--web-muted);
+}
+.inbox-type-label {
+    color: var(--web-muted);
+}
+.inbox-course-name {
+    overflow-wrap: anywhere;
+}
+.inbox-meta time {
+    margin-left: auto;
+    white-space: nowrap;
+    font-size: 12px;
+}
+.inbox-read-state {
+    font-size: 11px;
+}
+.inbox-read-state.is-unread {
+    color: var(--web-primary);
+    font-weight: 600;
+}
+.inbox-content > strong {
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.6;
+    margin-bottom: 7px;
+    overflow-wrap: anywhere;
+}
+.is-unread .inbox-content > strong {
+    font-weight: 650;
+}
+.inbox-body {
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--web-muted);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.inbox-item-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding-left: 4px;
+}
+.inbox-item-actions .web-icon-button {
+    width: 32px;
+    height: 34px;
+    color: var(--web-muted);
+}
+.inbox-item-actions .inbox-delete:hover {
+    color: var(--web-danger);
+    background: color-mix(in srgb, var(--web-danger) 7%, var(--web-surface));
+}
+.inbox-mark-read {
+    border: 0;
+    background: none;
+    padding: 7px 0;
+    color: var(--web-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+.inbox-mark-read:hover {
+    color: var(--web-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+@media (max-width: 1100px) {
+    .management-page .web-page-heading {
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+    .inbox-notification {
+        gap: 12px;
+    }
+    .inbox-meta time {
+        margin-left: 0;
+    }
+}
+@media (max-width: 650px) {
+    .management-page .web-page-heading {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .management-page .web-page-actions {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .management-toolbar {
+        padding: 7px 16px 0;
+        gap: 8px;
+    }
+    .management-filters {
+        gap: 18px;
+    }
+    .management-filters > button {
+        gap: 5px;
+        font-size: 12px;
+    }
+    .management-filters > button > span {
+        font-size: 11px;
+    }
+    .management-search,
+    .inbox-search-row {
+        margin: 16px;
+    }
+    .management-course-rows > li {
+        padding: 20px 16px;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .management-course-title {
+        font-size: 14px;
+    }
+    .management-course-info p {
+        font-size: 12px;
+    }
+    .management-course-state {
+        font-size: 11px;
+    }
+    .management-list-footer {
+        padding: 15px 16px;
+        font-size: 11px;
+        flex-wrap: wrap;
+    }
+    .inbox-search-row {
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .inbox-search-row .management-search {
+        flex-basis: 170px;
+    }
+    .inbox-search-row .web-select {
+        min-width: 100px;
+        font-size: 12px;
+    }
+    .inbox-list > li {
+        display: block;
+        padding: 0;
+    }
+    .inbox-notification {
+        width: 100%;
+        padding: 20px 16px 12px;
+        gap: 10px;
+    }
+    .inbox-content > strong {
+        font-size: 14px;
+    }
+    .inbox-meta {
+        font-size: 11px;
+        gap: 5px 9px;
+    }
+    .inbox-meta time {
+        font-size: 11px;
+    }
+    .inbox-body {
+        font-size: 13px;
+    }
+    .inbox-item-actions {
+        justify-content: flex-end;
+        padding: 0 14px 12px;
+    }
+    .management-error {
+        flex-wrap: wrap;
+        font-size: 12px;
+        padding: 16px;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .management-switch,
+    .management-switch > span {
+        transition: none;
+    }
+}
