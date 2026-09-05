@@ -37,7 +37,10 @@ test('packager isolates production and development permissions and configuration
       assert.equal(forbiddenPermissions.has(permission), false);
     }
     assert.equal(packagedFiles.some((file) => file.includes(`config.${target}`)), false);
-    assert.match(popup, /sent to and retained by the LearnUs Connect server/);
+    assert.match(popup, /<html lang="ko">/);
+    assert.match(popup, /서버에 전달·보관돼요/);
+    assert.match(popup, /개인정보 처리방침/);
+    assert.match(manifest.description, /연세대학교 LearnUs 로그인/);
     assert.match(
       popup,
       /https:\/\/github\.com\/dlwltkd\/learnus-scraper-app\/blob\/main\/docs\/legal\/privacy-policy\.md/,

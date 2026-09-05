@@ -1,39 +1,77 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>LearnUs Connect</title>
+    <title>LearnUs Connect · 브라우저 연결</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main>
-      <header>
-        <p class="eyebrow">LearnUs Connect</p>
-        <h1>Sign in through Yonsei SSO</h1>
-        <p class="intro">Finish SSO in LearnUs, then return here to connect this browser.</p>
+      <header class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+            <path d="m12 2 10 5-10 5L2 7l10-5Zm-8.5 9L12 15.25 20.5 11 22 12l-10 5-10-5 1.5-1Zm0 5L12 20.25 20.5 16 22 17l-10 5-10-5 1.5-1Z" />
+          </svg>
+        </span>
+        <span>LearnUs <span class="brand-light">Connect</span></span>
       </header>
 
-      <ol>
+      <section class="welcome" aria-labelledby="login-title">
+        <p class="eyebrow">시작하기</p>
+        <h1 id="login-title">오늘의 수업을 연결해요.</h1>
+        <p class="intro">LearnUs 로그인 후 이 창을 다시 열어주세요.</p>
+      </section>
+
+      <ol class="steps" aria-label="브라우저 연결 순서">
         <li>
-          <button id="open-login" type="button">Open LearnUs SSO</button>
+          <div class="step-heading">
+            <span class="step-number" aria-hidden="true">1</span>
+            <div>
+              <h2>LearnUs에 로그인하기</h2>
+              <p>새 탭에서 연세 SSO 로그인을 완료해주세요.</p>
+            </div>
+          </div>
+          <button id="open-login" type="button">
+            LearnUs SSO 열기
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7m0-7L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5" /></svg>
+          </button>
         </li>
         <li>
-          <button id="connect-browser" class="primary" type="button">Connect this browser</button>
+          <div class="step-heading">
+            <span class="step-number" aria-hidden="true">2</span>
+            <div>
+              <h2>이 브라우저 연결하기</h2>
+              <p>이미 LearnUs에 로그인했다면 바로 연결할 수 있어요.</p>
+            </div>
+          </div>
+          <button id="connect-browser" class="primary" type="button" aria-describedby="privacy">
+            이 브라우저 연결
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+          </button>
         </li>
       </ol>
 
-      <p id="status" class="status" role="status" aria-live="polite"></p>
-      <p class="privacy">
-        When you press Connect, cookies applicable to <strong>ys.learnus.org</strong> are
-        sent to and retained by the LearnUs Connect server for synchronization. The
-        extension does not keep a copy.
-        <a
-          href="https://github.com/dlwltkd/learnus-scraper-app/blob/main/docs/legal/privacy-policy.md"
-          target="_blank"
-          rel="noopener noreferrer"
-        >Privacy Policy</a>
-      </p>
+      <p id="status" class="status" role="status" aria-live="polite" aria-atomic="true"></p>
+
+      <footer>
+        <p class="password-note">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" /></svg>
+          비밀번호는 LearnUs에서만 입력해요.
+        </p>
+        <p id="privacy" class="privacy">
+          연결 시 LearnUs 로그인 정보(쿠키)가 수업 동기화를 위해 서버에 전달·보관돼요.
+          확장 프로그램에는 저장하지 않아요.
+        </p>
+        <div class="footer-links">
+          <a
+            href="https://github.com/dlwltkd/learnus-scraper-app/blob/main/docs/legal/privacy-policy.md"
+            target="_blank"
+            rel="noopener noreferrer"
+          >개인정보 처리방침</a>
+          <a href="mailto:dlwltkd@yonsei.ac.kr">연결 도움받기</a>
+        </div>
+      </footer>
     </main>
     <script type="module" src="popup.js"></script>
   </body>

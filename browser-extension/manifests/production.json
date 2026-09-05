@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LearnUs Connect",
   "version": "0.1.1",
-  "description": "Connect a completed LearnUs SSO session to LearnUs Connect.",
+  "description": "연세대학교 LearnUs 로그인 후, 이 브라우저를 LearnUs Connect에 연결해요.",
   "minimum_chrome_version": "109",
   "incognito": "not_allowed",
   "permissions": [
@@ -17,7 +17,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "LearnUs Connect",
+    "default_title": "LearnUs Connect · 브라우저 연결",
     "default_popup": "popup.html"
   },
   "content_security_policy": {

@@ -3,21 +3,24 @@ const connectButton = document.querySelector('#connect-browser');
 const status = document.querySelector('#status');
 
 const ERROR_MESSAGES = Object.freeze({
-  NO_SESSION: 'Finish signing in to LearnUs, then try again.',
-  SESSION_REJECTED: 'LearnUs rejected this session. Sign in again and retry.',
-  RATE_LIMITED: 'Too many attempts. Wait a moment and try again.',
-  NETWORK: 'Could not reach LearnUs Connect. Check your network and retry.',
-  TIMEOUT: 'The connection timed out. Please try again.',
-  SERVER: 'LearnUs Connect is temporarily unavailable.',
-  BAD_RESPONSE: 'The server returned an unexpected response.',
-  INTERNAL: 'The extension could not finish signing in.',
-  INVALID_ACTION: 'The extension could not start this action.',
-  INVALID_SENDER: 'The extension rejected this request.',
+  NO_SESSION: 'LearnUs 로그인이 필요해요. 같은 브라우저에서 로그인한 뒤 다시 연결해주세요.',
+  SESSION_REJECTED: 'LearnUs 로그인이 만료됐어요. 다시 로그인한 뒤 연결해주세요.',
+  RATE_LIMITED: '연결 요청이 많아요. 1분 뒤 다시 시도해주세요.',
+  NETWORK: '서버에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 시도해주세요.',
+  TIMEOUT: '연결 확인이 오래 걸리고 있어요. 잠시 후 다시 시도해주세요.',
+  SERVER: '서버가 잠시 응답하지 않아요. 잠시 후 다시 시도해주세요.',
+  BAD_RESPONSE: '연결 정보를 확인하지 못했어요. 확장 프로그램을 업데이트하고 다시 연결해주세요.',
+  COOKIE_UNAVAILABLE: 'LearnUs Connect의 쿠키를 허용한 뒤 이 브라우저에서 다시 연결해주세요.',
+  INTERNAL: '연결을 완료하지 못했어요. 확장 프로그램을 다시 열어 시도해주세요.',
+  INVALID_ACTION: '요청을 시작하지 못했어요. 확장 프로그램을 다시 열어주세요.',
+  INVALID_SENDER: '요청을 확인하지 못했어요. 확장 프로그램에서 다시 시도해주세요.',
 });
 
-function setBusy(isBusy) {
+function setBusy(isBusy, type) {
   openLoginButton.disabled = isBusy;
   connectButton.disabled = isBusy;
+  openLoginButton.setAttribute('aria-busy', String(isBusy && type === 'OPEN_LOGIN'));
+  connectButton.setAttribute('aria-busy', String(isBusy && type === 'CONNECT_BROWSER'));
 }
 
 function setStatus(message, isError = false) {
@@ -26,8 +29,8 @@ function setStatus(message, isError = false) {
 }
 
 async function sendAction(type) {
-  setBusy(true);
-  setStatus('Working…');
+  setBusy(true, type);
+  setStatus(type === 'CONNECT_BROWSER' ? 'LearnUs 로그인을 확인하고 있어요…' : 'LearnUs를 열고 있어요…');
   try {
     const result = await chrome.runtime.sendMessage({ type });
     if (!result?.ok) {
@@ -45,12 +48,12 @@ async function sendAction(type) {
 
 openLoginButton.addEventListener('click', async () => {
   if (await sendAction('OPEN_LOGIN')) {
-    setStatus('Complete SSO in the LearnUs tab, then return here.');
+    setStatus('LearnUs에서 로그인한 뒤 이 창을 다시 열고 “이 브라우저 연결”을 눌러주세요.');
   }
 });
 
 connectButton.addEventListener('click', async () => {
   if (await sendAction('CONNECT_BROWSER')) {
-    setStatus('Connected. Continue in the LearnUs Connect tab.');
+    setStatus('새로 열린 LearnUs Connect 탭에서 로그인을 마무리해주세요.');
   }
 });

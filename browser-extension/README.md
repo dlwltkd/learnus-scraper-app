@@ -6,16 +6,20 @@ Yonsei login form.
 
 ## User flow
 
-1. Open the extension and select **Open LearnUs SSO**.
+1. Open the extension and select **LearnUs SSO 열기**.
 2. Complete Yonsei SSO in the normal LearnUs tab.
-3. Open the extension again and select **Connect this browser**.
+3. Open the extension again in the same browser and select **이 브라우저 연결**.
 4. Continue in the LearnUs Connect tab opened by the extension.
 
 The second click is intentional. The extension does not monitor browsing or upload a
-LearnUs session in the background. **Connect this browser** sends the applicable cookies
+LearnUs session in the background. **이 브라우저 연결** sends the applicable cookies
 to the LearnUs Connect server, where the session is retained for synchronization. The
 popup links to the public [Privacy Policy](../docs/legal/privacy-policy.md) before that
 action.
+
+Already signed in to LearnUs? Start at step 3. The popup uses Korean throughout and
+follows the web client's colors, typography, and controls, with light/dark appearance
+selected by the system. It does not read the web app's saved theme preference.
 
 ## Security boundary
 
@@ -118,15 +122,21 @@ Add-ons; store signing keys and generated `.pem` or `.crx` files must never be c
 
 - Test a fresh SSO login, an already authenticated session, cancelled SSO, and an expired
   session.
-- Confirm no request occurs when **Open LearnUs SSO** is pressed.
+- Confirm no exchange request occurs when **LearnUs SSO 열기** is pressed.
 - Confirm the popup explains server transfer and retention and its privacy-policy link
   opens without requesting another host permission.
-- Confirm **Connect this browser** makes one POST only to the configured exchange URL.
+- Confirm **이 브라우저 연결** makes one POST only to the configured exchange URL,
+  even when the popup is reopened while the request is pending.
 - Inspect the extension service-worker console and storage; neither should contain cookie
   values, tickets, or API tokens.
 - Confirm the completion ticket appears only in the URL fragment and disappears when the
   web app consumes it.
 - Confirm a second attempt to consume the same ticket fails.
+- Confirm a copied completion link fails in a different browser, and a blocked login
+  cookie produces Korean recovery guidance without opening a completion tab.
+- Confirm the temporary login cookie disappears on success and expires after an
+  abandoned attempt. Only the normal browser-session cookie remains after completion.
+- Check Korean loading, error, retry, keyboard focus, and both color schemes.
 - Confirm production asks for no localhost, wildcard-host, tab, scripting, storage,
   navigation, or web-request permission.
 
